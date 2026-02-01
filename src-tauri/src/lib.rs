@@ -70,6 +70,7 @@ fn convert_markdown(content: &str) -> String {
             superscript: false,
             footnotes: true,
             description_lists: true,
+            header_ids: Some("".to_string()),
             ..ComrakExtensionOptions::default()
         },
         ..ComrakOptions::default()

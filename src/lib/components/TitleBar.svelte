@@ -33,6 +33,8 @@
 		ontoggleMetadata,
 		showMetadata,
 		hasMetadata,
+		ontoggleToc,
+		showToc,
 	} = $props<{
 		isFocused: boolean;
 		isScrolled: boolean;
@@ -60,6 +62,8 @@
 		ontoggleMetadata?: () => void;
 		showMetadata?: boolean;
 		hasMetadata?: boolean;
+		ontoggleToc?: () => void;
+		showToc?: boolean;
 	}>();
 
 	const appWindow = getCurrentWindow();
@@ -138,6 +142,7 @@
 				if (hasMetadata) {
 					list.push('metadata');
 				}
+				list.push('toc');
 				if (!tabManager.activeTab?.isSplit) {
 					list.push('edit');
 				}
@@ -269,6 +274,23 @@
 							<line x1="16" y1="13" x2="8" y2="13"></line>
 							<line x1="16" y1="17" x2="8" y2="17"></line>
 							<polyline points="10 9 9 9 8 9"></polyline>
+						</svg>
+					</button>
+				{:else if id === 'toc'}
+					<button
+						class="title-action-btn {showToc ? 'active' : ''}"
+						onclick={ontoggleToc}
+						aria-label="Toggle TOC"
+						onmouseenter={(e) => showTooltip(e, 'Table of Contents')}
+						onmouseleave={hideTooltip}
+						transition:fly={{ x: 10, duration: 200 }}>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<line x1="8" y1="6" x2="21" y2="6"></line>
+							<line x1="8" y1="12" x2="21" y2="12"></line>
+							<line x1="8" y1="18" x2="21" y2="18"></line>
+							<line x1="3" y1="6" x2="3.01" y2="6"></line>
+							<line x1="3" y1="12" x2="3.01" y2="12"></line>
+							<line x1="3" y1="18" x2="3.01" y2="18"></line>
 						</svg>
 					</button>
 				{:else if id === 'edit'}

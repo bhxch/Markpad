@@ -19,6 +19,12 @@
 		metadata: string;
 	};
 
+	type TocItem = {
+		id: string;
+		level: number;
+		text: string;
+	};
+
 	// syntax highlighting & latex
 	let hljs: any = $state(null);
 	let renderMathInElement: any = $state(null);
@@ -35,6 +41,9 @@
 	
 	let metadata = $state('');
 	let showMetadata = $state(false);
+
+	let toc = $state<TocItem[]>([]);
+	let showToc = $state(false);
 
 	let isDragging = $state(false);
 	let isProgrammaticScroll = false;
@@ -276,6 +285,39 @@
 			throwOnError: false,
 		});
 	}
+
+	function refreshToc() {
+		if (!markdownBody) return;
+		const headers = Array.from(markdownBody.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+		toc = headers.map((h, index) => {
+			if (!h.id) h.id = `header-${index}`;
+			return {
+				id: h.id,
+				level: parseInt(h.tagName.substring(1)),
+				text: h.textContent || '',
+			};
+		});
+	}
+
+	function scrollToHeader(id: string) {
+		if (!markdownBody || !id) return;
+		const el = document.getElementById(id);
+		if (el) {
+			const containerRect = markdownBody.getBoundingClientRect();
+			const elRect = el.getBoundingClientRect();
+			markdownBody.scrollTo({
+				top: elRect.top - containerRect.top + markdownBody.scrollTop - 20,
+				behavior: 'smooth',
+			});
+		}
+	}
+
+	$effect(() => {
+		if (showToc) {
+			// 只有在显示 TOC 侧边栏时才解析 DOM
+			untrack(() => refreshToc());
+		}
+	});
 
 	$effect(() => {
 		if (htmlContent && markdownBody && !isEditing && hljs && renderMathInElement) renderRichContent();
@@ -1154,12 +1196,32 @@
 		ontoggleSync={() => tabManager.activeTabId && tabManager.toggleScrollSync(tabManager.activeTabId)}
 		ontoggleMetadata={() => (showMetadata = !showMetadata)}
 		{showMetadata}
-		hasMetadata={!!metadata} />
+		hasMetadata={!!metadata}
+		ontoggleToc={() => (showToc = !showToc)}
+		{showToc} />
 
 	{#if tabManager.activeTab && (tabManager.activeTab.path !== '' || tabManager.activeTab.title !== 'Recents') && !showHome}
 		{#key tabManager.activeTabId}
 			<div class="markdown-container" style="zoom: {isEditing && !isSplit ? 1 : zoomLevel / 100}" onwheel={handleWheel} role="presentation">
-				<div class="layout-container" class:split={isSplit} class:editing={isEditing}>
+				<div class="layout-container" class:split={isSplit} class:editing={isEditing} class:has-toc={showToc && toc.length > 0}>
+					<!-- TOC Sidebar -->
+					{#if showToc && toc.length > 0}
+						<div class="pane toc-sidebar" transition:fly={{ x: -20, duration: 250 }}>
+							<div class="toc-title">ON THIS PAGE</div>
+							<div class="toc-list">
+								{#each toc as item}
+									<!-- svelte-ignore a11y_click_events_have_key_events -->
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<div
+										class="toc-item level-{item.level}"
+										onclick={() => scrollToHeader(item.id)}>
+										{item.text}
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+
 					<!-- Editor Pane -->
 					<div class="pane editor-pane" class:active={isEditing || isSplit} style="flex: {isSplit ? tabManager.activeTab.splitRatio : isEditing ? 1 : 0}">
 						{#if isEditing || isSplit}
@@ -1561,4 +1623,51 @@
 		margin: 0;
 		white-space: pre-wrap;
 	}
+
+	.toc-sidebar {
+		width: 240px;
+		flex: 0 0 240px !important;
+		border-right: 1px solid var(--color-border-default);
+		background: var(--color-canvas-subtle);
+		display: flex;
+		flex-direction: column;
+		padding: 20px 0;
+		z-index: 10;
+	}
+
+	.toc-title {
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--color-fg-muted);
+		padding: 0 20px 12px;
+		letter-spacing: 0.05em;
+	}
+
+	.toc-list {
+		overflow-y: auto;
+		flex: 1;
+	}
+
+	.toc-item {
+		padding: 6px 20px;
+		font-size: 13px;
+		color: var(--color-fg-muted);
+		cursor: pointer;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		transition: all 0.1s;
+	}
+
+	.toc-item:hover {
+		background: var(--color-canvas-default);
+		color: var(--color-fg-default);
+	}
+
+	.toc-item.level-1 { font-weight: 600; }
+	.toc-item.level-2 { padding-left: 32px; }
+	.toc-item.level-3 { padding-left: 44px; }
+	.toc-item.level-4 { padding-left: 56px; }
+	.toc-item.level-5 { padding-left: 68px; }
+	.toc-item.level-6 { padding-left: 80px; }
 </style>
