@@ -6,6 +6,7 @@
 	import iconUrl from '../../assets/icon.png';
 	import TabList from './TabList.svelte';
 	import { tabManager } from '../stores/tabs.svelte.js';
+	import { settings } from '../stores/settings.svelte.js';
 
 	let {
 		isFocused,
@@ -148,8 +149,16 @@
 				}
 			}
 		}
+		list.push('theme_scheme');
 		return list;
 	});
+
+	function cycleThemeScheme() {
+		const schemes = settings.themes.map(t => t.id);
+		const currentIdx = schemes.indexOf(settings.themeScheme);
+		const nextIdx = (currentIdx + 1) % schemes.length;
+		settings.setThemeScheme(schemes[nextIdx]);
+	}
 </script>
 
 <div class="custom-title-bar {isScrolled ? 'scrolled' : ''} {!isMac ? 'windows' : ''}">
@@ -292,6 +301,16 @@
 							<line x1="3" y1="12" x2="3.01" y2="12"></line>
 							<line x1="3" y1="18" x2="3.01" y2="18"></line>
 						</svg>
+					</button>
+				{:else if id === 'theme_scheme'}
+					<button
+						class="title-action-btn"
+						onclick={cycleThemeScheme}
+						aria-label="Change Theme Scheme"
+						onmouseenter={(e) => showTooltip(e, `Scheme: ${settings.themeScheme}`)}
+						onmouseleave={hideTooltip}
+						transition:fly={{ x: 10, duration: 200 }}>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.688-1.688h1.938c3.105 0 5.625-2.52 5.625-5.625 0-4.62-4.62-8.75-10-8.75Z"/></svg>
 					</button>
 				{:else if id === 'edit'}
 					<button

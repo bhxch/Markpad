@@ -89,14 +89,19 @@
 	}
 
 	.tab.active {
-		background-color: var(--tab-active-bg, #dee1e6);
+		background-color: var(--color-canvas-subtle);
 		color: var(--color-fg-default);
 	}
 
-	@media (prefers-color-scheme: dark) {
-		.tab.active {
-			--tab-active-bg: #2d2e30;
-		}
+	.tab.active::after {
+		content: "";
+		position: absolute;
+		bottom: 2px;
+		left: 12px;
+		right: 12px;
+		height: 2px;
+		background-color: var(--color-accent-fg);
+		border-radius: 2px;
 	}
 
 	.tab-content-btn {

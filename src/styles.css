@@ -20,7 +20,8 @@ body {
 	border-radius: 8px !important;
 }
 
-:root {
+:root,
+:root[data-theme-mode="light"][data-theme-scheme="github-light"] {
 	--win-font: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
 
 	/* Default Light Theme */
@@ -55,8 +56,163 @@ body {
 	--hljs-type: #953800;
 }
 
+:root[data-theme-mode="dark"][data-theme-scheme="github-dark"] {
+	--color-fg-default: #e6edf3;
+	--color-fg-muted: #848d97;
+	--color-fg-subtle: #6e7681;
+	--color-canvas-default: #181818;
+	--color-canvas-subtle: #ffffff11;
+	--color-border-default: #30363d;
+	--color-border-muted: #21262d;
+	--color-neutral-muted: rgba(255, 255, 255, 0.05);
+	--color-accent-fg: #4390fc;
+	--color-accent-emphasis: #3781f0;
+	--color-success-fg: #3fb950;
+	--color-success-emphasis: #238636;
+	--color-attention-fg: #d29922;
+	--color-attention-emphasis: #9e6a03;
+	--color-attention-subtle: rgba(187, 128, 9, 0.15);
+	--color-danger-fg: #f85149;
+	--color-danger-emphasis: #da3633;
+	--color-done-fg: #a371f7;
+	--color-done-emphasis: #8957e5;
+	--color-window-border-top: #3E3E3E;
+
+	/* Dark Syntax Highlighting */
+	--hljs-bg: #0d1117;
+	--hljs-comment: #8b949e;
+	--hljs-keyword: #ff7b72;
+	--hljs-string: #a5d6ff;
+	--hljs-title: #d2a8ff;
+	--hljs-variable: #ffa657;
+	--hljs-type: #ff7b72;
+}
+
+/* One Dark Theme (Dark Only, Light falls back to Github) */
+:root[data-theme-mode="dark"][data-theme-scheme="one-dark"] {
+	--color-fg-default: #abb2bf;
+	--color-fg-muted: #828997;
+	--color-fg-subtle: #5c6370;
+	--color-canvas-default: #282c34;
+	--color-canvas-subtle: #21252b;
+	--color-border-default: #181a1f;
+	--color-border-muted: #3e4451;
+	--color-accent-fg: #61afef;
+	--color-accent-emphasis: #528bff;
+	--color-success-fg: #98c379;
+	--color-success-emphasis: #98c379;
+	--color-attention-fg: #e5c07b;
+	--color-attention-emphasis: #e5c07b;
+	--color-danger-fg: #e06c75;
+	--color-done-fg: #c678dd;
+	--color-window-border-top: #181a1f;
+
+	--hljs-bg: #282c34;
+	--hljs-comment: #5c6370;
+	--hljs-keyword: #c678dd;
+	--hljs-string: #98c379;
+	--hljs-title: #61afef;
+	--hljs-variable: #e5c07b;
+	--hljs-type: #d19a66;
+}
+
+:root[data-theme-mode="light"][data-theme-scheme="one-dark"] {
+	/* Use GitHub Light for One Dark Light variant */
+	--color-fg-default: #1f2328;
+	--color-canvas-default: #FDFDFD;
+}
+
+/* Monokai Theme */
+:root[data-theme-mode="dark"][data-theme-scheme="monokai"] {
+	--color-fg-default: #f8f8f2;
+	--color-fg-muted: #cfcfc2;
+	--color-canvas-default: #272822;
+	--color-canvas-subtle: #1e1f1c;
+	--color-border-default: #49483e;
+	--color-accent-fg: #a6e22e;
+	--color-success-fg: #a6e22e;
+	--color-attention-fg: #e6db74;
+	--color-danger-fg: #f92672;
+	--color-done-fg: #ae81ff;
+
+	--hljs-bg: #272822;
+	--hljs-comment: #75715e;
+	--hljs-keyword: #f92672;
+	--hljs-string: #e6db74;
+	--hljs-title: #a6e22e;
+	--hljs-variable: #fd971f;
+	--hljs-type: #66d9ef;
+}
+
+/* Nord Theme */
+:root[data-theme-mode="dark"][data-theme-scheme="nord"] {
+	--color-fg-default: #d8dee9;
+	--color-fg-muted: #e5e9f0;
+	--color-canvas-default: #2e3440;
+	--color-canvas-subtle: #3b4252;
+	--color-border-default: #434c5e;
+	--color-accent-fg: #88c0d0;
+	--color-success-fg: #a3be8c;
+	--color-attention-fg: #ebcb8b;
+	--color-danger-fg: #bf616a;
+	--color-done-fg: #b48ead;
+
+	--hljs-bg: #2e3440;
+	--hljs-comment: #4c566a;
+	--hljs-keyword: #81a1c1;
+	--hljs-string: #a3be8c;
+	--hljs-title: #88c0d0;
+	--hljs-variable: #d8dee9;
+	--hljs-type: #8fbcbb;
+}
+
+/* Solarized Dark */
+:root[data-theme-mode="dark"][data-theme-scheme="solarized"] {
+	--color-fg-default: #839496;
+	--color-fg-muted: #93a1a1;
+	--color-canvas-default: #002b36;
+	--color-canvas-subtle: #073642;
+	--color-border-default: #586e75;
+	--color-accent-fg: #268bd2;
+	--color-success-fg: #859900;
+	--color-attention-fg: #b58900;
+	--color-danger-fg: #dc322f;
+	--color-done-fg: #6c71c4;
+
+	--hljs-bg: #002b36;
+	--hljs-comment: #586e75;
+	--hljs-keyword: #859900;
+	--hljs-string: #2aa198;
+	--hljs-title: #268bd2;
+	--hljs-variable: #cb4b16;
+	--hljs-type: #b58900;
+}
+
+/* Vue Theme (Light) */
+:root[data-theme-mode="light"][data-theme-scheme="vue"] {
+	--color-fg-default: #2c3e50;
+	--color-fg-muted: #476582;
+	--color-fg-subtle: #90a4ae;
+	--color-canvas-default: #ffffff;
+	--color-canvas-subtle: #f6f8fa;
+	--color-border-default: #eaecef;
+	--color-accent-fg: #42b883;
+	--color-accent-emphasis: #3eaf7c;
+	--color-success-fg: #42b883;
+	--color-danger-fg: #e06c75;
+	--color-done-fg: #35495e;
+
+	--hljs-bg: #f8f8f8;
+	--hljs-comment: #90a4ae;
+	--hljs-keyword: #42b883;
+	--hljs-string: #3eaf7c;
+	--hljs-title: #2c3e50;
+	--hljs-variable: #35495e;
+	--hljs-type: #42b883;
+}
+
 @media (prefers-color-scheme: dark) {
-	:root {
+	:root:not([data-theme-mode]) {
 		--color-fg-default: #e6edf3;
 		--color-fg-muted: #848d97;
 		--color-fg-subtle: #6e7681;
