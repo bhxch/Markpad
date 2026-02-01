@@ -30,6 +30,9 @@
 		oncloseTab,
 		isScrollSynced,
 		ontoggleSync,
+		ontoggleMetadata,
+		showMetadata,
+		hasMetadata,
 	} = $props<{
 		isFocused: boolean;
 		isScrolled: boolean;
@@ -54,6 +57,9 @@
 		oncloseTab?: (id: string) => void;
 		isScrollSynced?: boolean;
 		ontoggleSync?: () => void;
+		ontoggleMetadata?: () => void;
+		showMetadata?: boolean;
+		hasMetadata?: boolean;
 	}>();
 
 	const appWindow = getCurrentWindow();
@@ -128,6 +134,9 @@
 					list.push('sync');
 				} else if (!isEditing) {
 					list.push('live');
+				}
+				if (hasMetadata) {
+					list.push('metadata');
 				}
 				if (!tabManager.activeTab?.isSplit) {
 					list.push('edit');
@@ -245,6 +254,22 @@
 						transition:fly={{ x: 10, duration: 200 }}>
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
 							><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0z" /><circle cx="12" cy="12" r="3" /></svg>
+					</button>
+				{:else if id === 'metadata'}
+					<button
+						class="title-action-btn {showMetadata ? 'active' : ''}"
+						onclick={ontoggleMetadata}
+						aria-label="Toggle Metadata"
+						onmouseenter={(e) => showTooltip(e, 'Metadata')}
+						onmouseleave={hideTooltip}
+						transition:fly={{ x: 10, duration: 200 }}>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+							<polyline points="14 2 14 8 20 8"></polyline>
+							<line x1="16" y1="13" x2="8" y2="13"></line>
+							<line x1="16" y1="17" x2="8" y2="17"></line>
+							<polyline points="10 9 9 9 8 9"></polyline>
+						</svg>
 					</button>
 				{:else if id === 'edit'}
 					<button

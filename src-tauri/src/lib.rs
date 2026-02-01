@@ -5,7 +5,13 @@ use std::path::Path;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::menu::ContextMenu;
+use serde::Serialize;
 
+#[derive(Serialize)]
+struct MarkdownResponse {
+    html: String,
+    metadata: String,
+}
 
 struct WatcherState {
     watcher: Mutex<Option<RecommendedWatcher>>,
@@ -19,6 +25,38 @@ mod setup;
 #[tauri::command]
 async fn show_window(window: tauri::Window) {
     window.show().unwrap();
+}
+
+fn split_frontmatter(text: &str) -> (&str, String) {
+    if text.starts_with("---") {
+        // Find the end delimiter (---) starting from index 3
+        // We look for "\n---" to ensure it's on a new line
+        if let Some(end) = text[3..].find("\n---") {
+            // The end index is relative to text[3..], so we add 3
+            // The actual content ends at end + 3
+            let metadata_end = end + 3;
+            // The YAML content is between the first --- and the second ---
+            let metadata = text[3..metadata_end].trim().to_string();
+            
+            // The rest of the content starts after "\n---"
+            // \n--- is 4 chars.
+            // We need to check if there is a newline after the closing ---
+            let content_start = if text[metadata_end..].starts_with("\n---\r\n") {
+                 metadata_end + 5 // \n---\r\n
+            } else if text[metadata_end..].starts_with("\n---\n") {
+                 metadata_end + 5 // \n---\n
+            } else {
+                 metadata_end + 4 // Just \n--- (EOF or immediate text)
+            };
+
+            if content_start < text.len() {
+                return (&text[content_start..], metadata);
+            } else {
+                return ("", metadata);
+            }
+        }
+    }
+    (text, String::new())
 }
 
 #[tauri::command]
@@ -44,14 +82,22 @@ fn convert_markdown(content: &str) -> String {
 }
 
 #[tauri::command]
-fn open_markdown(path: String) -> Result<String, String> {
+fn open_markdown(path: String) -> Result<MarkdownResponse, String> {
     let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    Ok(convert_markdown(&content))
+    let (body, metadata) = split_frontmatter(&content);
+    Ok(MarkdownResponse {
+        html: convert_markdown(body),
+        metadata,
+    })
 }
 
 #[tauri::command]
-fn render_markdown(content: String) -> String {
-    convert_markdown(&content)
+fn render_markdown(content: String) -> MarkdownResponse {
+    let (body, metadata) = split_frontmatter(&content);
+    MarkdownResponse {
+        html: convert_markdown(body),
+        metadata,
+    }
 }
 
 #[tauri::command]

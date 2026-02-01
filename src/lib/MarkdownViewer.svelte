@@ -14,6 +14,11 @@
 	import HomePage from './components/HomePage.svelte';
 	import { tabManager } from './stores/tabs.svelte.js';
 
+	type MarkdownResponse = {
+		html: string;
+		metadata: string;
+	};
+
 	// syntax highlighting & latex
 	let hljs: any = $state(null);
 	let renderMathInElement: any = $state(null);
@@ -27,6 +32,9 @@
 	let isFocused = $state(true);
 	let markdownBody = $state<HTMLElement | null>(null);
 	let liveMode = $state(false);
+	
+	let metadata = $state('');
+	let showMetadata = $state(false);
 
 	let isDragging = $state(false);
 	let isProgrammaticScroll = false;
@@ -218,9 +226,10 @@
 
 			if (isMarkdown) {
 				if (tab) tab.isEditing = false;
-				const html = (await invoke('open_markdown', { path: filePath })) as string;
-				const processedInfo = processMarkdownHtml(html, filePath);
+				const res = (await invoke('open_markdown', { path: filePath })) as MarkdownResponse;
+				const processedInfo = processMarkdownHtml(res.html, filePath);
 				tabManager.updateTabContent(activeId, processedInfo);
+				metadata = res.metadata;
 			} else {
 				if (tab) tab.isEditing = true;
 				const content = (await invoke('read_file_content', { path: filePath })) as string;
@@ -709,9 +718,11 @@
 			clearTimeout(debounceTimer);
 			debounceTimer = setTimeout(() => {
 				invoke('render_markdown', { content: tab.rawContent })
-					.then((html) => {
-						const processed = processMarkdownHtml(html as string, tab.path);
+					.then((res) => {
+						const response = res as MarkdownResponse;
+						const processed = processMarkdownHtml(response.html, tab.path);
 						tabManager.updateTabContent(tab.id, processed);
+						metadata = response.metadata;
 						tick().then(renderRichContent);
 					})
 					.catch(console.error);
@@ -1140,7 +1151,10 @@
 			});
 		}}
 		{isScrollSynced}
-		ontoggleSync={() => tabManager.activeTabId && tabManager.toggleScrollSync(tabManager.activeTabId)} />
+		ontoggleSync={() => tabManager.activeTabId && tabManager.toggleScrollSync(tabManager.activeTabId)}
+		ontoggleMetadata={() => (showMetadata = !showMetadata)}
+		{showMetadata}
+		hasMetadata={!!metadata} />
 
 	{#if tabManager.activeTab && (tabManager.activeTab.path !== '' || tabManager.activeTab.title !== 'Recents') && !showHome}
 		{#key tabManager.activeTabId}
@@ -1179,6 +1193,18 @@
 						<article bind:this={markdownBody} contenteditable="false" class="markdown-body" bind:innerHTML={htmlContent} onscroll={handleScroll}></article>
 					</div>
 				</div>
+				
+				{#if showMetadata && metadata}
+					<div class="metadata-popup" transition:fly={{ y: -10, duration: 200 }}>
+						<div class="metadata-content">
+							{#if hljs}
+								<pre><code class="language-yaml">{@html hljs.highlight(metadata, { language: 'yaml' }).value}</code></pre>
+							{:else}
+								<pre>{metadata}</pre>
+							{/if}
+						</div>
+					</div>
+				{/if}
 			</div>
 		{/key}
 	{:else}
@@ -1506,5 +1532,33 @@
 		/* Legacy mapping */
 		width: 100%;
 		height: 100%;
+	}
+
+	.metadata-popup {
+		position: absolute;
+		top: 48px;
+		right: 24px;
+		width: 400px;
+		max-height: 400px;
+		background: var(--color-canvas-overlay);
+		border: 1px solid var(--color-border-default);
+		border-radius: 8px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+		z-index: 1000;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+
+	.metadata-content {
+		padding: 16px;
+		overflow-y: auto;
+		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-size: 13px;
+	}
+
+	.metadata-content pre {
+		margin: 0;
+		white-space: pre-wrap;
 	}
 </style>
