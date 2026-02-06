@@ -14,6 +14,7 @@
 	import HomePage from './components/HomePage.svelte';
 	import { tabManager } from './stores/tabs.svelte.js';
 	import { settings } from './stores/settings.svelte.js';
+	import { createKrokiUrl, SUPPORTED_DIAGRAMS } from './kroki';
 
 	type MarkdownResponse = {
 		html: string;
@@ -280,6 +281,32 @@
 				}
 			}
 		}
+
+		// Kroki Rendering
+		markdownBody.querySelectorAll('pre code').forEach((block) => {
+			const classes = Array.from(block.classList);
+			const langClass = classes.find((c) => c.startsWith('language-'));
+			if (langClass) {
+				const lang = langClass.replace('language-', '').toLowerCase();
+				if (SUPPORTED_DIAGRAMS.includes(lang)) {
+					const pre = block.parentElement;
+					if (pre && pre.tagName === 'PRE') {
+						const url = createKrokiUrl(lang, block.textContent || '');
+						const img = document.createElement('img');
+						img.src = url;
+						img.className = 'kroki-chart';
+						img.alt = `${lang} diagram`;
+						
+						// Create wrapper for better styling/scroll
+						const wrapper = document.createElement('div');
+						wrapper.className = 'kroki-container';
+						wrapper.appendChild(img);
+						
+						pre.replaceWith(wrapper);
+					}
+				}
+			}
+		});
 
 		if (!hljs || !renderMathInElement) return;
 

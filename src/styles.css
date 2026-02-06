@@ -998,5 +998,29 @@ body {
 
 .split-bar:hover,
 .split-bar:active {
-	background-color: var(--color-accent-fg);
-}
+		background-color: var(--color-accent-fg);
+	}
+	
+	/* Kroki Charts */
+	.kroki-container {
+		display: flex;
+		justify-content: center;
+		overflow-x: auto;
+		margin: 1.5em 0;
+		padding: 10px;
+		background-color: var(--color-canvas-default);
+		border-radius: 6px;
+	}
+	
+	.kroki-chart {
+		max-width: 100%;
+		height: auto;
+	}
+	
+	/* Dark mode inversion for Kroki charts */
+	:root[data-theme-mode="dark"] .kroki-chart {
+		filter: invert(1) hue-rotate(180deg);
+		/* Optional: slightly dim to reduce glare */
+		opacity: 0.9;
+	}
+	
