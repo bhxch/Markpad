@@ -13,6 +13,7 @@
 
 	import HomePage from './components/HomePage.svelte';
 	import { tabManager } from './stores/tabs.svelte.js';
+	import { settings } from './stores/settings.svelte.js';
 
 	type MarkdownResponse = {
 		html: string;
@@ -343,7 +344,26 @@
 	});
 
 	$effect(() => {
-		if (htmlContent && markdownBody && !isEditing && hljs && renderMathInElement) renderRichContent();
+		const _scheme = settings.themeScheme; // 依赖主题变化
+		if (htmlContent && markdownBody && !isEditing && hljs && renderMathInElement && mermaid) {
+			// 1. 确定 Mermaid 主题
+			const currentThemeObj = settings.themes.find((t) => t.id === settings.themeScheme);
+			const mode = currentThemeObj ? currentThemeObj.mode : 'light';
+			const mTheme = mode === 'dark' ? 'dark' : 'default';
+
+			// 2. 初始化 Mermaid
+			mermaid.initialize({
+				startOnLoad: false,
+				theme: mTheme,
+				securityLevel: 'loose',
+			});
+
+			// 3. 重置 DOM (因为 renderRichContent 会破坏性修改 DOM，如 mermaid 替换文本为 SVG)
+			markdownBody.innerHTML = htmlContent;
+
+			// 4. 执行渲染
+			renderRichContent();
+		}
 	});
 
 	$effect(() => {
@@ -973,7 +993,7 @@
 				mermaid = mermaidModule.default;
 				mermaid.initialize({
 					startOnLoad: false,
-					theme: 'neutral',
+					theme: 'default',
 					securityLevel: 'loose',
 				});
 			},
