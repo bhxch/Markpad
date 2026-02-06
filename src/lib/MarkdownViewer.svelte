@@ -28,6 +28,7 @@
 	// syntax highlighting & latex
 	let hljs: any = $state(null);
 	let renderMathInElement: any = $state(null);
+	let mermaid: any = $state(null);
 
 	import 'highlight.js/styles/github-dark.css';
 	import 'katex/dist/katex.min.css';
@@ -256,6 +257,28 @@
 
 	async function renderRichContent() {
 		if (!markdownBody) return;
+
+		if (mermaid) {
+			const mermaidBlocks = markdownBody.querySelectorAll('pre code.language-mermaid');
+			if (mermaidBlocks.length > 0) {
+				mermaidBlocks.forEach((block) => {
+					const pre = block.parentElement;
+					if (pre && pre.tagName === 'PRE') {
+						const div = document.createElement('div');
+						div.className = 'mermaid';
+						div.textContent = block.textContent || '';
+						pre.replaceWith(div);
+					}
+				});
+				try {
+					await mermaid.run({
+						nodes: markdownBody.querySelectorAll('.mermaid'),
+					});
+				} catch (e) {
+					console.error('Mermaid render error:', e);
+				}
+			}
+		}
 
 		if (!hljs || !renderMathInElement) return;
 
@@ -943,10 +966,18 @@
 		loadRecentFiles();
 
 		// @ts-ignore
-		Promise.all([import('highlight.js'), import('katex/dist/contrib/auto-render')]).then(([hljsModule, katexModule]) => {
-			hljs = hljsModule.default;
-			renderMathInElement = katexModule.default;
-		});
+		Promise.all([import('highlight.js'), import('katex/dist/contrib/auto-render'), import('mermaid')]).then(
+			([hljsModule, katexModule, mermaidModule]) => {
+				hljs = hljsModule.default;
+				renderMathInElement = katexModule.default;
+				mermaid = mermaidModule.default;
+				mermaid.initialize({
+					startOnLoad: false,
+					theme: 'neutral',
+					securityLevel: 'loose',
+				});
+			},
+		);
 
 		let unlisteners: (() => void)[] = [];
 
