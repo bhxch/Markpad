@@ -5,6 +5,7 @@
 	import { flip } from 'svelte/animate';
 	import iconUrl from '../../assets/icon.png';
 	import TabList from './TabList.svelte';
+	import MoreMenu from './MoreMenu.svelte';
 	import { tabManager } from '../stores/tabs.svelte.js';
 	import { settings } from '../stores/settings.svelte.js';
 
@@ -75,6 +76,7 @@
 	const isMac = typeof navigator !== 'undefined' && (navigator.userAgent.includes('Macintosh') || DEBUG_MACOS);
 
 	let isWin11 = $state(false);
+	let showMoreMenu = $state(false);
 
 	$effect(() => {
 		invoke('is_win11')
@@ -96,6 +98,8 @@
 	});
 
 	function showTooltip(e: MouseEvent, text: string, shortcutKey: string = '') {
+		if (showMoreMenu) return; // Don't show tooltip if menu is open
+		
 		const target = e.currentTarget as HTMLElement;
 		const rect = target.getBoundingClientRect();
 		const modifier = isMac ? 'Cmd' : 'Ctrl';
@@ -124,40 +128,147 @@
 		tooltip.visible = false;
 	}
 
-	let visibleActionIds = $derived.by(() => {
-		const list: string[] = [];
-		if (zoomLevel && zoomLevel !== 100) list.push('zoom');
-
-		if (currentFile && !showHome) {
-			list.push('open_loc');
-			const ext = currentFile.split('.').pop()?.toLowerCase() || '';
-			const isMarkdown = ['md', 'markdown', 'mdown', 'mkd'].includes(ext);
-
-			if (isMarkdown) {
-				list.push('split');
-				if (tabManager.activeTab?.isSplit) {
-					list.push('sync');
-				} else if (!isEditing) {
-					list.push('live');
-				}
-				if (hasMetadata) {
-					list.push('metadata');
-				}
-				list.push('toc');
-				if (!tabManager.activeTab?.isSplit) {
-					list.push('edit');
-				}
-			}
-		}
-		list.push('theme_scheme');
-		return list;
-	});
-
 	function cycleThemeScheme() {
 		const schemes = settings.themes.map(t => t.id);
 		const currentIdx = schemes.indexOf(settings.themeScheme);
 		const nextIdx = (currentIdx + 1) % schemes.length;
 		settings.setThemeScheme(schemes[nextIdx]);
+	}
+
+	// Definition of all possible actions
+	type ActionDef = {
+		id: string;
+		label: string;
+		icon: string; // SVG string
+		handler: () => void;
+		isActive?: boolean;
+		shortcut?: string;
+	};
+
+	let allActions = $derived.by(() => {
+		const actions: Record<string, ActionDef> = {};
+
+		if (zoomLevel && zoomLevel !== 100) {
+			actions['zoom'] = {
+				id: 'zoom',
+				label: `Reset Zoom (${zoomLevel}%)`,
+				icon: `<span style="font-size:11px;font-weight:600">${zoomLevel}%</span>`, // Special case for zoom text
+				handler: () => onresetZoom?.()
+			};
+		}
+
+		if (currentFile && !showHome) {
+			actions['open_loc'] = {
+				id: 'open_loc',
+				label: 'Open File Location',
+				icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><polyline points="15 13 18 13 18 10"></polyline><line x1="14" y1="14" x2="18" y2="10"></line></svg>`,
+				handler: ononpenFileLocation
+			};
+
+			const ext = currentFile.split('.').pop()?.toLowerCase() || '';
+			const isMarkdown = ['md', 'markdown', 'mdown', 'mkd'].includes(ext);
+
+			if (isMarkdown) {
+				actions['split'] = {
+					id: 'split',
+					label: 'Toggle Split View',
+					icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line><rect x="13" y="2" width="9" height="20" rx="2" ry="2" transform="rotate(0 13 2)"></rect></svg>`,
+					handler: () => ontoggleSplit?.(),
+					isActive: tabManager.activeTab?.isSplit,
+					shortcut: 'H'
+				};
+
+				if (tabManager.activeTab?.isSplit) {
+					actions['sync'] = {
+						id: 'sync',
+						label: 'Toggle Scroll Sync',
+						icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>`,
+						handler: () => ontoggleSync?.(),
+						isActive: isScrollSynced
+					};
+				} else if (!isEditing) {
+					actions['live'] = {
+						id: 'live',
+						label: 'Toggle Live Mode',
+						icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0z" /><circle cx="12" cy="12" r="3" /></svg>`,
+						handler: ontoggleLiveMode,
+						isActive: liveMode
+					};
+				}
+
+				if (hasMetadata) {
+					actions['metadata'] = {
+						id: 'metadata',
+						label: 'Toggle Metadata',
+						icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`,
+						handler: () => ontoggleMetadata?.(),
+						isActive: showMetadata
+					};
+				}
+
+				actions['toc'] = {
+					id: 'toc',
+					label: 'Toggle Table of Contents',
+					icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>`,
+					handler: () => ontoggleToc?.(),
+					isActive: showToc
+				};
+
+				if (!tabManager.activeTab?.isSplit) {
+					actions['edit'] = {
+						id: 'edit',
+						label: 'Edit File',
+						icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>`,
+						handler: ontoggleEdit,
+						isActive: isEditing,
+						shortcut: 'E'
+					};
+				}
+			}
+		}
+
+		actions['theme_scheme'] = {
+			id: 'theme_scheme',
+			label: `Theme: ${settings.themeScheme}`,
+			icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.688-1.688h1.938c3.105 0 5.625-2.52 5.625-5.625 0-4.62-4.62-8.75-10-8.75Z"/></svg>`,
+			handler: cycleThemeScheme
+		};
+
+		return actions;
+	});
+
+	let visibleActions = $derived.by(() => {
+		const result: ActionDef[] = [];
+		// 1. Zoom is always visible if active
+		if (allActions['zoom']) result.push(allActions['zoom']);
+
+		// 2. Iterate through visible layout preference
+		settings.toolbarLayout.visible.forEach(id => {
+			if (allActions[id] && id !== 'zoom') {
+				result.push(allActions[id]);
+			}
+		});
+		
+		return result;
+	});
+
+	let hiddenActions = $derived.by(() => {
+		const result: ActionDef[] = [];
+		// Iterate through hidden layout preference
+		settings.toolbarLayout.hidden.forEach(id => {
+			if (allActions[id] && id !== 'zoom') {
+				result.push(allActions[id]);
+			}
+		});
+		// Also add any actions that exist but aren't in either list (defaults to hidden or visible? Let's say visible to be safe, but here we check orphans)
+		// Actually, constructor ensures all known IDs are in the list. Dynamic IDs like zoom are handled separately.
+		return result;
+	});
+
+	function handleActionMove(e: MouseEvent, id: string, target: 'visible' | 'hidden') {
+		e.preventDefault();
+		settings.moveToolbarAction(id, target);
+		showMoreMenu = false;
 	}
 </script>
 
@@ -200,132 +311,55 @@
 	{/if}
 
 	<div class="title-actions" data-tauri-drag-region>
-		{#each visibleActionIds as id (id)}
+		{#each visibleActions as action (action.id)}
 			<div animate:flip={{ duration: 250 }} class="action-btn-wrapper">
-				{#if id === 'zoom'}
+				{#if action.id === 'zoom'}
 					<button
 						class="zoom-indicator"
-						onclick={onresetZoom}
+						onclick={action.handler}
 						transition:fly={{ y: -10, duration: 150 }}
-						aria-label="Reset Zoom"
-						onmouseenter={(e) => showTooltip(e, 'Reset zoom')}
+						aria-label={action.label}
+						onmouseenter={(e) => showTooltip(e, action.label)}
 						onmouseleave={hideTooltip}>
-						{zoomLevel}%
+						{@html action.icon}
 					</button>
-				{:else if id === 'open_loc'}
+				{:else}
 					<button
-						class="title-action-btn"
-						onclick={ononpenFileLocation}
-						aria-label="Open File Location"
-						onmouseenter={(e) => showTooltip(e, 'Open file location')}
+						class="title-action-btn {action.isActive ? 'active' : ''}"
+						onclick={action.handler}
+						oncontextmenu={(e) => handleActionMove(e, action.id, 'hidden')}
+						aria-label={action.label}
+						onmouseenter={(e) => showTooltip(e, action.label, action.shortcut)}
 						onmouseleave={hideTooltip}
 						transition:fly={{ x: 10, duration: 200 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-							><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><polyline points="15 13 18 13 18 10"></polyline><line
-								x1="14"
-								y1="14"
-								x2="18"
-								y2="10"></line
-							></svg>
-					</button>
-				{:else if id === 'split'}
-					<button
-						class="title-action-btn {tabManager.activeTab?.isSplit ? 'active' : ''}"
-						onclick={() => ontoggleSplit?.()}
-						aria-label="Toggle Split View"
-						onmouseenter={(e) => showTooltip(e, 'Split view', 'H')}
-						onmouseleave={hideTooltip}
-						transition:fly={{ x: 10, duration: 200 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-							><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line><rect
-								x="13"
-								y="2"
-								width="9"
-								height="20"
-								rx="2"
-								ry="2"
-								transform="rotate(0 13 2)"></rect
-							></svg>
-					</button>
-				{:else if id === 'sync'}
-					<button
-						class="title-action-btn {isScrollSynced ? 'active' : ''}"
-						onclick={() => ontoggleSync?.()}
-						aria-label="Toggle Scroll Sync"
-						onmouseenter={(e) => showTooltip(e, 'Scroll sync')}
-						onmouseleave={hideTooltip}
-						transition:fly={{ x: 10, duration: 200 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-							><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-					</button>
-				{:else if id === 'live'}
-					<button
-						class="title-action-btn {liveMode ? 'active' : ''}"
-						onclick={ontoggleLiveMode}
-						aria-label="Toggle Live Mode "
-						onmouseenter={(e) => showTooltip(e, 'Watcher mode')}
-						onmouseleave={hideTooltip}
-						transition:fly={{ x: 10, duration: 200 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-							><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0z" /><circle cx="12" cy="12" r="3" /></svg>
-					</button>
-				{:else if id === 'metadata'}
-					<button
-						class="title-action-btn {showMetadata ? 'active' : ''}"
-						onclick={ontoggleMetadata}
-						aria-label="Toggle Metadata"
-						onmouseenter={(e) => showTooltip(e, 'Metadata')}
-						onmouseleave={hideTooltip}
-						transition:fly={{ x: 10, duration: 200 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-							<polyline points="14 2 14 8 20 8"></polyline>
-							<line x1="16" y1="13" x2="8" y2="13"></line>
-							<line x1="16" y1="17" x2="8" y2="17"></line>
-							<polyline points="10 9 9 9 8 9"></polyline>
-						</svg>
-					</button>
-				{:else if id === 'toc'}
-					<button
-						class="title-action-btn {showToc ? 'active' : ''}"
-						onclick={ontoggleToc}
-						aria-label="Toggle TOC"
-						onmouseenter={(e) => showTooltip(e, 'Table of Contents')}
-						onmouseleave={hideTooltip}
-						transition:fly={{ x: 10, duration: 200 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<line x1="8" y1="6" x2="21" y2="6"></line>
-							<line x1="8" y1="12" x2="21" y2="12"></line>
-							<line x1="8" y1="18" x2="21" y2="18"></line>
-							<line x1="3" y1="6" x2="3.01" y2="6"></line>
-							<line x1="3" y1="12" x2="3.01" y2="12"></line>
-							<line x1="3" y1="18" x2="3.01" y2="18"></line>
-						</svg>
-					</button>
-				{:else if id === 'theme_scheme'}
-					<button
-						class="title-action-btn"
-						onclick={cycleThemeScheme}
-						aria-label="Change Theme Scheme"
-						onmouseenter={(e) => showTooltip(e, `Scheme: ${settings.themeScheme}`)}
-						onmouseleave={hideTooltip}
-						transition:fly={{ x: 10, duration: 200 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.688-1.688h1.938c3.105 0 5.625-2.52 5.625-5.625 0-4.62-4.62-8.75-10-8.75Z"/></svg>
-					</button>
-				{:else if id === 'edit'}
-					<button
-						class="title-action-btn {isEditing ? 'active' : ''}"
-						onclick={ontoggleEdit}
-						aria-label="Edit File (Ctrl+E)"
-						onmouseenter={(e) => showTooltip(e, 'Edit file', 'E')}
-						onmouseleave={hideTooltip}
-						transition:fly={{ x: 10, duration: 200 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-							><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
+						{@html action.icon}
 					</button>
 				{/if}
 			</div>
 		{/each}
+
+		{#if hiddenActions.length > 0}
+			<div class="action-btn-wrapper relative">
+				<button
+					class="title-action-btn {showMoreMenu ? 'active' : ''}"
+					onclick={() => (showMoreMenu = !showMoreMenu)}
+					aria-label="More Actions"
+					title="More Actions"
+					onmouseenter={(e) => showTooltip(e, 'More Actions')}
+					onmouseleave={hideTooltip}>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+				</button>
+				{#if showMoreMenu}
+					<MoreMenu
+						actions={hiddenActions}
+						onaction={(id) => {
+							allActions[id]?.handler();
+							showMoreMenu = false;
+						}}
+						oncontextmenu={(e, id) => handleActionMove(e, id, 'visible')} />
+				{/if}
+			</div>
+		{/if}
 	</div>
 
 	<div class="window-controls-right" data-tauri-drag-region>
@@ -412,6 +446,10 @@
 		margin-right: 8px;
 		margin-left: auto;
 		z-index: 10000;
+	}
+
+	.action-btn-wrapper.relative {
+		position: relative;
 	}
 
 	.actions-wrapper {

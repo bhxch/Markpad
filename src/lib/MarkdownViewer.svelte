@@ -1653,7 +1653,7 @@
 		right: 24px;
 		width: 400px;
 		max-height: 400px;
-		background: var(--color-canvas-overlay);
+		background: var(--color-canvas-overlay, var(--color-canvas-default));
 		border: 1px solid var(--color-border-default);
 		border-radius: 8px;
 		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);

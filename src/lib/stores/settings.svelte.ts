@@ -3,6 +3,11 @@ export class SettingsStore {
 	wordWrap = $state('on');
 	lineNumbers = $state('on');
 	themeScheme = $state<string>('github-dark');
+	
+	toolbarLayout = $state<{ visible: string[]; hidden: string[] }>({
+		visible: ['zoom', 'open_loc', 'split', 'sync', 'live', 'metadata', 'toc', 'theme_scheme', 'edit'],
+		hidden: []
+	});
 
 	themes = [
 		{ id: 'github-light', name: 'GitHub Light', mode: 'light' },
@@ -20,11 +25,27 @@ export class SettingsStore {
 			const savedWordWrap = localStorage.getItem('editor.wordWrap');
 			const savedLineNumbers = localStorage.getItem('editor.lineNumbers');
 			const savedThemeScheme = localStorage.getItem('theme.scheme');
+			const savedToolbarLayout = localStorage.getItem('ui.toolbarLayout');
 
 			if (savedMinimap !== null) this.minimap = savedMinimap === 'true';
 			if (savedWordWrap !== null) this.wordWrap = savedWordWrap;
 			if (savedLineNumbers !== null) this.lineNumbers = savedLineNumbers;
 			if (savedThemeScheme !== null) this.themeScheme = savedThemeScheme;
+			if (savedToolbarLayout !== null) {
+				try {
+					const parsed = JSON.parse(savedToolbarLayout);
+					// Merge with defaults to ensure all IDs exist (in case of updates)
+					const allIds = new Set([...this.toolbarLayout.visible, ...this.toolbarLayout.hidden]);
+					const savedIds = new Set([...parsed.visible, ...parsed.hidden]);
+					
+					// Add any new IDs to visible
+					allIds.forEach(id => {
+						if (!savedIds.has(id)) parsed.visible.push(id);
+					});
+					
+					this.toolbarLayout = parsed;
+				} catch (e) { console.error('Failed to load toolbar layout', e); }
+			}
 
 			$effect.root(() => {
 				$effect(() => {
@@ -32,6 +53,7 @@ export class SettingsStore {
 					localStorage.setItem('editor.wordWrap', this.wordWrap);
 					localStorage.setItem('editor.lineNumbers', this.lineNumbers);
 					localStorage.setItem('theme.scheme', this.themeScheme);
+					localStorage.setItem('ui.toolbarLayout', JSON.stringify(this.toolbarLayout));
 					
 					// Apply theme to document
 					this.applyTheme();
@@ -50,6 +72,19 @@ export class SettingsStore {
 
 	setThemeScheme(scheme: string) {
 		this.themeScheme = scheme;
+	}
+
+	moveToolbarAction(id: string, target: 'visible' | 'hidden') {
+		// Remove from source
+		this.toolbarLayout.visible = this.toolbarLayout.visible.filter(i => i !== id);
+		this.toolbarLayout.hidden = this.toolbarLayout.hidden.filter(i => i !== id);
+		
+		// Add to target
+		if (target === 'visible') {
+			this.toolbarLayout.visible.push(id);
+		} else {
+			this.toolbarLayout.hidden.push(id);
+		}
 	}
 
 	toggleMinimap() {

@@ -30,6 +30,7 @@ body {
 	--color-fg-subtle: #6e7781;
 	--color-canvas-default: #FDFDFD;
 	--color-canvas-subtle: #00000011;
+	--color-canvas-overlay: #ffffff;
 	--color-border-default: #d0d7de;
 	--color-border-muted: hsla(210, 18%, 87%, 1);
 	--color-neutral-muted: rgba(51, 54, 56, 0.01);
@@ -195,6 +196,7 @@ body {
 	--color-fg-subtle: #90a4ae;
 	--color-canvas-default: #ffffff;
 	--color-canvas-subtle: #f6f8fa;
+	--color-canvas-overlay: #ffffff;
 	--color-border-default: #eaecef;
 	--color-accent-fg: #42b883;
 	--color-accent-emphasis: #3eaf7c;
