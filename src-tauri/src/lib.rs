@@ -443,7 +443,7 @@ pub fn run() {
 
 
             let window = app.get_webview_window(label).unwrap();
-
+            
             let file_path = args.iter().skip(1).find(|arg| !arg.starts_with("-"));
 
             if let Some(path) = file_path {

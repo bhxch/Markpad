@@ -50,6 +50,7 @@
 
 	let isDragging = $state(false);
 	let isProgrammaticScroll = false;
+	let isRendering = false; // Render lock
 
 	// derived from tab manager
 	let activeTab = $derived(tabManager.activeTab);
@@ -258,83 +259,109 @@
 	}
 
 	async function renderRichContent() {
-		if (!markdownBody) return;
+		if (!markdownBody || isRendering) return;
+		isRendering = true;
 
-		if (mermaid) {
-			const mermaidBlocks = markdownBody.querySelectorAll('pre code.language-mermaid');
-			if (mermaidBlocks.length > 0) {
-				mermaidBlocks.forEach((block) => {
+		try {
+			// 1. Mermaid Rendering
+			if (mermaid) {
+				const mermaidBlocks = markdownBody.querySelectorAll('pre code.language-mermaid');
+				for (const block of Array.from(mermaidBlocks)) {
+					if (block.closest('.diagram-wrapper')) continue;
+
 					const pre = block.parentElement;
 					if (pre && pre.tagName === 'PRE') {
 						const div = document.createElement('div');
 						div.className = 'mermaid';
-						div.textContent = block.textContent || '';
-						pre.replaceWith(div);
-					}
-				});
-				try {
-					await mermaid.run({
-						nodes: markdownBody.querySelectorAll('.mermaid'),
-					});
-				} catch (e) {
-					console.error('Mermaid render error:', e);
-				}
-			}
-		}
-
-		// Kroki Rendering
-		markdownBody.querySelectorAll('pre code').forEach((block) => {
-			const classes = Array.from(block.classList);
-			const langClass = classes.find((c) => c.startsWith('language-'));
-			if (langClass) {
-				const lang = langClass.replace('language-', '').toLowerCase();
-				if (SUPPORTED_DIAGRAMS.includes(lang)) {
-					const pre = block.parentElement;
-					if (pre && pre.tagName === 'PRE') {
-						const url = createKrokiUrl(lang, block.textContent || '');
-						const img = document.createElement('img');
-						img.src = url;
-						img.className = 'kroki-chart';
-						img.alt = `${lang} diagram`;
 						
-						// Create wrapper for better styling/scroll
+						try {
+							const id = 'mermaid-' + Math.random().toString(36).substring(2, 11);
+							const { svg } = await mermaid.render(id, block.textContent || '');
+							div.innerHTML = svg;
+						} catch (e) {
+							div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error</div>`;
+						}
+
 						const wrapper = document.createElement('div');
-						wrapper.className = 'kroki-container';
-						wrapper.appendChild(img);
-						
+						wrapper.className = 'diagram-wrapper';
 						pre.replaceWith(wrapper);
+						setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'mermaid');
 					}
 				}
 			}
-		});
 
-		if (!hljs || !renderMathInElement) return;
+			// 2. Kroki Rendering
+			const allCodeBlocks = markdownBody.querySelectorAll('pre code');
+			for (const block of Array.from(allCodeBlocks)) {
+				if (block.closest('.diagram-wrapper')) continue;
 
-		markdownBody.querySelectorAll('pre code').forEach((block) => {
-			hljs.highlightElement(block as HTMLElement);
-
-			const pre = block.parentElement;
-			if (pre && pre.tagName === 'PRE') {
-				pre.querySelectorAll('.lang-label').forEach((l) => l.remove());
-				const langClass = Array.from(block.classList).find((c) => c.startsWith('language-'));
+				const classes = Array.from(block.classList);
+				const langClass = classes.find((c) => c.startsWith('language-'));
 				if (langClass) {
-					const label = document.createElement('span');
-					label.className = 'lang-label';
-					label.textContent = langClass.replace('language-', '');
-					pre.appendChild(label);
+					const lang = langClass.replace('language-', '').toLowerCase();
+					if (SUPPORTED_DIAGRAMS.includes(lang)) {
+						const pre = block.parentElement;
+						if (pre && pre.tagName === 'PRE') {
+							try {
+								const url = createKrokiUrl(lang, (block as HTMLElement).textContent || '');
+								const img = document.createElement('img');
+								img.src = url;
+								img.className = 'kroki-chart';
+								img.alt = `${lang} diagram`;
+								
+								const chartWrapper = document.createElement('div');
+								chartWrapper.className = 'kroki-container';
+								chartWrapper.appendChild(img);
+								
+								const wrapper = document.createElement('div');
+								wrapper.className = 'diagram-wrapper';
+								pre.replaceWith(wrapper);
+								setupDiagramWrapper(wrapper, chartWrapper, pre as HTMLElement, lang);
+							} catch (e) {
+								console.error('Kroki error:', e);
+							}
+						}
+					}
 				}
 			}
-		});
 
-		renderMathInElement(markdownBody, {
-			delimiters: [
-				{ left: '$$', right: '$$', display: true },
-				{ left: '$', right: '$', display: false },
-				{ left: '\\(', right: '\\)', display: false },
-				{ left: '\\[', right: '\\]', display: true },
-			],
-			throwOnError: false,
-		});
+			if (!hljs || !renderMathInElement) return;
+
+			// 3. Code Highlighting (Skip diagrams)
+			markdownBody.querySelectorAll('pre code').forEach((block) => {
+				if (block.closest('.diagram-wrapper')) return; // Skip diagrams
+				
+				const langClass = Array.from(block.classList).find((c) => c.startsWith('language-'));
+				const lang = langClass ? langClass.replace('language-', '').toLowerCase() : '';
+				if (lang === 'mermaid' || SUPPORTED_DIAGRAMS.includes(lang)) return;
+
+				hljs.highlightElement(block as HTMLElement);
+
+				const pre = block.parentElement;
+				if (pre && pre.tagName === 'PRE') {
+					pre.querySelectorAll('.lang-label').forEach((l) => l.remove());
+					if (langClass) {
+						const label = document.createElement('span');
+						label.className = 'lang-label';
+						label.textContent = langClass.replace('language-', '');
+						pre.appendChild(label);
+					}
+				}
+			});
+
+			// 4. Math Rendering
+			renderMathInElement(markdownBody, {
+				delimiters: [
+					{ left: '$$', right: '$$', display: true },
+					{ left: '$', right: '$', display: false },
+					{ left: '\\(', right: '\\)', display: false },
+					{ left: '\\[', right: '\\]', display: true },
+				],
+				throwOnError: false,
+			});
+		} finally {
+			isRendering = false;
+		}
 	}
 
 	function refreshToc() {
@@ -838,7 +865,7 @@
 						tick().then(renderRichContent);
 					})
 					.catch(console.error);
-			}, 16);
+			}, 300);
 		}
 	});
 
@@ -1009,8 +1036,49 @@
 		return { duration: 0 };
 	}
 
+	function setupDiagramWrapper(container: HTMLElement, renderEl: HTMLElement, codeEl: HTMLElement, lang: string) {
+		// Toggle Button
+		const btn = document.createElement('button');
+		btn.className = 'diagram-toggle-btn';
+		btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`;
+		btn.title = 'Show Source';
+
+		// State
+		let isShowingCode = false;
+		codeEl.style.setProperty('display', 'none', 'important');
+		renderEl.style.setProperty('display', 'block', 'important'); 
+
+		btn.onclick = (e) => {
+			e.stopPropagation();
+			isShowingCode = !isShowingCode;
+			if (isShowingCode) {
+				renderEl.style.setProperty('display', 'none', 'important');
+				codeEl.style.setProperty('display', 'block', 'important');
+				btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`;
+				btn.title = 'Show Diagram';
+			} else {
+				renderEl.style.setProperty('display', 'block', 'important');
+				codeEl.style.setProperty('display', 'none', 'important');
+				btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`;
+				btn.title = 'Show Source';
+			}
+		};
+
+		container.appendChild(renderEl);
+		container.appendChild(codeEl);
+		container.appendChild(btn);
+	}
+
 	onMount(() => {
 		loadRecentFiles();
+
+		window.addEventListener('error', (event) => {
+			console.error('[Global Error]', event.error);
+		});
+
+		window.addEventListener('unhandledrejection', (event) => {
+			console.error('[Unhandled Promise Rejection]', event.reason);
+		});
 
 		// @ts-ignore
 		Promise.all([import('highlight.js'), import('katex/dist/contrib/auto-render'), import('mermaid')]).then(
@@ -1330,7 +1398,7 @@
 
 					<!-- Viewer Pane -->
 					<div class="pane viewer-pane" class:active={!isEditing || isSplit} style="flex: {isSplit ? 1 - tabManager.activeTab.splitRatio : !isEditing ? 1 : 0}">
-						<article bind:this={markdownBody} contenteditable="false" class="markdown-body" bind:innerHTML={htmlContent} onscroll={handleScroll}></article>
+						<article bind:this={markdownBody} contenteditable="false" class="markdown-body" onscroll={handleScroll}></article>
 					</div>
 				</div>
 				
