@@ -1021,6 +1021,45 @@ body {
 	:root[data-theme-mode="dark"] .kroki-chart {
 		filter: invert(1) hue-rotate(180deg);
 		/* Optional: slightly dim to reduce glare */
-		opacity: 0.9;
-	}
-	
+			opacity: 0.9;
+		}
+		
+		/* Diagram Wrapper & Toggle Button */
+		.diagram-wrapper {
+			margin: 1.5em 0;
+			position: relative;
+		}
+		
+		.diagram-wrapper pre {
+			margin: 0 !important; /* Reset margin when inside wrapper */
+		}
+		
+		.diagram-toggle-btn {
+			position: absolute;
+			top: 8px;
+			right: 8px;
+			width: 28px;
+			height: 28px;
+			background-color: var(--color-canvas-default);
+			border: 1px solid var(--color-border-default);
+			border-radius: 4px;
+			color: var(--color-fg-muted);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			opacity: 0; /* Hidden by default */
+			transition: opacity 0.2s, background-color 0.1s;
+			z-index: 10;
+		}
+		
+		.diagram-wrapper:hover .diagram-toggle-btn {
+			opacity: 0.6;
+		}
+		
+		.diagram-toggle-btn:hover {
+			opacity: 1 !important;
+			background-color: var(--color-canvas-subtle);
+			color: var(--color-fg-default);
+		}
+		
