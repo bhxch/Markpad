@@ -377,14 +377,28 @@
 		});
 	}
 
+	function getRelativeOffsetTop(element: HTMLElement, container: HTMLElement): number {
+		// Calculate element's offset relative to the scroll container
+		// by traversing the offsetParent chain
+		let top = element.offsetTop;
+		let current = element.offsetParent as HTMLElement | null;
+		
+		while (current && current !== container) {
+			top += current.offsetTop;
+			current = current.offsetParent as HTMLElement | null;
+		}
+		
+		return top;
+	}
+
 	function scrollToHeader(id: string) {
 		if (!markdownBody || !id) return;
 		const el = document.getElementById(id);
 		if (el) {
-			const containerRect = markdownBody.getBoundingClientRect();
-			const elRect = el.getBoundingClientRect();
+			// Use offsetTop which is unaffected by CSS zoom
+			const targetTop = getRelativeOffsetTop(el, markdownBody) - 20;
 			markdownBody.scrollTo({
-				top: elRect.top - containerRect.top + markdownBody.scrollTop - 20,
+				top: targetTop,
 				behavior: 'smooth',
 			});
 		}
