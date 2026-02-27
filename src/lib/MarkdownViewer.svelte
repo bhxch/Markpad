@@ -11,6 +11,7 @@
 	import TitleBar from './components/TitleBar.svelte';
 	import Editor from './components/Editor.svelte';
 	import Modal from './components/Modal.svelte';
+	import ContextMenu, { type ContextMenuItem } from './components/ContextMenu.svelte';
 
 	const appWindow = getCurrentWindow();
 
@@ -102,6 +103,18 @@
 		kind: 'info',
 		showSave: false,
 		resolve: null,
+	});
+
+	let docContextMenu = $state<{
+		show: boolean;
+		x: number;
+		y: number;
+		items: ContextMenuItem[];
+	}>({
+		show: false,
+		x: 0,
+		y: 0,
+		items: [],
 	});
 
 	function askCustom(message: string, options: { title: string; kind: 'info' | 'warning' | 'error'; showSave?: boolean }): Promise<'save' | 'discard' | 'cancel'> {
@@ -799,12 +812,20 @@
 		const selection = window.getSelection();
 		const hasSelection = selection ? selection.toString().length > 0 : false;
 
-		invoke('show_context_menu', {
-			menuType: 'document',
-			path: currentFile || null,
-			tabId: null,
-			hasSelection,
-		}).catch(console.error);
+		docContextMenu = {
+			show: true,
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				...(hasSelection ? [{ label: 'Copy', onClick: () => document.execCommand('copy') }] : []),
+				{ label: 'Select All', onClick: () => document.execCommand('selectAll') },
+				{ separator: true },
+				{ label: 'Open File Location', onClick: openFileLocation, disabled: !currentFile },
+				{ label: 'Edit', onClick: () => toggleEdit() },
+				{ separator: true },
+				{ label: 'Close File', onClick: closeFile },
+			],
+		};
 	}
 
 	function handleMouseOver(event: MouseEvent) {
@@ -1453,6 +1474,8 @@
 		</div>
 	{/if}
 {/if}
+
+<ContextMenu {...docContextMenu} onhide={() => (docContextMenu.show = false)} />
 
 <style>
 	:root {
