@@ -6,6 +6,12 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::menu::ContextMenu;
 use serde::Serialize;
+use std::sync::OnceLock;
+
+mod highlight;
+mod setup;
+
+use highlight::{TreeSitterHighlighter, Theme};
 
 #[derive(Serialize)]
 struct MarkdownResponse {
@@ -17,14 +23,11 @@ struct WatcherState {
     watcher: Mutex<Option<RecommendedWatcher>>,
 }
 
+/// Global highlighter instance
+static HIGHLIGHTER: OnceLock<Mutex<TreeSitterHighlighter>> = OnceLock::new();
 
-mod setup;
-
-
-
-#[tauri::command]
-async fn show_window(window: tauri::Window) {
-    window.show().unwrap();
+fn get_highlighter() -> &'static Mutex<TreeSitterHighlighter> {
+    HIGHLIGHTER.get_or_init(|| Mutex::new(TreeSitterHighlighter::new()))
 }
 
 fn split_frontmatter(text: &str) -> (&str, String) {
@@ -102,6 +105,11 @@ fn render_markdown(content: String) -> MarkdownResponse {
 }
 
 #[tauri::command]
+async fn show_window(window: tauri::Window) {
+    window.show().unwrap();
+}
+
+#[tauri::command]
 fn read_file_content(path: String) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| e.to_string())
 }
@@ -119,6 +127,49 @@ fn open_file_folder(path: String) -> Result<(), String> {
 #[tauri::command]
 fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
     fs::rename(old_path, new_path).map_err(|e| e.to_string())
+}
+
+/// Highlight code using tree-sitter.
+/// 
+/// Returns HTML with CSS classes for syntax highlighting.
+/// If the language is not supported, returns an error and the frontend should fall back to hljs.
+#[tauri::command]
+fn highlight_code(code: String, language: String, theme: String) -> Result<String, String> {
+    let parsed_theme: Theme = theme.parse()
+        .unwrap_or(Theme::DarkModern);
+    
+    let highlighter = get_highlighter();
+    let mut highlighter = highlighter.lock().map_err(|e| e.to_string())?;
+    
+    // Update theme if needed
+    if *highlighter.theme() != parsed_theme {
+        highlighter.set_theme(parsed_theme);
+    }
+    
+    highlighter.highlight(&code, &language)
+        .map_err(|e| e.to_string())
+}
+
+/// Check if a language is supported by tree-sitter.
+#[tauri::command]
+fn is_language_supported(language: String) -> bool {
+    let highlighter = get_highlighter();
+    if let Ok(h) = highlighter.lock() {
+        h.is_language_supported(&language)
+    } else {
+        false
+    }
+}
+
+/// Get list of supported languages.
+#[tauri::command]
+fn get_supported_languages() -> Vec<String> {
+    let highlighter = get_highlighter();
+    if let Ok(h) = highlighter.lock() {
+        h.supported_languages().iter().map(|s| s.to_string()).collect()
+    } else {
+        Vec::new()
+    }
 }
 
 #[tauri::command]
@@ -477,7 +528,12 @@ pub fn run() {
             unwatch_file,
 
             show_context_menu,
-            show_window
+            show_window,
+            
+            // Tree-sitter highlighting
+            highlight_code,
+            is_language_supported,
+            get_supported_languages
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

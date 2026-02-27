@@ -3,6 +3,7 @@ export class SettingsStore {
 	wordWrap = $state('on');
 	lineNumbers = $state('on');
 	themeScheme = $state<string>('github-dark');
+	codeTheme = $state<string>('auto'); // 'auto' | 'dark-modern' | 'light-modern'
 	
 	toolbarLayout = $state<{ visible: string[]; hidden: string[] }>({
 		visible: ['zoom', 'open_loc', 'split', 'sync', 'live', 'metadata', 'toc', 'theme_scheme', 'edit'],
@@ -18,6 +19,12 @@ export class SettingsStore {
 		{ id: 'nord', name: 'Nord', mode: 'dark' },
 		{ id: 'solarized-dark', name: 'Solarized Dark', mode: 'dark' }
 	];
+	
+	codeThemes = [
+		{ id: 'auto', name: '跟随全局主题' },
+		{ id: 'dark-modern', name: 'VSCode Dark Modern' },
+		{ id: 'light-modern', name: 'VSCode Light Modern' }
+	];
 
 	constructor() {
 		if (typeof localStorage !== 'undefined') {
@@ -26,11 +33,13 @@ export class SettingsStore {
 			const savedLineNumbers = localStorage.getItem('editor.lineNumbers');
 			const savedThemeScheme = localStorage.getItem('theme.scheme');
 			const savedToolbarLayout = localStorage.getItem('ui.toolbarLayout');
+			const savedCodeTheme = localStorage.getItem('code.theme');
 
 			if (savedMinimap !== null) this.minimap = savedMinimap === 'true';
 			if (savedWordWrap !== null) this.wordWrap = savedWordWrap;
 			if (savedLineNumbers !== null) this.lineNumbers = savedLineNumbers;
 			if (savedThemeScheme !== null) this.themeScheme = savedThemeScheme;
+			if (savedCodeTheme !== null) this.codeTheme = savedCodeTheme;
 			if (savedToolbarLayout !== null) {
 				try {
 					const parsed = JSON.parse(savedToolbarLayout);
@@ -54,6 +63,7 @@ export class SettingsStore {
 					localStorage.setItem('editor.lineNumbers', this.lineNumbers);
 					localStorage.setItem('theme.scheme', this.themeScheme);
 					localStorage.setItem('ui.toolbarLayout', JSON.stringify(this.toolbarLayout));
+					localStorage.setItem('code.theme', this.codeTheme);
 					
 					// Apply theme to document
 					this.applyTheme();
@@ -68,10 +78,20 @@ export class SettingsStore {
 		
 		document.documentElement.setAttribute('data-theme-mode', currentTheme.mode);
 		document.documentElement.setAttribute('data-theme-scheme', this.themeScheme);
+		
+		// Apply code theme
+		const effectiveCodeTheme = this.codeTheme === 'auto' 
+			? (currentTheme.mode === 'dark' ? 'dark-modern' : 'light-modern')
+			: this.codeTheme;
+		document.documentElement.setAttribute('data-code-theme', effectiveCodeTheme);
 	}
 
 	setThemeScheme(scheme: string) {
 		this.themeScheme = scheme;
+	}
+	
+	setCodeTheme(theme: string) {
+		this.codeTheme = theme;
 	}
 
 	moveToolbarAction(id: string, target: 'visible' | 'hidden') {

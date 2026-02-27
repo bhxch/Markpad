@@ -998,68 +998,229 @@ body {
 
 .split-bar:hover,
 .split-bar:active {
-		background-color: var(--color-accent-fg);
-	}
-	
-	/* Kroki Charts */
-	.kroki-container {
-		display: flex;
-		justify-content: center;
-		overflow-x: auto;
-		margin: 1.5em 0;
-		padding: 10px;
-		background-color: var(--color-canvas-default);
-		border-radius: 6px;
-	}
-	
-	.kroki-chart {
-		max-width: 100%;
-		height: auto;
-	}
-	
-	/* Dark mode inversion for Kroki charts */
-	:root[data-theme-mode="dark"] .kroki-chart {
-		filter: invert(1) hue-rotate(180deg);
-		/* Optional: slightly dim to reduce glare */
-			opacity: 0.9;
-		}
-		
-		/* Diagram Wrapper & Toggle Button */
-		.diagram-wrapper {
-			margin: 1.5em 0;
-			position: relative;
-		}
-		
-		.diagram-wrapper pre {
-			margin: 0 !important; /* Reset margin when inside wrapper */
-		}
-		
-		.diagram-toggle-btn {
-			position: absolute;
-			top: 8px;
-			right: 8px;
-			width: 28px;
-			height: 28px;
-			background-color: var(--color-canvas-default);
-			border: 1px solid var(--color-border-default);
-			border-radius: 4px;
-			color: var(--color-fg-muted);
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			cursor: pointer;
-			opacity: 0; /* Hidden by default */
-			transition: opacity 0.2s, background-color 0.1s;
-			z-index: 10;
-		}
-		
-		.diagram-wrapper:hover .diagram-toggle-btn {
-			opacity: 0.6;
-		}
-		
-		.diagram-toggle-btn:hover {
-			opacity: 1 !important;
-			background-color: var(--color-canvas-subtle);
-			color: var(--color-fg-default);
-		}
+	background-color: var(--color-accent-fg);
+}
+
+/* Kroki Charts */
+.kroki-container {
+	display: flex;
+	justify-content: center;
+	overflow-x: auto;
+	margin: 1.5em 0;
+	padding: 10px;
+	background-color: var(--color-canvas-default);
+	border-radius: 6px;
+}
+
+.kroki-chart {
+	max-width: 100%;
+	height: auto;
+}
+
+/* Dark mode inversion for Kroki charts */
+:root[data-theme-mode="dark"] .kroki-chart {
+	filter: invert(1) hue-rotate(180deg);
+	/* Optional: slightly dim to reduce glare */
+	opacity: 0.9;
+}
+
+/* Diagram Wrapper & Toggle Button */
+.diagram-wrapper {
+	margin: 1.5em 0;
+	position: relative;
+}
+
+.diagram-wrapper pre {
+	margin: 0 !important; /* Reset margin when inside wrapper */
+}
+
+.diagram-toggle-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	width: 28px;
+	height: 28px;
+	background-color: var(--color-canvas-default);
+	border: 1px solid var(--color-border-default);
+	border-radius: 4px;
+	color: var(--color-fg-muted);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	opacity: 0; /* Hidden by default */
+	transition: opacity 0.2s, background-color 0.1s;
+	z-index: 10;
+}
+
+.diagram-wrapper:hover .diagram-toggle-btn {
+	opacity: 0.6;
+}
+
+.diagram-toggle-btn:hover {
+	opacity: 1 !important;
+	background-color: var(--color-canvas-subtle);
+	color: var(--color-fg-default);
+}
+
+/* ==========================================
+   Tree-sitter Syntax Highlighting
+   ========================================== */
+
+:root,
+:root[data-code-theme="dark-modern"] {
+	/* Tree-sitter Dark Modern Theme (VSCode Dark Modern) */
+	--ts-comment: #6A9955;
+	--ts-keyword: #569CD6;
+	--ts-keyword-control: #C586C0;
+	--ts-string: #CE9178;
+	--ts-string-regexp: #D16969;
+	--ts-number: #B5CEA8;
+	--ts-constant: #4FC1FF;
+	--ts-constant-builtin: #569CD6;
+	--ts-boolean: #569CD6;
+	--ts-type: #4EC9B0;
+	--ts-type-builtin: #4EC9B0;
+	--ts-function: #DCDCAA;
+	--ts-method: #DCDCAA;
+	--ts-macro: #DCDCAA;
+	--ts-variable: #9CDCFE;
+	--ts-variable-builtin: #569CD6;
+	--ts-parameter: #9CDCFE;
+	--ts-property: #9CDCFE;
+	--ts-operator: #D4D4D4;
+	--ts-punctuation: #D4D4D4;
+	--ts-bracket: #FFD700;
+	--ts-constructor: #4EC9B0;
+	--ts-namespace: #4EC9B0;
+	--ts-tag: #569CD6;
+	--ts-attribute: #9CDCFE;
+	--ts-special: #C586C0;
+	--ts-escape: #D7A635;
+}
+
+:root[data-code-theme="light-modern"] {
+	/* Tree-sitter Light Modern Theme (VSCode Light Modern) */
+	--ts-comment: #008000;
+	--ts-keyword: #0000FF;
+	--ts-keyword-control: #AF00DB;
+	--ts-string: #A31515;
+	--ts-string-regexp: #811F3F;
+	--ts-number: #098658;
+	--ts-constant: #0070C1;
+	--ts-constant-builtin: #0000FF;
+	--ts-boolean: #0000FF;
+	--ts-type: #267F99;
+	--ts-type-builtin: #267F99;
+	--ts-function: #795E26;
+	--ts-method: #795E26;
+	--ts-macro: #795E26;
+	--ts-variable: #001080;
+	--ts-variable-builtin: #0000FF;
+	--ts-parameter: #001080;
+	--ts-property: #001080;
+	--ts-operator: #000000;
+	--ts-punctuation: #000000;
+	--ts-bracket: #000000;
+	--ts-constructor: #267F99;
+	--ts-namespace: #267F99;
+	--ts-tag: #800000;
+	--ts-attribute: #FF0000;
+	--ts-special: #AF00DB;
+	--ts-escape: #EE0000;
+}
+
+/* Tree-sitter CSS Classes */
+.ts-comment,
+.ts-comment-line,
+.ts-comment-block,
+.ts-comment-doc {
+	color: var(--ts-comment);
+	font-style: italic;
+}
+
+.ts-keyword { color: var(--ts-keyword); }
+.ts-keyword-control,
+.ts-keyword-conditional,
+.ts-keyword-repeat,
+.ts-keyword-import,
+.ts-keyword-return,
+.ts-keyword-exception { color: var(--ts-keyword-control); }
+.ts-keyword-function,
+.ts-keyword-storage { color: var(--ts-keyword); }
+.ts-keyword-operator { color: var(--ts-keyword); }
+
+.ts-string { color: var(--ts-string); }
+.ts-string-regexp { color: var(--ts-string-regexp); }
+.ts-string-special,
+.ts-string-path,
+.ts-string-url,
+.ts-string-symbol { color: var(--ts-string); }
+
+.ts-constant { color: var(--ts-constant); }
+.ts-constant-builtin,
+.ts-boolean { color: var(--ts-constant-builtin); }
+.ts-char { color: var(--ts-string); }
+.ts-escape { color: var(--ts-escape); }
+.ts-number,
+.ts-integer,
+.ts-float { color: var(--ts-number); }
+
+.ts-type,
+.ts-type-builtin,
+.ts-enum-variant { color: var(--ts-type); }
+
+.ts-function,
+.ts-function-builtin { color: var(--ts-function); }
+.ts-method { color: var(--ts-method); }
+.ts-macro { color: var(--ts-macro); }
+.ts-function-special { color: var(--ts-function); }
+
+.ts-variable { color: var(--ts-variable); }
+.ts-variable-builtin { color: var(--ts-variable-builtin); }
+.ts-parameter { color: var(--ts-parameter); }
+.ts-member { color: var(--ts-property); }
+.ts-property { color: var(--ts-property); }
+
+.ts-operator { color: var(--ts-operator); }
+
+.ts-punctuation,
+.ts-delimiter { color: var(--ts-punctuation); }
+.ts-bracket { color: var(--ts-bracket); }
+.ts-punctuation-special { color: var(--ts-punctuation); }
+
+.ts-constructor { color: var(--ts-constructor); }
+.ts-label { color: var(--ts-variable); }
+.ts-namespace { color: var(--ts-namespace); }
+.ts-special { color: var(--ts-special); }
+.ts-attribute { color: var(--ts-attribute); }
+.ts-tag { color: var(--ts-tag); }
+.ts-tag-error { color: #F44747; }
+
+/* Markup */
+.ts-heading,
+.ts-heading-1 { color: var(--ts-keyword); font-weight: bold; }
+.ts-heading-2 { color: var(--ts-comment); font-weight: bold; }
+.ts-heading-3 { color: var(--ts-string); font-weight: bold; }
+.ts-list { color: var(--ts-comment); }
+.ts-bold { font-weight: bold; color: var(--ts-keyword); }
+.ts-italic { font-style: italic; color: var(--ts-keyword-control); }
+.ts-link,
+.ts-link-url { color: var(--ts-string); text-decoration: underline; }
+.ts-quote { color: var(--ts-comment); border-left: 3px solid var(--ts-comment); padding-left: 8px; }
+.ts-raw,
+.ts-raw-block { color: var(--ts-string); background: var(--color-canvas-subtle); padding: 2px 4px; border-radius: 3px; }
+
+/* Diff */
+.ts-diff-plus { color: var(--color-success-fg); }
+.ts-diff-minus { color: var(--color-danger-fg); }
+.ts-diff-delta { color: var(--color-attention-fg); }
+
+/* Default fallback for unknown captures */
+.ts-default { color: var(--color-fg-default); }
+
+/* Tree-sitter highlighted code block marker */
+.ts-highlighted {
+	/* Marker class for tree-sitter highlighted code */
+}
 		

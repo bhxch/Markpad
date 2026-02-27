@@ -31,9 +31,62 @@
 	let hljs: any = $state(null);
 	let renderMathInElement: any = $state(null);
 	let mermaid: any = $state(null);
+	
+	// Tree-sitter supported languages (cached)
+	let treeSitterLanguages: Set<string> = $state(new Set());
 
 	import 'highlight.js/styles/github-dark.css';
 	import 'katex/dist/katex.min.css';
+	
+	// Get the current code theme based on settings
+	function getCodeTheme(): string {
+		if (settings.codeTheme === 'auto') {
+			const currentThemeObj = settings.themes.find((t) => t.id === settings.themeScheme);
+			const mode = currentThemeObj ? currentThemeObj.mode : 'dark';
+			return mode === 'dark' ? 'dark-modern' : 'light-modern';
+		}
+		return settings.codeTheme;
+	}
+	
+	// Highlight code using tree-sitter with hljs fallback
+	async function highlightCodeWithTreeSitter(block: HTMLElement, lang: string): Promise<boolean> {
+		if (!treeSitterLanguages.has(lang)) {
+			return false; // Not supported by tree-sitter
+		}
+		
+		const code = block.textContent || '';
+		if (!code.trim()) return false;
+		
+		try {
+			const theme = getCodeTheme();
+			const highlightedHtml = await invoke<string>('highlight_code', {
+				code,
+				language: lang,
+				theme
+			});
+			
+			// Replace the content with highlighted HTML
+			block.innerHTML = highlightedHtml;
+			
+			// Mark as tree-sitter highlighted
+			block.classList.add('ts-highlighted');
+			
+			return true;
+		} catch (e) {
+			console.warn('Tree-sitter highlighting failed, falling back to hljs:', e);
+			return false;
+		}
+	}
+	
+	// Initialize tree-sitter supported languages list
+	async function initTreeSitterLanguages(): Promise<void> {
+		try {
+			const languages = await invoke<string[]>('get_supported_languages');
+			treeSitterLanguages = new Set(languages);
+		} catch (e) {
+			console.warn('Failed to get tree-sitter supported languages:', e);
+		}
+	}
 
 	let mode = $state<'loading' | 'app' | 'installer' | 'uninstall'>('loading');
 
@@ -327,15 +380,22 @@
 
 			if (!hljs || !renderMathInElement) return;
 
-			// 3. Code Highlighting (Skip diagrams)
-			markdownBody.querySelectorAll('pre code').forEach((block) => {
-				if (block.closest('.diagram-wrapper')) return; // Skip diagrams
+			// 3. Code Highlighting (Tree-sitter with hljs fallback)
+			const codeBlocks = markdownBody.querySelectorAll('pre code');
+			for (const block of Array.from(codeBlocks)) {
+				if (block.closest('.diagram-wrapper')) continue; // Skip diagrams
 				
 				const langClass = Array.from(block.classList).find((c) => c.startsWith('language-'));
 				const lang = langClass ? langClass.replace('language-', '').toLowerCase() : '';
 				if (lang === 'mermaid' || SUPPORTED_DIAGRAMS.includes(lang)) return;
 
-				hljs.highlightElement(block as HTMLElement);
+				// Try tree-sitter first
+				const tsSuccess = await highlightCodeWithTreeSitter(block as HTMLElement, lang);
+				
+				// Fallback to hljs if tree-sitter failed
+				if (!tsSuccess && hljs) {
+					hljs.highlightElement(block as HTMLElement);
+				}
 
 				const pre = block.parentElement;
 				if (pre && pre.tagName === 'PRE') {
@@ -347,7 +407,7 @@
 						pre.appendChild(label);
 					}
 				}
-			});
+			}
 
 			// 4. Math Rendering
 			renderMathInElement(markdownBody, {
@@ -1105,6 +1165,9 @@
 					theme: 'default',
 					securityLevel: 'loose',
 				});
+				
+				// Initialize tree-sitter supported languages
+				initTreeSitterLanguages();
 			},
 		);
 
