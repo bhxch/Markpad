@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { type Tab as TabData, tabManager } from '../stores/tabs.svelte.js';
 	import Tab from './Tab.svelte';
+	import ContextMenu, { type ContextMenuItem } from './ContextMenu.svelte';
 
 	import { flip } from 'svelte/animate';
 	import { tick } from 'svelte';
@@ -34,6 +35,18 @@
 		tab: TabData;
 		isDragging: boolean;
 	} | null>(null);
+
+	let tabListContextMenu = $state<{
+		show: boolean;
+		x: number;
+		y: number;
+		items: ContextMenuItem[];
+	}>({
+		show: false,
+		x: 0,
+		y: 0,
+		items: [],
+	});
 
 	function handleMouseDown(e: MouseEvent, tab: TabData, element: HTMLElement) {
 		if (e.button !== 0) return; // Only left click
@@ -155,13 +168,16 @@
 		if (e.target !== e.currentTarget && !(e.target as HTMLElement).classList.contains('tab-list-spacer')) return;
 		e.preventDefault();
 
-		const { invoke } = await import('@tauri-apps/api/core');
-		invoke('show_context_menu', {
-			menuType: 'tab_bar',
-			path: null,
-			tabId: null,
-			hasSelection: false,
-		}).catch(console.error);
+		const { emit } = await import('@tauri-apps/api/event');
+		tabListContextMenu = {
+			show: true,
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{ label: 'New Tab', shortcut: 'Ctrl+T', onClick: () => emit('menu-tab-new') },
+				{ label: 'Undo Close Tab', shortcut: 'Ctrl+Shift+T', onClick: () => emit('menu-tab-undo') },
+			]
+		};
 	}
 </script>
 
@@ -341,3 +357,5 @@
 		will-change: left, top;
 	}
 </style>
+
+<ContextMenu {...tabListContextMenu} onhide={() => tabListContextMenu.show = false} />
