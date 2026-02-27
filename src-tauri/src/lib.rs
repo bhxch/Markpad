@@ -223,6 +223,12 @@ fn is_win11() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     #[cfg(target_os = "windows")]
     {
         std::env::set_var(
@@ -362,7 +368,6 @@ pub fn run() {
             setup::uninstall_app,
             setup::check_install_status,
             is_win11,
-            open_file_folder,
             open_file_folder,
             rename_file,
             watch_file,
