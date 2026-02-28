@@ -42,6 +42,9 @@ tree-sitter-highlight = "0.25"
 lazy_static = "1.4"
 phf = { version = "0.11", features = ["macros"] }
 
+# Embed queries files into binary for single-exe distribution
+include_dir = "0.7"
+
 [target.'cfg(windows)'.dependencies]
 mslnk = "0.1"
 winreg = "0.52"

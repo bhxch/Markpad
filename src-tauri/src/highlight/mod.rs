@@ -9,12 +9,14 @@ pub use registry::LanguageRegistry;
 pub use themes::Theme;
 
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
 use std::sync::RwLock;
 use tree_sitter_highlight::{
     HighlightConfiguration, Highlighter, HighlightEvent,
 };
+
+// Embed queries directory into binary for single-exe distribution
+use include_dir::{include_dir, Dir};
+static QUERIES_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/queries");
 
 /// Error type for highlighting operations.
 #[derive(Debug)]
@@ -25,8 +27,6 @@ pub enum HighlightError {
     ParseError(String),
     /// Failed to load highlight queries
     QueryError(String),
-    /// IO error
-    IoError(String),
 }
 
 impl std::fmt::Display for HighlightError {
@@ -35,7 +35,6 @@ impl std::fmt::Display for HighlightError {
             Self::UnsupportedLanguage(lang) => write!(f, "Language '{}' is not supported", lang),
             Self::ParseError(msg) => write!(f, "Parse error: {}", msg),
             Self::QueryError(msg) => write!(f, "Query error: {}", msg),
-            Self::IoError(msg) => write!(f, "IO error: {}", msg),
         }
     }
 }
@@ -47,12 +46,12 @@ pub type HighlightResult<T> = Result<T, HighlightError>;
 
 /// Main highlighter that manages languages and performs highlighting.
 /// Uses lazy loading for highlight configurations to improve startup time.
+/// Query files are embedded in the binary for single-exe distribution.
 pub struct TreeSitterHighlighter {
     registry: LanguageRegistry,
     /// Lazy-loaded highlight configurations (loaded on first use)
     configs: RwLock<HashMap<String, HighlightConfiguration>>,
     theme: Theme,
-    queries_dir: PathBuf,
 }
 
 impl TreeSitterHighlighter {
@@ -64,39 +63,24 @@ impl TreeSitterHighlighter {
     /// Create a new highlighter with a specific theme.
     pub fn with_theme(theme: Theme) -> Self {
         let registry = LanguageRegistry::new();
-        let queries_dir = Self::get_queries_dir();
         
         // Lazy loading: don't pre-initialize configs, load on demand
+        // Query files are embedded in binary via include_dir
         Self {
             registry,
             configs: RwLock::new(HashMap::new()),
             theme,
-            queries_dir,
         }
     }
     
-    /// Get the queries directory path.
-    fn get_queries_dir() -> PathBuf {
-        // In development/build: use CARGO_MANIFEST_DIR to find queries
-        // This is set at compile time
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let queries_dir = PathBuf::from(manifest_dir).join("queries");
-        if queries_dir.exists() {
-            return queries_dir;
-        }
-        
-        // Try relative to executable (for bundled apps)
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                let queries_dir = exe_dir.join("queries");
-                if queries_dir.exists() {
-                    return queries_dir;
-                }
-            }
-        }
-        
-        // Fallback
-        PathBuf::from("queries")
+    /// Get query file content from embedded queries directory.
+    fn get_query_content(lang_name: &str, file_name: &str) -> String {
+        QUERIES_DIR
+            .get_dir(lang_name)
+            .and_then(|dir| dir.get_file(file_name))
+            .and_then(|file| file.contents_utf8())
+            .unwrap_or("")
+            .to_string()
     }
     
     /// Ensure a highlight configuration exists for a language (lazy loading).
@@ -130,41 +114,16 @@ impl TreeSitterHighlighter {
         true
     }
     
-    /// Create a highlight configuration by loading query files.
+    /// Create a highlight configuration by loading query files from embedded directory.
     fn create_config_from_files(
         &self,
         name: &str,
         language: tree_sitter::Language,
     ) -> HighlightResult<HighlightConfiguration> {
-        let query_dir = self.queries_dir.join(name);
-        
-        // Load highlights.scm
-        let highlights_path = query_dir.join("highlights.scm");
-        let highlights = if highlights_path.exists() {
-            fs::read_to_string(&highlights_path)
-                .map_err(|e| HighlightError::IoError(format!("Failed to read highlights: {}", e)))?
-        } else {
-            // Try empty highlights for unsupported
-            "".to_string()
-        };
-        
-        // Load injections.scm (optional)
-        let injections_path = query_dir.join("injections.scm");
-        let injections = if injections_path.exists() {
-            fs::read_to_string(&injections_path)
-                .unwrap_or_default()
-        } else {
-            "".to_string()
-        };
-        
-        // Load locals.scm (optional)
-        let locals_path = query_dir.join("locals.scm");
-        let locals = if locals_path.exists() {
-            fs::read_to_string(&locals_path)
-                .unwrap_or_default()
-        } else {
-            "".to_string()
-        };
+        // Load query files from embedded directory
+        let highlights = Self::get_query_content(name, "highlights.scm");
+        let injections = Self::get_query_content(name, "injections.scm");
+        let locals = Self::get_query_content(name, "locals.scm");
         
         self.create_config(name, language, &highlights, &injections, &locals)
     }
