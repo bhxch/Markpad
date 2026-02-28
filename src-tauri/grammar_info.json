@@ -1,0 +1,794 @@
+{
+  "ada": {
+    "subpath": ""
+  },
+  "adl": {
+    "subpath": ""
+  },
+  "agda": {
+    "subpath": ""
+  },
+  "alloy": {
+    "subpath": ""
+  },
+  "amber": {
+    "subpath": ""
+  },
+  "astro": {
+    "subpath": ""
+  },
+  "awk": {
+    "subpath": ""
+  },
+  "bash": {
+    "subpath": ""
+  },
+  "basic": {
+    "subpath": ""
+  },
+  "bass": {
+    "subpath": ""
+  },
+  "beancount": {
+    "subpath": ""
+  },
+  "bibtex": {
+    "subpath": ""
+  },
+  "bicep": {
+    "subpath": ""
+  },
+  "bitbake": {
+    "subpath": ""
+  },
+  "blade": {
+    "subpath": ""
+  },
+  "blueprint": {
+    "subpath": ""
+  },
+  "bovex": {
+    "subpath": ""
+  },
+  "c": {
+    "subpath": ""
+  },
+  "c-sharp": {
+    "subpath": ""
+  },
+  "c3": {
+    "subpath": ""
+  },
+  "caddyfile": {
+    "subpath": ""
+  },
+  "cairo": {
+    "subpath": ""
+  },
+  "capnp": {
+    "subpath": ""
+  },
+  "cel": {
+    "subpath": ""
+  },
+  "chuck": {
+    "subpath": ""
+  },
+  "clarity": {
+    "subpath": ""
+  },
+  "clojure": {
+    "subpath": ""
+  },
+  "cmake": {
+    "subpath": ""
+  },
+  "comment": {
+    "subpath": ""
+  },
+  "cpon": {
+    "subpath": ""
+  },
+  "cpp": {
+    "subpath": ""
+  },
+  "crystal": {
+    "subpath": ""
+  },
+  "css": {
+    "subpath": ""
+  },
+  "csv": {
+    "subpath": ""
+  },
+  "cue": {
+    "subpath": ""
+  },
+  "cylc": {
+    "subpath": ""
+  },
+  "cython": {
+    "subpath": ""
+  },
+  "d": {
+    "subpath": ""
+  },
+  "dart": {
+    "subpath": ""
+  },
+  "dbml": {
+    "subpath": ""
+  },
+  "debian": {
+    "subpath": ""
+  },
+  "devicetree": {
+    "subpath": ""
+  },
+  "dhall": {
+    "subpath": ""
+  },
+  "diff": {
+    "subpath": ""
+  },
+  "djot": {
+    "subpath": ""
+  },
+  "dockerfile": {
+    "subpath": ""
+  },
+  "dot": {
+    "subpath": ""
+  },
+  "doxyfile": {
+    "subpath": ""
+  },
+  "dtd": {
+    "subpath": ""
+  },
+  "dunstrc": {
+    "subpath": ""
+  },
+  "earthfile": {
+    "subpath": ""
+  },
+  "edoc": {
+    "subpath": ""
+  },
+  "eex": {
+    "subpath": ""
+  },
+  "eiffel": {
+    "subpath": ""
+  },
+  "elisp": {
+    "subpath": ""
+  },
+  "elixir": {
+    "subpath": ""
+  },
+  "elm": {
+    "subpath": ""
+  },
+  "elvish": {
+    "subpath": ""
+  },
+  "embedded-template": {
+    "subpath": ""
+  },
+  "erlang": {
+    "subpath": ""
+  },
+  "fennel": {
+    "subpath": ""
+  },
+  "fga": {
+    "subpath": ""
+  },
+  "fidl": {
+    "subpath": ""
+  },
+  "fish": {
+    "subpath": ""
+  },
+  "flatbuffers": {
+    "subpath": ""
+  },
+  "forth": {
+    "subpath": ""
+  },
+  "freebasic": {
+    "subpath": ""
+  },
+  "fsharp": {
+    "subpath": ""
+  },
+  "gas": {
+    "subpath": ""
+  },
+  "gdscript": {
+    "subpath": ""
+  },
+  "gherkin": {
+    "subpath": ""
+  },
+  "ghostty": {
+    "subpath": ""
+  },
+  "git-config": {
+    "subpath": ""
+  },
+  "git-rebase": {
+    "subpath": ""
+  },
+  "gitattributes": {
+    "subpath": ""
+  },
+  "gitcommit": {
+    "subpath": ""
+  },
+  "gitignore": {
+    "subpath": ""
+  },
+  "gleam": {
+    "subpath": ""
+  },
+  "glsl": {
+    "subpath": ""
+  },
+  "gn": {
+    "subpath": ""
+  },
+  "gnuplot": {
+    "subpath": ""
+  },
+  "go": {
+    "subpath": ""
+  },
+  "go-format-string": {
+    "subpath": ""
+  },
+  "godot-resource": {
+    "subpath": ""
+  },
+  "gomod": {
+    "subpath": ""
+  },
+  "gotmpl": {
+    "subpath": ""
+  },
+  "gowork": {
+    "subpath": ""
+  },
+  "gpr": {
+    "subpath": ""
+  },
+  "graphql": {
+    "subpath": ""
+  },
+  "gren": {
+    "subpath": ""
+  },
+  "groovy": {
+    "subpath": ""
+  },
+  "hare": {
+    "subpath": ""
+  },
+  "haskell": {
+    "subpath": ""
+  },
+  "haskell-literate": {
+    "subpath": ""
+  },
+  "haskell-persistent": {
+    "subpath": ""
+  },
+  "haxe": {
+    "subpath": ""
+  },
+  "hcl": {
+    "subpath": ""
+  },
+  "hdl": {
+    "subpath": ""
+  },
+  "heex": {
+    "subpath": ""
+  },
+  "hocon": {
+    "subpath": ""
+  },
+  "hoon": {
+    "subpath": ""
+  },
+  "hosts": {
+    "subpath": ""
+  },
+  "html": {
+    "subpath": ""
+  },
+  "htmldjango": {
+    "subpath": ""
+  },
+  "hurl": {
+    "subpath": ""
+  },
+  "hyprlang": {
+    "subpath": ""
+  },
+  "iex": {
+    "subpath": ""
+  },
+  "ini": {
+    "subpath": ""
+  },
+  "ink": {
+    "subpath": ""
+  },
+  "inko": {
+    "subpath": ""
+  },
+  "janet-simple": {
+    "subpath": ""
+  },
+  "java": {
+    "subpath": ""
+  },
+  "javascript": {
+    "subpath": ""
+  },
+  "jinja2": {
+    "subpath": ""
+  },
+  "jjdescription": {
+    "subpath": ""
+  },
+  "jjrevset": {
+    "subpath": ""
+  },
+  "jjtemplate": {
+    "subpath": ""
+  },
+  "jq": {
+    "subpath": ""
+  },
+  "jsdoc": {
+    "subpath": ""
+  },
+  "json": {
+    "subpath": ""
+  },
+  "json5": {
+    "subpath": ""
+  },
+  "jsonnet": {
+    "subpath": ""
+  },
+  "julia": {
+    "subpath": ""
+  },
+  "just": {
+    "subpath": ""
+  },
+  "kcl": {
+    "subpath": ""
+  },
+  "kconfig": {
+    "subpath": ""
+  },
+  "kdl": {
+    "subpath": ""
+  },
+  "klog": {
+    "subpath": ""
+  },
+  "koka": {
+    "subpath": ""
+  },
+  "kotlin": {
+    "subpath": ""
+  },
+  "koto": {
+    "subpath": ""
+  },
+  "ld": {
+    "subpath": ""
+  },
+  "ldif": {
+    "subpath": ""
+  },
+  "lean": {
+    "subpath": ""
+  },
+  "ledger": {
+    "subpath": ""
+  },
+  "less": {
+    "subpath": ""
+  },
+  "llvm": {
+    "subpath": ""
+  },
+  "llvm-mir": {
+    "subpath": ""
+  },
+  "log": {
+    "subpath": ""
+  },
+  "lpf": {
+    "subpath": ""
+  },
+  "lua": {
+    "subpath": ""
+  },
+  "lua-format-string": {
+    "subpath": ""
+  },
+  "luap": {
+    "subpath": ""
+  },
+  "luau": {
+    "subpath": ""
+  },
+  "mail": {
+    "subpath": ""
+  },
+  "make": {
+    "subpath": ""
+  },
+  "markdoc": {
+    "subpath": ""
+  },
+  "matlab": {
+    "subpath": ""
+  },
+  "mermaid": {
+    "subpath": ""
+  },
+  "meson": {
+    "subpath": ""
+  },
+  "mojo": {
+    "subpath": ""
+  },
+  "move": {
+    "subpath": ""
+  },
+  "nasm": {
+    "subpath": ""
+  },
+  "nearley": {
+    "subpath": ""
+  },
+  "nginx": {
+    "subpath": ""
+  },
+  "nickel": {
+    "subpath": ""
+  },
+  "nim": {
+    "subpath": ""
+  },
+  "nix": {
+    "subpath": ""
+  },
+  "nu": {
+    "subpath": ""
+  },
+  "odin": {
+    "subpath": ""
+  },
+  "ohm": {
+    "subpath": ""
+  },
+  "opencl": {
+    "subpath": ""
+  },
+  "openscad": {
+    "subpath": ""
+  },
+  "org": {
+    "subpath": ""
+  },
+  "pascal": {
+    "subpath": ""
+  },
+  "passwd": {
+    "subpath": ""
+  },
+  "pem": {
+    "subpath": ""
+  },
+  "penrose": {
+    "subpath": ""
+  },
+  "perl": {
+    "subpath": ""
+  },
+  "pest": {
+    "subpath": ""
+  },
+  "picat": {
+    "subpath": ""
+  },
+  "pkl": {
+    "subpath": ""
+  },
+  "po": {
+    "subpath": ""
+  },
+  "pod": {
+    "subpath": ""
+  },
+  "ponylang": {
+    "subpath": ""
+  },
+  "powershell": {
+    "subpath": ""
+  },
+  "prisma": {
+    "subpath": ""
+  },
+  "properties": {
+    "subpath": ""
+  },
+  "proto": {
+    "subpath": ""
+  },
+  "prql": {
+    "subpath": ""
+  },
+  "pug": {
+    "subpath": ""
+  },
+  "purescript": {
+    "subpath": ""
+  },
+  "python": {
+    "subpath": ""
+  },
+  "ql": {
+    "subpath": ""
+  },
+  "qmljs": {
+    "subpath": ""
+  },
+  "query": {
+    "subpath": ""
+  },
+  "quint": {
+    "subpath": ""
+  },
+  "r": {
+    "subpath": ""
+  },
+  "regex": {
+    "subpath": ""
+  },
+  "rego": {
+    "subpath": ""
+  },
+  "requirements": {
+    "subpath": ""
+  },
+  "rescript": {
+    "subpath": ""
+  },
+  "robot": {
+    "subpath": ""
+  },
+  "robots": {
+    "subpath": ""
+  },
+  "ron": {
+    "subpath": ""
+  },
+  "rshtml": {
+    "subpath": ""
+  },
+  "rst": {
+    "subpath": ""
+  },
+  "ruby": {
+    "subpath": ""
+  },
+  "rust": {
+    "subpath": ""
+  },
+  "rust-format-args": {
+    "subpath": ""
+  },
+  "scala": {
+    "subpath": ""
+  },
+  "scfg": {
+    "subpath": ""
+  },
+  "scheme": {
+    "subpath": ""
+  },
+  "scss": {
+    "subpath": ""
+  },
+  "shellcheckrc": {
+    "subpath": ""
+  },
+  "slang": {
+    "subpath": ""
+  },
+  "slint": {
+    "subpath": ""
+  },
+  "slisp": {
+    "subpath": ""
+  },
+  "smali": {
+    "subpath": ""
+  },
+  "smithy": {
+    "subpath": ""
+  },
+  "sml": {
+    "subpath": ""
+  },
+  "snakemake": {
+    "subpath": ""
+  },
+  "solidity": {
+    "subpath": ""
+  },
+  "sourcepawn": {
+    "subpath": ""
+  },
+  "spade": {
+    "subpath": ""
+  },
+  "spicedb": {
+    "subpath": ""
+  },
+  "sql": {
+    "subpath": ""
+  },
+  "sshclientconfig": {
+    "subpath": ""
+  },
+  "strace": {
+    "subpath": ""
+  },
+  "strictdoc": {
+    "subpath": ""
+  },
+  "supercollider": {
+    "subpath": ""
+  },
+  "svelte": {
+    "subpath": ""
+  },
+  "sway": {
+    "subpath": ""
+  },
+  "swift": {
+    "subpath": ""
+  },
+  "systemverilog": {
+    "subpath": ""
+  },
+  "t32": {
+    "subpath": ""
+  },
+  "tablegen": {
+    "subpath": ""
+  },
+  "tact": {
+    "subpath": ""
+  },
+  "task": {
+    "subpath": ""
+  },
+  "tcl": {
+    "subpath": ""
+  },
+  "teal": {
+    "subpath": ""
+  },
+  "templ": {
+    "subpath": ""
+  },
+  "tera": {
+    "subpath": ""
+  },
+  "textproto": {
+    "subpath": ""
+  },
+  "thrift": {
+    "subpath": ""
+  },
+  "tlaplus": {
+    "subpath": ""
+  },
+  "todotxt": {
+    "subpath": ""
+  },
+  "toml": {
+    "subpath": ""
+  },
+  "tsx": {
+    "subpath": "tsx"
+  },
+  "twig": {
+    "subpath": ""
+  },
+  "typescript": {
+    "subpath": "typescript"
+  },
+  "typespec": {
+    "subpath": ""
+  },
+  "typst": {
+    "subpath": ""
+  },
+  "ungrammar": {
+    "subpath": ""
+  },
+  "unison": {
+    "subpath": ""
+  },
+  "uxntal": {
+    "subpath": ""
+  },
+  "vala": {
+    "subpath": ""
+  },
+  "vento": {
+    "subpath": ""
+  },
+  "verilog": {
+    "subpath": ""
+  },
+  "vhdl": {
+    "subpath": ""
+  },
+  "vhs": {
+    "subpath": ""
+  },
+  "vim": {
+    "subpath": ""
+  },
+  "werk": {
+    "subpath": ""
+  },
+  "wesl": {
+    "subpath": ""
+  },
+  "wgsl": {
+    "subpath": ""
+  },
+  "wikitext": {
+    "subpath": ""
+  },
+  "wit": {
+    "subpath": ""
+  },
+  "xit": {
+    "subpath": ""
+  },
+  "xml": {
+    "subpath": ""
+  },
+  "xtc": {
+    "subpath": ""
+  },
+  "yaml": {
+    "subpath": ""
+  },
+  "yara": {
+    "subpath": ""
+  },
+  "yuck": {
+    "subpath": ""
+  },
+  "zig": {
+    "subpath": ""
+  }
+}
