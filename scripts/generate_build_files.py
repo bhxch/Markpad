@@ -12,6 +12,10 @@ GRAMMAR_INFO = Path(__file__).parent.parent / "src-tauri" / "grammar_info.json"
 BUILD_RS = Path(__file__).parent.parent / "src-tauri" / "build.rs"
 REGISTRY_RS = Path(__file__).parent.parent / "src-tauri" / "src" / "highlight" / "registry.rs"
 
+# Common languages to include (reduces binary size significantly)
+# Set to None to include all languages
+COMMON_LANGUAGES = None  # Include all languages
+
 
 def sanitize_name(name: str) -> str:
     """Convert language name to valid Rust identifier."""
@@ -211,7 +215,8 @@ def generate_registry_rs(grammars: dict):
         '        registry.register_aliases("bash", &["sh", "shell", "zsh"]);',
         '        registry.register_aliases("markdown", &["md", "mkd"]);',
         '        registry.register_aliases("yaml", &["yml"]);',
-        '        registry.register_aliases("c-sharp", &["c#", "cs"]);',
+        '        registry.register_aliases("c-sharp", &["c#", "cs", "csharp"]);',
+        '        registry.register_aliases("fsharp", &["f#", "fsharp"]);',
         '        registry.register_aliases("go", &["golang"]);',
         '        registry.register_aliases("ruby", &["rb"]);',
         '        registry.register_aliases("php", &["php3", "php4", "php5"]);',
@@ -223,21 +228,30 @@ def generate_registry_rs(grammars: dict):
         '        registry.register_aliases("lua", &["lua54", "lua53", "lua51"]);',
         '        registry.register_aliases("haskell", &["hs"]);',
         '        registry.register_aliases("ocaml", &["ml"]);',
-        '        registry.register_aliases("elixir", &["ex"]);',
+        '        registry.register_aliases("elixir", &["ex", "exs"]);',
         '        registry.register_aliases("erlang", &["erl"]);',
-        '        registry.register_aliases("clojure", &["clj"]);',
+        '        registry.register_aliases("clojure", &["clj", "cljs"]);',
         '        registry.register_aliases("scheme", &["scm", "racket"]);',
         '        registry.register_aliases("r", &["rscript"]);',
         '        registry.register_aliases("julia", &["jl"]);',
         '        registry.register_aliases("dart", &["flutter"]);',
         '        registry.register_aliases("dockerfile", &["docker", "dockerignore"]);',
-        '        registry.register_aliases("sql", &["mysql", "postgresql", "postgres"]);',
+        '        registry.register_aliases("sql", &["mysql", "postgresql", "postgres", "sqlite"]);',
         '        registry.register_aliases("json", &["json5", "jsonc"]);',
-        '        registry.register_aliases("xml", &["svg", "xsl"]);',
+        '        registry.register_aliases("xml", &["svg", "xsl", "xslt"]);',
         '        registry.register_aliases("toml", &["cargo_toml"]);',
         '        registry.register_aliases("ini", &["conf", "config", "properties"]);',
         '        registry.register_aliases("make", &["makefile", "mk"]);',
         '        registry.register_aliases("cmake", &["cmakelists"]);',
+        '        registry.register_aliases("typescript", &["ts", "typescript"]);',
+        '        registry.register_aliases("tsx", &["typescript-react", "typescriptreact"]);',
+        '        registry.register_aliases("jsx", &["javascript-react", "javascriptreact", "react"]);',
+        '        registry.register_aliases("objective-c", &["objc", "objectivec", "obj-c"]);',
+        '        registry.register_aliases("objective-cpp", &["objcpp", "objectivecpp"]);',
+        '        registry.register_aliases("scala", &["sc"]);',
+        '        registry.register_aliases("perl", &["pl", "pm"]);',
+        '        registry.register_aliases("powershell", &["ps1", "pwsh"]);',
+        '        registry.register_aliases("php", &["php3", "php4", "php5", "php7"]);',
         '        ',
         '        registry',
         '    }',
@@ -338,9 +352,20 @@ def generate_registry_rs(grammars: dict):
 def main():
     print("Reading grammar_info.json...")
     with open(GRAMMAR_INFO, 'r') as f:
-        grammars = json.load(f)
+        all_grammars = json.load(f)
     
-    print(f"Found {len(grammars)} grammars")
+    print(f"Found {len(all_grammars)} grammars in grammar_info.json")
+    
+    # Filter to common languages if specified
+    if COMMON_LANGUAGES is not None:
+        grammars = {k: v for k, v in all_grammars.items() if k in COMMON_LANGUAGES}
+        print(f"Filtered to {len(grammars)} common languages")
+        skipped = set(all_grammars.keys()) - COMMON_LANGUAGES
+        if skipped:
+            print(f"Skipped {len(skipped)} languages: {', '.join(sorted(skipped)[:10])}...")
+    else:
+        grammars = all_grammars
+        print("Using all grammars (no filter)")
     
     print("\nGenerating build.rs...")
     build_content = generate_build_rs(grammars)
