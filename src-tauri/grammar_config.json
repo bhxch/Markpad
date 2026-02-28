@@ -1,0 +1,100 @@
+{
+  "grammars": {
+    "rust": {
+      "git": "https://github.com/tree-sitter/tree-sitter-rust",
+      "rev": "261b20226c04ef601adbdf185a800512a5f66291",
+      "subpath": "",
+      "path": "grammars\\rust"
+    },
+    "toml": {
+      "git": "https://github.com/ikatyang/tree-sitter-toml",
+      "rev": "7cff70bbcbbc62001b465603ca1ea88edd668704",
+      "subpath": "",
+      "path": "grammars\\toml"
+    },
+    "json": {
+      "git": "https://github.com/tree-sitter/tree-sitter-json",
+      "rev": "73076754005a460947cafe8e03a8cf5fa4fa2938",
+      "subpath": "",
+      "path": "grammars\\json"
+    },
+    "c": {
+      "git": "https://github.com/tree-sitter/tree-sitter-c",
+      "rev": "7fa1be1b694b6e763686793d97da01f36a0e5c12",
+      "subpath": "",
+      "path": "grammars\\c"
+    },
+    "cpp": {
+      "git": "https://github.com/tree-sitter/tree-sitter-cpp",
+      "rev": "56455f4245baf4ea4e0881c5169de69d7edd5ae7",
+      "subpath": "",
+      "path": "grammars\\cpp"
+    },
+    "go": {
+      "git": "https://github.com/tree-sitter/tree-sitter-go",
+      "rev": "12fe553fdaaa7449f764bc876fd777704d4fb752",
+      "subpath": "",
+      "path": "grammars\\go"
+    },
+    "javascript": {
+      "git": "https://github.com/tree-sitter/tree-sitter-javascript",
+      "rev": "3a837b6f3658ca3618f2022f8707e29739c91364",
+      "subpath": "",
+      "path": "grammars\\javascript"
+    },
+    "typescript": {
+      "git": "https://github.com/tree-sitter/tree-sitter-typescript",
+      "rev": "75b3874edb2dc714fb1fd77a32013d0f8699989f",
+      "subpath": "typescript",
+      "path": "grammars\\typescript"
+    },
+    "tsx": {
+      "git": "https://github.com/tree-sitter/tree-sitter-typescript",
+      "rev": "75b3874edb2dc714fb1fd77a32013d0f8699989f",
+      "subpath": "tsx",
+      "path": "grammars\\tsx"
+    },
+    "css": {
+      "git": "https://github.com/tree-sitter/tree-sitter-css",
+      "rev": "6e327db434fec0ee90f006697782e43ec855adf5",
+      "subpath": "",
+      "path": "grammars\\css"
+    },
+    "html": {
+      "git": "https://github.com/tree-sitter/tree-sitter-html",
+      "rev": "cbb91a0ff3621245e890d1c50cc811bffb77a26b",
+      "subpath": "",
+      "path": "grammars\\html"
+    },
+    "python": {
+      "git": "https://github.com/tree-sitter/tree-sitter-python",
+      "rev": "293fdc02038ee2bf0e2e206711b69c90ac0d413f",
+      "subpath": "",
+      "path": "grammars\\python"
+    },
+    "bash": {
+      "git": "https://github.com/tree-sitter/tree-sitter-bash",
+      "rev": "487734f87fd87118028a65a4599352fa99c9cde8",
+      "subpath": "",
+      "path": "grammars\\bash"
+    },
+    "java": {
+      "git": "https://github.com/tree-sitter/tree-sitter-java",
+      "rev": "09d650def6cdf7f479f4b78f595e9ef5b58ce31e",
+      "subpath": "",
+      "path": "grammars\\java"
+    },
+    "yaml": {
+      "git": "https://github.com/ikatyang/tree-sitter-yaml",
+      "rev": "0e36bed171768908f331ff7dff9d956bae016efb",
+      "subpath": "",
+      "path": "grammars\\yaml"
+    },
+    "markdown": {
+      "git": "https://github.com/tree-sitter-grammars/tree-sitter-markdown",
+      "rev": "2dfd57f547f06ca5631a80f601e129d73fc8e9f0",
+      "subpath": "tree-sitter-markdown",
+      "path": "grammars\\markdown"
+    }
+  }
+}

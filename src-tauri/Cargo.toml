@@ -9,12 +9,7 @@ edition = "2021"
 name = "Markpad"
 path = "src/main.rs"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "markpad_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -40,36 +35,20 @@ chrono = "0.4"
 env_logger = "0.11.8"
 log = "0.4.29"
 
-# Tree-sitter for syntax highlighting
-tree-sitter = "0.24"
-tree-sitter-highlight = "0.24"
+# Tree-sitter for syntax highlighting (built from source)
+tree-sitter = "0.25"
+tree-sitter-language = "0.1"
+tree-sitter-highlight = "0.25"
 lazy_static = "1.4"
 phf = { version = "0.11", features = ["macros"] }
-
-# Tree-sitter grammars (from crates.io)
-tree-sitter-rust = "0.23"
-tree-sitter-javascript = "0.23"
-tree-sitter-python = "0.23"
-tree-sitter-typescript = "0.23"
-tree-sitter-go = "0.23"
-tree-sitter-c = "0.23"
-tree-sitter-cpp = "0.23"
-tree-sitter-java = "0.23"
-tree-sitter-json = "0.23"
-tree-sitter-html = "0.23"
-tree-sitter-css = "0.23"
-tree-sitter-bash = "0.23"
-
 
 [target.'cfg(windows)'.dependencies]
 mslnk = "0.1"
 winreg = "0.52"
 
 [profile.release]
-panic = "abort" # Strip expensive panic clean-up logic
-codegen-units = 1 # Compile crates one after another so the compiler can optimize better
-lto = true # Enables link to optimizations
-opt-level = "s" # Optimize for binary size
-strip = true # Remove debug symbols
-
-
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
