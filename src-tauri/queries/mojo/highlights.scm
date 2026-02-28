@@ -33,7 +33,7 @@
   (identifier)* @namespace)
 
 (aliased_import
-  alias: (identifier) @namespace)
+  (identifier) @namespace)
 
 ; Builtin functions
 
@@ -214,7 +214,6 @@
 (for_in_clause "in" @keyword.control)
 
 [
-  "alias"
   "async"
   "class"
   "exec"

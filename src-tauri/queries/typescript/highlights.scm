@@ -123,7 +123,6 @@
 
 (string) @string
 (template_string) @string
-(template_string_content) @string
 
 (number) @constant.numeric
 
@@ -214,7 +213,6 @@
 "return" @keyword.control.return
 "static" @keyword
 "switch" @keyword.control.conditional
-"this" @keyword
 "throw" @keyword.control.exception
 "try" @keyword.control.exception
 "typeof" @keyword.operator

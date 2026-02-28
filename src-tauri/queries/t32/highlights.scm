@@ -178,8 +178,6 @@
 
 ; Variables, constants and labels
 (macro) @variable.builtin
-(trace32_hll_variable) @variable.builtin
-
 (
   (command_expression
     command: (identifier) @keyword

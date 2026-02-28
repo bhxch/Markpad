@@ -4,7 +4,7 @@
 ;; Let binding
 [ "let" ] @keyword
 
-(let_bindings name: (symbol) @variable)
+; (let_bindings (symbol) @variable)
 
 ;; Apply
 (apply_stmt . (symbol) @function)

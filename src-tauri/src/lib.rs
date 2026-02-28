@@ -13,6 +13,9 @@ mod setup;
 
 use highlight::{TreeSitterHighlighter, Theme};
 
+// Debug function to print queries directory info
+use highlight::debug_queries_dir;
+
 #[derive(Serialize)]
 struct MarkdownResponse {
     html: String,
@@ -360,6 +363,9 @@ struct ContextMenuState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Debug: print queries directory info
+    debug_queries_dir();
+    
     #[cfg(target_os = "windows")]
     {
         std::env::set_var(
