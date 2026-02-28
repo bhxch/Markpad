@@ -76,7 +76,15 @@ impl TreeSitterHighlighter {
     
     /// Get the queries directory path.
     fn get_queries_dir() -> PathBuf {
-        // Try to find queries directory relative to executable
+        // In development/build: use CARGO_MANIFEST_DIR to find queries
+        // This is set at compile time
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let queries_dir = PathBuf::from(manifest_dir).join("queries");
+        if queries_dir.exists() {
+            return queries_dir;
+        }
+        
+        // Try relative to executable (for bundled apps)
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let queries_dir = exe_dir.join("queries");
@@ -86,7 +94,7 @@ impl TreeSitterHighlighter {
             }
         }
         
-        // Fallback to build-time path
+        // Fallback
         PathBuf::from("queries")
     }
     

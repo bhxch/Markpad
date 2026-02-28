@@ -308,7 +308,8 @@ impl LanguageRegistry {
         registry.register_aliases("bash", &["sh", "shell", "zsh"]);
         registry.register_aliases("markdown", &["md", "mkd"]);
         registry.register_aliases("yaml", &["yml"]);
-        registry.register_aliases("c-sharp", &["c#", "cs"]);
+        registry.register_aliases("c-sharp", &["c#", "cs", "csharp"]);
+        registry.register_aliases("fsharp", &["f#", "fsharp"]);
         registry.register_aliases("go", &["golang"]);
         registry.register_aliases("ruby", &["rb"]);
         registry.register_aliases("php", &["php3", "php4", "php5"]);
@@ -320,21 +321,30 @@ impl LanguageRegistry {
         registry.register_aliases("lua", &["lua54", "lua53", "lua51"]);
         registry.register_aliases("haskell", &["hs"]);
         registry.register_aliases("ocaml", &["ml"]);
-        registry.register_aliases("elixir", &["ex"]);
+        registry.register_aliases("elixir", &["ex", "exs"]);
         registry.register_aliases("erlang", &["erl"]);
-        registry.register_aliases("clojure", &["clj"]);
+        registry.register_aliases("clojure", &["clj", "cljs"]);
         registry.register_aliases("scheme", &["scm", "racket"]);
         registry.register_aliases("r", &["rscript"]);
         registry.register_aliases("julia", &["jl"]);
         registry.register_aliases("dart", &["flutter"]);
         registry.register_aliases("dockerfile", &["docker", "dockerignore"]);
-        registry.register_aliases("sql", &["mysql", "postgresql", "postgres"]);
+        registry.register_aliases("sql", &["mysql", "postgresql", "postgres", "sqlite"]);
         registry.register_aliases("json", &["json5", "jsonc"]);
-        registry.register_aliases("xml", &["svg", "xsl"]);
+        registry.register_aliases("xml", &["svg", "xsl", "xslt"]);
         registry.register_aliases("toml", &["cargo_toml"]);
         registry.register_aliases("ini", &["conf", "config", "properties"]);
         registry.register_aliases("make", &["makefile", "mk"]);
         registry.register_aliases("cmake", &["cmakelists"]);
+        registry.register_aliases("typescript", &["ts", "typescript"]);
+        registry.register_aliases("tsx", &["typescript-react", "typescriptreact"]);
+        registry.register_aliases("jsx", &["javascript-react", "javascriptreact", "react"]);
+        registry.register_aliases("objective-c", &["objc", "objectivec", "obj-c"]);
+        registry.register_aliases("objective-cpp", &["objcpp", "objectivecpp"]);
+        registry.register_aliases("scala", &["sc"]);
+        registry.register_aliases("perl", &["pl", "pm"]);
+        registry.register_aliases("powershell", &["ps1", "pwsh"]);
+        registry.register_aliases("php", &["php3", "php4", "php5", "php7"]);
         
         registry
     }
