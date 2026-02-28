@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { getVersion } from '@tauri-apps/api/app';
+	import { onMount } from 'svelte';
+
 	let { recentFiles, onselectFile, onloadFile, onremoveRecentFile, onnewFile } = $props<{
 		recentFiles: string[];
 		onselectFile: () => void;
@@ -6,6 +9,16 @@
 		onremoveRecentFile: (file: string, e: MouseEvent) => void;
 		onnewFile: () => void;
 	}>();
+
+	let version = $state('');
+
+	onMount(async () => {
+		try {
+			version = await getVersion();
+		} catch (e) {
+			console.error('Failed to get version:', e);
+		}
+	});
 
 	function getFileName(path: string) {
 		return path.split(/[/\\]/).pop() || path;
@@ -94,19 +107,18 @@
 		{/if}
 	</div>
 </div>
+<div class="version-tag">v{version}</div>
 
 <style>
 	.message {
 		display: flex;
 		flex-direction: column;
 		justify-content: center;
-		margin-top: 32px;
 		align-items: center;
 		user-select: none;
 		font-family: var(--win-font);
-		height: 90vh;
+		height: 100vh;
 		width: 100%;
-		padding-top: 32px 20px 0px 20px;
 		box-sizing: border-box;
 		color: var(--color-fg-default);
 		opacity: 0.8;
@@ -280,5 +292,19 @@
 	.clear-btn:hover {
 		opacity: 1 !important;
 		background: rgba(255, 0, 0, 0.1);
+	}
+
+	.version-tag {
+		position: absolute;
+		bottom: 20px;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 100%;
+		text-align: center;
+		font-family: var(--win-font);
+		font-size: 10px;
+		opacity: 0.25;
+		font-weight: 500;
+		pointer-events: none;
 	}
 </style>

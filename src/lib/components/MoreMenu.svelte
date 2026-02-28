@@ -11,7 +11,7 @@
 			id: string;
 			label: string;
 			icon: string;
-			isActive: boolean;
+			isActive?: boolean;
 		}[];
 		onaction: (id: string) => void;
 		oncontextmenu: (e: MouseEvent, id: string) => void;

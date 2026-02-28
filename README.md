@@ -13,6 +13,10 @@ Download from [markpad.sftwr.dev](https://markpad.sftwr.dev)
 - Monaco editor (VS Code)
 - Split view
 - Syntax highlighting both in editor and code blocks
+- Mermaid diagram support
+- Vim mode
+- Auto-reload
+- Zen mode
 - Image and YouTube embeds
 - Familiar GitHub styled markdown rendering
 - Tiny memory usage (~10MB)
@@ -27,6 +31,18 @@ See [CHANGELOG.md](CHANGELOG.md)
 ## Installation
 
 Download the latest executable or installer from the [releases page](https://github.com/alecdotdev/Markpad/releases/latest) or from [markpad.sftwr.dev](https://markpad.sftwr.dev)
+
+#### Snap Store (Linux)
+You can install Markpad from the Snap Store:
+```bash
+sudo snap install markpad
+```
+
+#### Chocolatey (Windows)
+You can install Markpad using Chocolatey:
+```powershell
+choco install markpad
+```
 
 #### Windows Installer
 Automatically configures `.md` file association 

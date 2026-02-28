@@ -1,57 +1,105 @@
 <script lang="ts">
-	let { show, x, y, currentFile, oncopy, onselectAll, onopenFileLocation, onopenInEditor, oncloseFile, onhide } = $props<{
+	export type ContextMenuItem = {
+		label?: string;
+		shortcut?: string;
+		disabled?: boolean;
+		onClick?: () => void;
+		separator?: boolean;
+	};
+
+	let { show, x, y, items, onhide } = $props<{
 		show: boolean;
 		x: number;
 		y: number;
-		currentFile: string;
-		oncopy: () => void;
-		onselectAll: () => void;
-		onopenFileLocation: () => void;
-		onopenInEditor: () => void;
-		oncloseFile: () => void;
+		items: ContextMenuItem[];
 		onhide: () => void;
 	}>();
+
 	let menuEl = $state<HTMLDivElement>();
+	let innerWidth = $state(1000);
+	let innerHeight = $state(1000);
+
+	$effect(() => {
+		if (show) {
+			innerWidth = window.innerWidth;
+			innerHeight = window.innerHeight;
+		}
+	});
 
 	$effect(() => {
 		if (show && menuEl) {
-			// Small timeout to ensure element exists in DOM/transition starts
 			setTimeout(() => {
 				menuEl?.focus();
 			}, 10);
 		}
 	});
+
+	let adjustedX = $derived(menuEl && x + menuEl.offsetWidth > innerWidth ? innerWidth - menuEl.offsetWidth - 8 : x);
+	let adjustedY = $derived(menuEl && y + menuEl.offsetHeight > innerHeight ? innerHeight - menuEl.offsetHeight - 8 : y);
 </script>
 
+<svelte:window bind:innerWidth bind:innerHeight />
+
 {#if show}
-	<div
-		class="context-menu"
-		bind:this={menuEl}
-		style="left: {x}px; top: {y}px;"
-		onclick={(e) => e.stopPropagation()}
-		role="menu"
-		tabindex="-1"
-		onkeydown={(e) => e.key === 'Escape' && onhide()}>
-		<button class="menu-item" onclick={oncopy}>Copy</button>
-		<button class="menu-item" onclick={onselectAll}>Select All</button>
-		<div class="menu-separator"></div>
-		<button class="menu-item" onclick={onopenFileLocation} disabled={!currentFile}>Open file location</button>
-		<button class="menu-item" onclick={onopenInEditor} disabled={!currentFile}>Open in Notepad</button>
-		<div class="menu-separator"></div>
-		<button class="menu-item" onclick={oncloseFile} disabled={!currentFile}>Close</button>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="context-menu-overlay" onclick={onhide} oncontextmenu={(e) => { e.preventDefault(); onhide(); }}>
+		<div
+			class="context-menu show-dropdown"
+			bind:this={menuEl}
+			style="left: {adjustedX || x}px; top: {adjustedY || y}px;"
+			onclick={(e) => e.stopPropagation()}
+			oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+			role="menu"
+			tabindex="-1"
+			onkeydown={(e) => e.key === 'Escape' && onhide()}>
+			{#each items as item}
+				{#if item.separator}
+					<div class="menu-separator"></div>
+				{:else}
+					<button
+						class="menu-item"
+						disabled={item.disabled}
+						onclick={() => {
+							if (!item.disabled && item.onClick) {
+								item.onClick();
+								onhide();
+							}
+						}}>
+						<span class="action-label">{item.label}</span>
+						{#if item.shortcut}
+							<span class="menu-shortcut">{item.shortcut}</span>
+						{/if}
+					</button>
+				{/if}
+			{/each}
+		</div>
 	</div>
 {/if}
 
 <style>
-	.context-menu {
+	.context-menu-overlay {
 		position: fixed;
-		background: var(--color-canvas-default);
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 10005;
+	}
+
+	.context-menu.show-dropdown {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 1px;
+		position: absolute;
+		background-color: var(--color-canvas-default);
 		border: 1px solid var(--color-border-default);
-		border-radius: 8px;
+		border-radius: 6px;
 		padding: 4px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+		z-index: 10006;
 		min-width: 180px;
-		z-index: 20000;
-		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 		font-family: var(--win-font);
 		animation: menuFade 0.1s ease-out;
 		outline: none;
@@ -70,17 +118,19 @@
 
 	.menu-item {
 		width: 100%;
-		text-align: left;
+		justify-content: space-between;
+		align-items: center;
+		padding: 6px 12px;
+		height: auto;
+		font-size: 13px;
+		color: var(--color-fg-default);
+		font-family: inherit;
 		background: transparent;
 		border: none;
-		color: var(--color-fg-default);
-		padding: 6px 12px;
-		font-size: 13px;
 		border-radius: 4px;
 		cursor: default;
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
+		gap: 16px;
 	}
 
 	.menu-item:hover:not(:disabled) {
@@ -88,7 +138,19 @@
 	}
 
 	.menu-item:disabled {
-		opacity: 0.3;
+		opacity: 0.4;
+	}
+
+	.action-label {
+		display: block;
+		text-align: left;
+		white-space: nowrap;
+	}
+
+	.menu-shortcut {
+		color: var(--color-fg-muted);
+		font-size: 12px;
+		white-space: nowrap;
 	}
 
 	.menu-separator {
