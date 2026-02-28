@@ -131,8 +131,8 @@ jobs:
           mkdir -p packaging/choco/tools
           cp src-tauri/target/release/Markpad.exe packaging/choco/tools/Markpad.exe
           cp LICENSE packaging/choco/tools/LICENSE.txt
-          choco pack packaging/choco/markpad.nuspec --version ${{ needs.create-release.outputs.version }} --outdir .
-          gh release upload v${{ needs.create-release.outputs.version }} markpad.${{ needs.create-release.outputs.version }}.nupkg --clobber
+          choco pack packaging/choco/markpad-app.nuspec --version ${{ needs.create-release.outputs.version }} --outdir .
+          gh release upload v${{ needs.create-release.outputs.version }} markpad-app.${{ needs.create-release.outputs.version }}.nupkg --clobber
 
       - name: Publish to Chocolatey
         if: matrix.platform == 'windows-latest' && matrix.arch == 'x64'
@@ -162,11 +162,11 @@ jobs:
 
       # --- Linux Build ---
       - name: Build Linux
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.platform == 'ubuntu-24.04'
         run: npm run tauri build
 
       - name: Upload Linux Artifacts
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.platform == 'ubuntu-24.04'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -176,7 +176,7 @@ jobs:
           find src-tauri/target/release/bundle/appimage -name "*.AppImage" -exec gh release upload v${{ needs.create-release.outputs.version }} {} --clobber \;
 
       - name: Build and Publish Snap Package
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.platform == 'ubuntu-24.04'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
