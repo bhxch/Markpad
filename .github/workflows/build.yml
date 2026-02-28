@@ -161,6 +161,14 @@ jobs:
           gh release upload v$VERSION "Markpad_${VERSION}_arm64.exe" "MarkpadInstaller_${VERSION}_arm64.exe" --clobber
 
       # --- Linux Build ---
+      - name: Pre-download AppImage Dependencies
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          mkdir -p ~/.cache/tauri
+          wget -q https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64 -O ~/.cache/tauri/AppRun-x86_64
+          wget -q https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage -O ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+          chmod +x ~/.cache/tauri/AppRun-x86_64 ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+
       - name: Build Linux
         if: matrix.platform == 'ubuntu-24.04'
         run: npm run tauri build
