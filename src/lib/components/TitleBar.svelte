@@ -135,6 +135,22 @@
 		settings.setThemeScheme(schemes[nextIdx]);
 	}
 
+	function cycleCodeTheme() {
+		const themes = ['auto', 'dark-modern', 'light-modern'];
+		const currentIdx = themes.indexOf(settings.codeTheme);
+		const nextIdx = (currentIdx + 1) % themes.length;
+		settings.codeTheme = themes[nextIdx];
+	}
+
+	function getCodeThemeLabel() {
+		switch (settings.codeTheme) {
+			case 'auto': return 'Auto';
+			case 'dark-modern': return 'Dark';
+			case 'light-modern': return 'Light';
+			default: return 'Auto';
+		}
+	}
+
 	// Definition of all possible actions
 	type ActionDef = {
 		id: string;
@@ -232,6 +248,13 @@
 			label: `Theme: ${settings.themeScheme}`,
 			icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.688-1.688h1.938c3.105 0 5.625-2.52 5.625-5.625 0-4.62-4.62-8.75-10-8.75Z"/></svg>`,
 			handler: cycleThemeScheme
+		};
+
+		actions['code_theme'] = {
+			id: 'code_theme',
+			label: `Code Theme: ${getCodeThemeLabel()}`,
+			icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
+			handler: cycleCodeTheme
 		};
 
 		return actions;

@@ -117,6 +117,136 @@ impl TreeSitterHighlighter {
                 self.configs.insert("python".to_string(), config);
             }
         }
+        
+        // TypeScript
+        if let Some(lang) = self.registry.get_language("typescript") {
+            if let Ok(config) = self.create_config(
+                "typescript",
+                lang,
+                include_str!("../../queries/typescript/highlights.scm"),
+                "",
+                "",
+            ) {
+                self.configs.insert("typescript".to_string(), config);
+            }
+        }
+        
+        // TSX
+        if let Some(lang) = self.registry.get_language("tsx") {
+            if let Ok(config) = self.create_config(
+                "tsx",
+                lang,
+                include_str!("../../queries/typescript/highlights.scm"),
+                "",
+                "",
+            ) {
+                self.configs.insert("tsx".to_string(), config);
+            }
+        }
+        
+        // Go
+        if let Some(lang) = self.registry.get_language("go") {
+            if let Ok(config) = self.create_config(
+                "go",
+                lang,
+                include_str!("../../queries/go/highlights.scm"),
+                "",
+                "",
+            ) {
+                self.configs.insert("go".to_string(), config);
+            }
+        }
+        
+        // C
+        if let Some(lang) = self.registry.get_language("c") {
+            if let Ok(config) = self.create_config(
+                "c",
+                lang,
+                include_str!("../../queries/c/highlights.scm"),
+                "",
+                "",
+            ) {
+                self.configs.insert("c".to_string(), config);
+            }
+        }
+        
+        // C++
+        if let Some(lang) = self.registry.get_language("cpp") {
+            if let Ok(config) = self.create_config(
+                "cpp",
+                lang,
+                include_str!("../../queries/cpp/highlights.scm"),
+                "",
+                "",
+            ) {
+                self.configs.insert("cpp".to_string(), config);
+            }
+        }
+        
+        // Java
+        if let Some(lang) = self.registry.get_language("java") {
+            if let Ok(config) = self.create_config(
+                "java",
+                lang,
+                include_str!("../../queries/java/highlights.scm"),
+                "",
+                "",
+            ) {
+                self.configs.insert("java".to_string(), config);
+            }
+        }
+        
+        // JSON
+        if let Some(lang) = self.registry.get_language("json") {
+            if let Ok(config) = self.create_config(
+                "json",
+                lang,
+                include_str!("../../queries/json/highlights.scm"),
+                "",
+                "",
+            ) {
+                self.configs.insert("json".to_string(), config);
+            }
+        }
+        
+        // HTML
+        if let Some(lang) = self.registry.get_language("html") {
+            if let Ok(config) = self.create_config(
+                "html",
+                lang,
+                include_str!("../../queries/html/highlights.scm"),
+                "",
+                "",
+            ) {
+                self.configs.insert("html".to_string(), config);
+            }
+        }
+        
+        // CSS
+        if let Some(lang) = self.registry.get_language("css") {
+            if let Ok(config) = self.create_config(
+                "css",
+                lang,
+                include_str!("../../queries/css/highlights.scm"),
+                "",
+                "",
+            ) {
+                self.configs.insert("css".to_string(), config);
+            }
+        }
+        
+        // Bash
+        if let Some(lang) = self.registry.get_language("bash") {
+            if let Ok(config) = self.create_config(
+                "bash",
+                lang,
+                include_str!("../../queries/bash/highlights.scm"),
+                "",
+                "",
+            ) {
+                self.configs.insert("bash".to_string(), config);
+            }
+        }
     }
     
     /// Create a highlight configuration for a language.

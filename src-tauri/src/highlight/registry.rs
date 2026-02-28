@@ -26,11 +26,24 @@ impl LanguageRegistry {
         registry.register("rust", tree_sitter_rust::LANGUAGE.into());
         registry.register("javascript", tree_sitter_javascript::LANGUAGE.into());
         registry.register("python", tree_sitter_python::LANGUAGE.into());
+        registry.register("typescript", tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into());
+        registry.register("tsx", tree_sitter_typescript::LANGUAGE_TSX.into());
+        registry.register("go", tree_sitter_go::LANGUAGE.into());
+        registry.register("c", tree_sitter_c::LANGUAGE.into());
+        registry.register("cpp", tree_sitter_cpp::LANGUAGE.into());
+        registry.register("java", tree_sitter_java::LANGUAGE.into());
+        registry.register("json", tree_sitter_json::LANGUAGE.into());
+        registry.register("html", tree_sitter_html::LANGUAGE.into());
+        registry.register("css", tree_sitter_css::LANGUAGE.into());
+        registry.register("bash", tree_sitter_bash::LANGUAGE.into());
         
         // Register common aliases
         registry.register_aliases("javascript", &["js", "ecmascript"]);
         registry.register_aliases("python", &["py"]);
         registry.register_aliases("rust", &["rs"]);
+        registry.register_aliases("typescript", &["ts"]);
+        registry.register_aliases("cpp", &["c++", "cc", "cxx"]);
+        registry.register_aliases("bash", &["sh", "shell", "zsh"]);
         
         registry
     }
@@ -95,8 +108,8 @@ mod tests {
     #[test]
     fn test_registry_creation() {
         let registry = LanguageRegistry::new();
-        // Should have 3 languages registered
-        assert_eq!(registry.language_count(), 3);
+        // Should have 13 languages registered (rust, javascript, python, typescript, tsx, go, c, cpp, java, json, html, css, bash)
+        assert_eq!(registry.language_count(), 13);
     }
     
     #[test]
