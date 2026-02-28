@@ -50,10 +50,6 @@
 	
 	// Highlight code using tree-sitter with hljs fallback
 	async function highlightCodeWithTreeSitter(block: HTMLElement, lang: string): Promise<boolean> {
-		if (!treeSitterLanguages.has(lang)) {
-			return false; // Not supported by tree-sitter
-		}
-		
 		const code = block.textContent || '';
 		if (!code.trim()) return false;
 		
@@ -73,7 +69,7 @@
 			
 			return true;
 		} catch (e) {
-			console.warn('Tree-sitter highlighting failed, falling back to hljs:', e);
+			// Language not supported or highlighting failed, will fall back to hljs
 			return false;
 		}
 	}
