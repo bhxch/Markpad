@@ -16,7 +16,7 @@ use tree_sitter_highlight::{
 
 // Embed queries directory into binary for single-exe distribution
 use include_dir::{include_dir, Dir};
-static QUERIES_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/queries");
+static QUERIES_DIR: Dir = include_dir!("queries");
 
 /// Error type for highlighting operations.
 #[derive(Debug)]
@@ -64,6 +64,12 @@ impl TreeSitterHighlighter {
     pub fn with_theme(theme: Theme) -> Self {
         let registry = LanguageRegistry::new();
         
+        // Debug: print embedded queries directory info
+        log::info!("Embedded queries directory: {} languages", QUERIES_DIR.dirs().count());
+        for dir in QUERIES_DIR.dirs().take(5) {
+            log::info!("  - {} ({} files)", dir.path().display(), dir.files().count());
+        }
+        
         // Lazy loading: don't pre-initialize configs, load on demand
         // Query files are embedded in binary via include_dir
         Self {
@@ -75,12 +81,35 @@ impl TreeSitterHighlighter {
     
     /// Get query file content from embedded queries directory.
     fn get_query_content(lang_name: &str, file_name: &str) -> String {
-        QUERIES_DIR
-            .get_dir(lang_name)
-            .and_then(|dir| dir.get_file(file_name))
-            .and_then(|file| file.contents_utf8())
-            .unwrap_or("")
-            .to_string()
+        // Try to get the directory
+        let dir = match QUERIES_DIR.get_dir(lang_name) {
+            Some(d) => d,
+            None => {
+                log::error!("Directory not found for language: {}", lang_name);
+                return String::new();
+            }
+        };
+        
+        // Try to get the file
+        let file = match dir.get_file(file_name) {
+            Some(f) => f,
+            None => {
+                // File not found, but this is expected for some languages (injections, locals)
+                return String::new();
+            }
+        };
+        
+        // Get the content
+        match file.contents_utf8() {
+            Some(content) => {
+                log::debug!("Loaded query file: {}/{} ({} bytes)", lang_name, file_name, content.len());
+                content.to_string()
+            }
+            None => {
+                log::error!("Failed to read file as UTF-8: {}/{}", lang_name, file_name);
+                String::new()
+            }
+        }
     }
     
     /// Ensure a highlight configuration exists for a language (lazy loading).
@@ -97,12 +126,18 @@ impl TreeSitterHighlighter {
         // Not in cache, try to create it
         let lang = match self.registry.get_language(name) {
             Some(l) => l,
-            None => return false,
+            None => {
+                log::warn!("Language not found in registry: {}", name);
+                return false;
+            }
         };
         
         let config = match self.create_config_from_files(name, lang) {
             Ok(c) => c,
-            Err(_) => return false,
+            Err(e) => {
+                log::error!("Failed to create config for {}: {:?}", name, e);
+                return false;
+            }
         };
         
         // Store in cache with write lock
@@ -111,6 +146,7 @@ impl TreeSitterHighlighter {
             configs.insert(name.to_string(), config);
         }
         
+        log::debug!("Created highlight config for: {}", name);
         true
     }
     
