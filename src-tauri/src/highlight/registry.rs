@@ -380,6 +380,26 @@ impl LanguageRegistry {
         None
     }
     
+    /// Get the canonical language name for a given name or alias.
+    ///
+    /// Returns the canonical name if found, or the original name if not found.
+    pub fn get_canonical_name(&self, name: &str) -> String {
+        let name_lower = name.to_lowercase();
+        
+        // Check if it's a direct language name
+        if self.languages.contains_key(&name_lower) {
+            return name_lower;
+        }
+        
+        // Check if it's an alias
+        if let Some(canonical) = self.aliases.get(&name_lower) {
+            return canonical.clone();
+        }
+        
+        // Return original (lowercased) as fallback
+        name_lower
+    }
+    
     /// Check if a language is supported.
     pub fn is_supported(&self, name: &str) -> bool {
         self.get_language(name).is_some()

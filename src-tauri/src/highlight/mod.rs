@@ -198,25 +198,11 @@ impl TreeSitterHighlighter {
     
     /// Highlight source code and return HTML with CSS classes.
     pub fn highlight(&self, source: &str, language: &str) -> HighlightResult<String> {
-        let lang_lower = language.to_lowercase();
-        
-        // Try to get the canonical language name through the registry
-        let canonical_name = if self.configs.contains_key(&lang_lower) {
-            &lang_lower
-        } else {
-            // Try to resolve via registry alias
-            self.registry.supported_languages()
-                .iter()
-                .find(|&name| {
-                    self.registry.is_supported(&lang_lower) && 
-                    self.registry.get_language(&lang_lower) == self.registry.get_language(*name)
-                })
-                .map(|s| *s)
-                .unwrap_or(&lang_lower)
-        };
+        // Get the canonical language name (resolves aliases like "csharp" -> "c-sharp")
+        let canonical_name = self.registry.get_canonical_name(language);
         
         // Get the configuration for this language
-        let config = self.configs.get(canonical_name)
+        let config = self.configs.get(&canonical_name)
             .ok_or_else(|| HighlightError::UnsupportedLanguage(language.to_string()))?;
         
         // Create a new highlighter for this operation
