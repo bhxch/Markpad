@@ -42,7 +42,8 @@ parts:
       set -e
       craftctl set version="$(node -p "require('./package.json').version")"
       npm install
-      npm run tauri build
+      export CARGO_BUILD_JOBS=2
+      npx tauri build -b none
       
       # The binary is built in src-tauri/target/release/
       install -D -m755 src-tauri/target/release/Markpad $CRAFT_PART_INSTALL/markpad
