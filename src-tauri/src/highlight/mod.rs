@@ -11,6 +11,7 @@ pub use themes::Theme;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::RwLock;
 use tree_sitter_highlight::{
     HighlightConfiguration, Highlighter, HighlightEvent,
 };
@@ -45,9 +46,11 @@ impl std::error::Error for HighlightError {}
 pub type HighlightResult<T> = Result<T, HighlightError>;
 
 /// Main highlighter that manages languages and performs highlighting.
+/// Uses lazy loading for highlight configurations to improve startup time.
 pub struct TreeSitterHighlighter {
     registry: LanguageRegistry,
-    configs: HashMap<String, HighlightConfiguration>,
+    /// Lazy-loaded highlight configurations (loaded on first use)
+    configs: RwLock<HashMap<String, HighlightConfiguration>>,
     theme: Theme,
     queries_dir: PathBuf,
 }
@@ -62,16 +65,14 @@ impl TreeSitterHighlighter {
     pub fn with_theme(theme: Theme) -> Self {
         let registry = LanguageRegistry::new();
         let queries_dir = Self::get_queries_dir();
-        let mut highlighter = Self {
+        
+        // Lazy loading: don't pre-initialize configs, load on demand
+        Self {
             registry,
-            configs: HashMap::new(),
+            configs: RwLock::new(HashMap::new()),
             theme,
             queries_dir,
-        };
-        
-        // Pre-initialize configurations for all supported languages
-        highlighter.initialize_configs();
-        highlighter
+        }
     }
     
     /// Get the queries directory path.
@@ -98,15 +99,35 @@ impl TreeSitterHighlighter {
         PathBuf::from("queries")
     }
     
-    /// Initialize highlight configurations for supported languages.
-    fn initialize_configs(&mut self) {
-        for lang_name in self.registry.supported_languages() {
-            if let Some(lang) = self.registry.get_language(lang_name) {
-                if let Ok(config) = self.create_config_from_files(lang_name, lang) {
-                    self.configs.insert(lang_name.to_string(), config);
-                }
+    /// Ensure a highlight configuration exists for a language (lazy loading).
+    /// Returns true if the config was created, false if it already existed or failed.
+    fn ensure_config(&self, name: &str) -> bool {
+        // First, check if already cached with read lock
+        {
+            let configs = self.configs.read().unwrap();
+            if configs.contains_key(name) {
+                return true;
             }
         }
+        
+        // Not in cache, try to create it
+        let lang = match self.registry.get_language(name) {
+            Some(l) => l,
+            None => return false,
+        };
+        
+        let config = match self.create_config_from_files(name, lang) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        
+        // Store in cache with write lock
+        {
+            let mut configs = self.configs.write().unwrap();
+            configs.insert(name.to_string(), config);
+        }
+        
+        true
     }
     
     /// Create a highlight configuration by loading query files.
@@ -184,9 +205,10 @@ impl TreeSitterHighlighter {
     /// Set the theme for highlighting.
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
-        // Reconfigure all configs with new theme
+        // Reconfigure all cached configs with new theme
         let captured_names = self.theme.captured_names();
-        for config in self.configs.values_mut() {
+        let mut configs = self.configs.write().unwrap();
+        for config in configs.values_mut() {
             config.configure(&captured_names);
         }
     }
@@ -201,9 +223,14 @@ impl TreeSitterHighlighter {
         // Get the canonical language name (resolves aliases like "csharp" -> "c-sharp")
         let canonical_name = self.registry.get_canonical_name(language);
         
-        // Get the configuration for this language
-        let config = self.configs.get(&canonical_name)
-            .ok_or_else(|| HighlightError::UnsupportedLanguage(language.to_string()))?;
+        // Ensure the configuration exists (lazy loading)
+        if !self.ensure_config(&canonical_name) {
+            return Err(HighlightError::UnsupportedLanguage(language.to_string()));
+        }
+        
+        // Get the configuration (now guaranteed to exist)
+        let configs = self.configs.read().unwrap();
+        let config = configs.get(&canonical_name).unwrap();
         
         // Create a new highlighter for this operation
         let mut highlighter = Highlighter::new();
@@ -406,7 +433,8 @@ mod tests {
         if let Some(lang) = highlighter.supported_languages().first() {
             let result = highlighter.highlight("", lang);
             // Empty code should still work
-            assert!(result.is_ok() || !highlighter.configs.contains_key(*lang));
+            let configs = highlighter.configs.read().unwrap();
+            assert!(result.is_ok() || !configs.contains_key(*lang));
         }
     }
     
