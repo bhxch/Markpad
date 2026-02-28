@@ -122,6 +122,8 @@ jobs:
           cp src-tauri/target/release/Markpad.exe packaging/choco/tools/Markpad.exe
           choco pack packaging/choco/markpad-app.nuspec --version ${{ needs.create-release.outputs.version }} --outdir .
           gh release upload v${{ needs.create-release.outputs.version }} markpad-app.${{ needs.create-release.outputs.version }}.nupkg --clobber
+          choco pack packaging/choco/markpad-app.nuspec --version ${{ needs.create-release.outputs.version }} --outdir .
+          gh release upload v${{ needs.create-release.outputs.version }} markpad-app.${{ needs.create-release.outputs.version }}.nupkg --clobber
 
       - name: Publish to Chocolatey
         if: matrix.platform == 'windows-latest' && matrix.arch == 'x64'
@@ -130,6 +132,7 @@ jobs:
           CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
         run: |
           choco apikey --key $env:CHOCO_API_KEY --source https://push.chocolatey.org/
+          choco push markpad-app.${{ needs.create-release.outputs.version }}.nupkg --source https://push.chocolatey.org/
           choco push markpad-app.${{ needs.create-release.outputs.version }}.nupkg --source https://push.chocolatey.org/
 
       # --- Windows Build (ARM64) ---
@@ -171,6 +174,7 @@ jobs:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         run: |
           # Build snap
+          sg lxd -c 'snapcraft pack'
           sg lxd -c 'snapcraft pack'
           
           # Find and upload the snap
