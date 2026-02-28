@@ -130,10 +130,9 @@ jobs:
         run: |
           mkdir -p packaging/choco/tools
           cp src-tauri/target/release/Markpad.exe packaging/choco/tools/Markpad.exe
-          choco pack packaging/choco/markpad-app.nuspec --version ${{ needs.create-release.outputs.version }} --outdir .
-          gh release upload v${{ needs.create-release.outputs.version }} markpad-app.${{ needs.create-release.outputs.version }}.nupkg --clobber
-          choco pack packaging/choco/markpad-app.nuspec --version ${{ needs.create-release.outputs.version }} --outdir .
-          gh release upload v${{ needs.create-release.outputs.version }} markpad-app.${{ needs.create-release.outputs.version }}.nupkg --clobber
+          cp LICENSE packaging/choco/tools/LICENSE.txt
+          choco pack packaging/choco/markpad.nuspec --version ${{ needs.create-release.outputs.version }} --outdir .
+          gh release upload v${{ needs.create-release.outputs.version }} markpad.${{ needs.create-release.outputs.version }}.nupkg --clobber
 
       - name: Publish to Chocolatey
         if: matrix.platform == 'windows-latest' && matrix.arch == 'x64'
