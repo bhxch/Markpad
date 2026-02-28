@@ -1,20 +1,25 @@
 <script lang="ts">
 	import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
+	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { onMount, tick, untrack } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import { openUrl } from '@tauri-apps/plugin-opener';
 	import { open, save, ask } from '@tauri-apps/plugin-dialog';
 	import Installer from './Installer.svelte';
 	import Uninstaller from './Uninstaller.svelte';
+	import Settings from './components/Settings.svelte';
 	import TitleBar from './components/TitleBar.svelte';
 	import Editor from './components/Editor.svelte';
 	import Modal from './components/Modal.svelte';
 
+	import DOMPurify from 'dompurify';
 	import HomePage from './components/HomePage.svelte';
 	import { tabManager } from './stores/tabs.svelte.js';
 	import { settings } from './stores/settings.svelte.js';
 	import { createKrokiUrl, SUPPORTED_DIAGRAMS } from './kroki';
+
+	const appWindow = getCurrentWindow();
 
 	type MarkdownResponse = {
 		html: string;
@@ -117,6 +122,13 @@
 	let isScrollSynced = $derived(tabManager.activeTab?.isScrollSynced ?? false);
 
 	let showHome = $state(false);
+	let isFullWidth = $state(localStorage.getItem('isFullWidth') === 'true');
+
+	$effect(() => {
+		localStorage.setItem('isFullWidth', String(isFullWidth));
+	});
+
+	let showSettings = $state(false);
 
 	// ui state
 	let tooltip = $state({ show: false, text: '', x: 0, y: 0 });
@@ -204,11 +216,37 @@
 		// resolve relative image paths
 		for (const img of doc.querySelectorAll('img')) {
 			const src = img.getAttribute('src');
+			let finalSrc = src;
 			if (src && !src.startsWith('http') && !src.startsWith('data:')) {
-				img.setAttribute('src', convertFileSrc(resolvePath(filePath, src)));
-			} else if (src && isYoutubeLink(src)) {
-				const videoId = getYoutubeId(src);
-				if (videoId) replaceWithYoutubeEmbed(img, videoId);
+				finalSrc = convertFileSrc(resolvePath(filePath, src));
+				img.setAttribute('src', finalSrc);
+			}
+
+			if (src) {
+				const ext = src.split('.').pop()?.toLowerCase();
+				const isVideo = ['mp4', 'webm', 'ogg', 'mov'].includes(ext || '');
+				const isAudio = ['mp3', 'wav', 'aac', 'flac', 'm4a'].includes(ext || '');
+
+				if (isVideo || isAudio) {
+					const media = doc.createElement(isVideo ? 'video' : 'audio');
+					media.setAttribute('controls', '');
+					media.setAttribute('src', finalSrc || '');
+					media.style.maxWidth = '100%';
+
+					// Copy attributes
+					if (img.hasAttribute('width')) media.setAttribute('width', img.getAttribute('width')!);
+					if (img.hasAttribute('height')) media.setAttribute('height', img.getAttribute('height')!);
+					if (img.hasAttribute('alt')) media.setAttribute('aria-label', img.getAttribute('alt')!);
+					if (img.hasAttribute('title')) media.setAttribute('title', img.getAttribute('title')!);
+
+					img.replaceWith(media);
+					continue;
+				}
+
+				if (isYoutubeLink(src)) {
+					const videoId = getYoutubeId(src);
+					if (videoId) replaceWithYoutubeEmbed(img, videoId);
+				}
 			}
 		}
 
@@ -304,6 +342,15 @@
 			if (filePath) saveRecentFile(filePath);
 		} catch (error) {
 			console.error('Error loading file:', error);
+			const errStr = String(error);
+			if (errStr.includes('The system cannot find the file specified') || errStr.includes('No such file or directory')) {
+				// Remove from recent files if file no longer exists
+				recentFiles = recentFiles.filter((f) => f !== filePath);
+				localStorage.setItem('recent-files', JSON.stringify(recentFiles));
+				if (tabManager.activeTab && tabManager.activeTab.path === filePath) {
+					tabManager.closeTab(tabManager.activeTab.id);
+				}
+			}
 		}
 	}
 
@@ -326,9 +373,14 @@
 						try {
 							const id = 'mermaid-' + Math.random().toString(36).substring(2, 11);
 							const { svg } = await mermaid.render(id, block.textContent || '');
-							div.innerHTML = svg;
+							// Use DOMPurify for SVG security
+							div.innerHTML = DOMPurify.sanitize(svg, {
+								ADD_TAGS: ['foreignObject'],
+								ADD_ATTR: ['dominant-baseline', 'text-anchor'],
+							});
 						} catch (e) {
-							div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error</div>`;
+							console.error('Failed to render Mermaid diagram:', e);
+							div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error: ${e}</div>`;
 						}
 
 						const wrapper = document.createElement('div');
@@ -800,6 +852,33 @@
 		}
 	}
 
+	async function saveContentAs(): Promise<boolean> {
+		const tab = tabManager.activeTab;
+		if (!tab) return false;
+
+		const selected = await save({
+			filters: [
+				{ name: 'Markdown', extensions: ['md'] },
+				{ name: 'All Files', extensions: ['*'] },
+			],
+			defaultPath: tab.path || undefined,
+		});
+
+		if (selected) {
+			try {
+				await invoke('save_file_content', { path: selected, content: tab.rawContent });
+				tabManager.updateTabPath(tab.id, selected);
+				saveRecentFile(selected);
+				tab.isDirty = false;
+				return true;
+			} catch (e) {
+				console.error('Failed to save file as', e);
+				return false;
+			}
+		}
+		return false;
+	}
+
 	function handleNewFile() {
 		tabManager.addNewTab();
 		showHome = false;
@@ -907,7 +986,11 @@
 		}
 	}
 
-	let zoomLevel = $state(100);
+	let zoomLevel = $state(parseInt(localStorage.getItem('zoomLevel') || '100', 10));
+
+	$effect(() => {
+		localStorage.setItem('zoomLevel', String(zoomLevel));
+	});
 
 	function handleWheel(e: WheelEvent) {
 		if (e.ctrlKey || e.metaKey) {
@@ -1011,6 +1094,10 @@
 		if (cmdOrCtrl && key === '0') {
 			e.preventDefault();
 			zoomLevel = 100;
+		}
+		if (cmdOrCtrl && key === 'q') {
+			e.preventDefault();
+			appWindow.close();
 		}
 	}
 
@@ -1364,6 +1451,11 @@
 		showHome={false}
 		{zoomLevel}
 		onselectFile={selectFile}
+		onnewFile={handleNewFile}
+		onopenFile={selectFile}
+		onsaveFile={saveContent}
+		onsaveFileAs={saveContentAs}
+		onexit={() => appWindow.close()}
 		ontoggleHome={toggleHome}
 		ononpenFileLocation={openFileLocation}
 		ontoggleLiveMode={toggleLiveMode}
@@ -1373,6 +1465,9 @@
 		ondetach={handleDetach}
 		ontabclick={() => (showHome = false)}
 		onresetZoom={() => (zoomLevel = 100)}
+		{isFullWidth}
+		ontoggleFullWidth={() => (isFullWidth = !isFullWidth)}
+		onopenSettings={() => (showSettings = true)}
 		oncloseTab={(id) => {
 			canCloseTab(id).then((can) => {
 				if (can) tabManager.closeTab(id);
@@ -1397,6 +1492,11 @@
 		{showHome}
 		{zoomLevel}
 		onselectFile={selectFile}
+		onnewFile={handleNewFile}
+		onopenFile={selectFile}
+		onsaveFile={saveContent}
+		onsaveFileAs={saveContentAs}
+		onexit={() => appWindow.close()}
 		ontoggleHome={toggleHome}
 		ononpenFileLocation={openFileLocation}
 		ontoggleLiveMode={toggleLiveMode}
@@ -1406,6 +1506,9 @@
 		ondetach={handleDetach}
 		ontabclick={() => (showHome = false)}
 		onresetZoom={() => (zoomLevel = 100)}
+		{isFullWidth}
+		ontoggleFullWidth={() => (isFullWidth = !isFullWidth)}
+		onopenSettings={() => (showSettings = true)}
 		oncloseTab={(id) => {
 			canCloseTab(id).then((can) => {
 				if (can) tabManager.closeTab(id);
@@ -1471,7 +1574,7 @@
 
 					<!-- Viewer Pane -->
 					<div class="pane viewer-pane" class:active={!isEditing || isSplit} style="flex: {isSplit ? 1 - tabManager.activeTab.splitRatio : !isEditing ? 1 : 0}">
-						<article bind:this={markdownBody} contenteditable="false" class="markdown-body" onscroll={handleScroll}></article>
+						<article bind:this={markdownBody} contenteditable="false" class="markdown-body" class:full-width={isFullWidth} onscroll={handleScroll}></article>
 					</div>
 				</div>
 				
@@ -1531,6 +1634,10 @@
 	{/if}
 {/if}
 
+{#if showSettings}
+	<Settings onclose={() => (showSettings = false)} />
+{/if}
+
 <style>
 	:root {
 		--animation: cubic-bezier(0.05, 0.95, 0.05, 0.95);
@@ -1554,6 +1661,11 @@
 		height: 100%;
 		overflow-y: auto;
 		transform: translate3d(0, 0, 0); /* Create stacking context */
+	}
+
+	.markdown-body.full-width {
+		padding: 50px clamp(calc(calc(50% - 550px)), 5vw, 80px);
+		max-width: 100%;
 	}
 
 	.caret-indicator {
