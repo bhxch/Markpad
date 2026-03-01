@@ -1,136 +1,136 @@
-# Upstream Merge Report
+# 上游合并报告
 
-**Date**: 2026-03-01  
-**Merge Commit**: 36df8f6  
-**Upstream Repository**: https://github.com/alecdotdev/Markpad  
-**Upstream Commit**: d976b82 (master)  
-**Fork Point**: d0781f4
+**日期**: 2026-03-01  
+**合并提交**: 36df8f6  
+**上游仓库**: https://github.com/alecdotdev/Markpad  
+**上游提交**: d976b82 (master)  
+**分叉点**: d0781f4
 
-## Overview
+## 概述
 
-This report documents the merge of upstream changes from alecdotdev/Markpad into our fork. The merge was performed to integrate new features from the original project while preserving our custom implementations.
+本文档记录了从 alecdotdev/Markpad 合并上游更改到我们 fork 的过程。合并旨在集成原始项目的新功能，同时保留我们的自定义实现。
 
-## Branch Divergence
+## 分支差异
 
-### Fork Point
-The fork diverged from upstream at commit `d0781f4`.
+### 分叉点
+我们的 fork 在提交 `d0781f4` 处与上游分叉。
 
-### Upstream Changes (45 commits)
-From the fork point to upstream/master, the following major features were added:
+### 上游更改 (45 个提交)
+从分叉点到 upstream/master，添加了以下主要功能：
 
-| Feature | Description | PR/Issue |
+| 功能 | 描述 | PR/Issue |
 |---------|-------------|----------|
-| Settings Page | Font customization for editor and preview | #62 |
-| Vim Mode | Toggle for vim-style keybindings | #31 |
-| Zen Mode | Distraction-free editing mode | #57 |
-| Full-width Toggle | Expand preview to full width | #29 |
-| Custom Context Menu | Custom right-click menu | #59 |
-| Zoom Level Persistence | Remember zoom between launches | #58 |
-| Linux WebKit Fixes | Wayland environment variable workarounds | #55 |
-| Snap/Choco Packages | Linux Snap and Windows Chocolateo packaging | #63 |
-| Mermaid Security | DOMPurify sanitization for SVG foreignObject | #27 |
-| Window Focus | Fix focus on open from terminal | #44 |
-| Auto-reload | Renamed from "Watcher mode" | #40 |
-| Multimedia Embed | Video/audio embedding support | #46 |
-| YouTube Embed | YouTube video embedding | #47 |
-| GFM Alerts | GitHub-style alert blocks | - |
+| 设置页面 | 编辑器和预览的字体自定义 | #62 |
+| Vim 模式 | vim 风格快捷键切换 | #31 |
+| 禅模式 | 无干扰编辑模式 | #57 |
+| 全宽切换 | 将预览扩展到全宽 | #29 |
+| 自定义右键菜单 | 自定义右键菜单 | #59 |
+| 缩放级别持久化 | 在启动之间记住缩放 | #58 |
+| Linux WebKit 修复 | Wayland 环境变量变通方案 | #55 |
+| Snap/Choco 包 | Linux Snap 和 Windows Chocolatey 打包 | #63 |
+| Mermaid 安全 | SVG foreignObject 的 DOMPurify 清理 | #27 |
+| 窗口焦点 | 修复从终端打开时的焦点问题 | #44 |
+| 自动重载 | 从"监视模式"重命名 | #40 |
+| 多媒体嵌入 | 视频/音频嵌入支持 | #46 |
+| YouTube 嵌入 | YouTube 视频嵌入 | #47 |
+| GFM 警告块 | GitHub 风格的警告块 | - |
 
-### Our Changes (31 commits)
-Our fork includes these custom features:
+### 我们的更改 (31 个提交)
+我们的 fork 包含以下自定义功能：
 
-| Feature | Description |
+| 功能 | 描述 |
 |---------|-------------|
-| Tree-sitter Highlighting | 264 language grammars with lazy loading |
-| Kroki Diagram Support | Extended diagram types via Kroki API |
-| TOC Sidebar | Table of contents navigation |
-| Custom Theme System | Multiple color themes (GitHub, One Dark, Monokai, Nord, Solarized, Vue) |
-| Code Theme Toggle | Separate theme for code highlighting |
-| Metadata Display | Frontmatter extraction and display |
-| Customizable Toolbar | Drag-and-drop toolbar customization |
-| Query Embedding | Embedded query files for single-exe distribution |
+| Tree-sitter 语法高亮 | 264 种语言语法，支持延迟加载 |
+| Kroki 图表支持 | 通过 Kroki API 扩展图表类型 |
+| TOC 侧边栏 | 目录导航 |
+| 自定义主题系统 | 多种配色主题 (GitHub, One Dark, Monokai, Nord, Solarized, Vue) |
+| 代码主题切换 | 代码高亮的独立主题 |
+| 元数据显示 | Frontmatter 提取和显示 |
+| 可定制工具栏 | 拖放式工具栏自定义 |
+| 查询文件嵌入 | 嵌入查询文件以实现单文件分发 |
 
-## Conflict Resolution
+## 冲突解决
 
-### Files with Conflicts (10 files)
+### 冲突文件 (10 个文件)
 
-| File | Resolution Strategy |
+| 文件 | 解决策略 |
 |------|---------------------|
-| `.gitignore` | Merged both additions |
-| `package.json` | Kept both `pako` and `monaco-vim` dependencies |
-| `package-lock.json` | Regenerated via `npm install` |
-| `src-tauri/Cargo.lock` | Accepted upstream version |
-| `src-tauri/src/lib.rs` | Preserved tree-sitter commands, added upstream's `save_theme` and `get_system_fonts` |
-| `src/lib/MarkdownViewer.svelte` | **Properly merged** - Integrated upstream's settings, multimedia embeds, DOMPurify, zoom persistence while preserving tree-sitter and Kroki |
-| `src/lib/components/Tab.svelte` | Kept our active tab underline style |
-| `src/lib/components/TitleBar.svelte` | **Properly merged** - Added upstream's props (newFile, openFile, saveFile, saveFileAs, exit, fullWidth, settings) while preserving customizable toolbar |
-| `src/lib/stores/settings.svelte.ts` | Merged both feature sets |
-| `src/styles.css` | Auto-merged (no conflicts after initial merge) |
+| `.gitignore` | 合并双方的添加 |
+| `package.json` | 保留 `pako` 和 `monaco-vim` 依赖 |
+| `package-lock.json` | 通过 `npm install` 重新生成 |
+| `src-tauri/Cargo.lock` | 接受上游版本 |
+| `src-tauri/src/lib.rs` | 保留 tree-sitter 命令，添加上游的 `save_theme` 和 `get_system_fonts` |
+| `src/lib/MarkdownViewer.svelte` | **正确合并** - 集成了上游的设置、多媒体嵌入、DOMPurify、缩放持久化，同时保留 tree-sitter 和 Kroki |
+| `src/lib/components/Tab.svelte` | 保留我们的活动标签下划线样式 |
+| `src/lib/components/TitleBar.svelte` | **正确合并** - 添加上游的 props (newFile, openFile, saveFile, saveFileAs, exit, fullWidth, settings)，同时保留可定制工具栏 |
+| `src/lib/stores/settings.svelte.ts` | 合并双方功能集 |
+| `src/styles.css` | 自动合并（初始合并后无冲突） |
 
-### Key Decisions
+### 关键决策
 
-1. **MarkdownViewer.svelte**: Properly integrated upstream features:
-   - Added Settings component and `showSettings` state
-   - Added `isFullWidth` state with localStorage persistence
-   - Added multimedia embed support (video/audio via `<video>` tags)
-   - Added DOMPurify sanitization for Mermaid SVG foreignObject
-   - Added zoom level persistence to localStorage
-   - Added `saveContentAs` function for Save As functionality
-   - Added Ctrl+Q exit shortcut
-   - Preserved tree-sitter highlighting and Kroki diagram support
+1. **MarkdownViewer.svelte**: 正确集成了上游功能：
+   - 添加 Settings 组件和 `showSettings` 状态
+   - 添加 `isFullWidth` 状态，支持 localStorage 持久化
+   - 添加多媒体嵌入支持（通过 `<video>` 标签嵌入视频/音频）
+   - 添加 Mermaid SVG foreignObject 的 DOMPurify 清理
+   - 添加缩放级别持久化到 localStorage
+   - 添加 `saveContentAs` 函数实现另存为功能
+   - 添加 Ctrl+Q 退出快捷键
+   - 保留 tree-sitter 语法高亮和 Kroki 图表支持
 
-2. **TitleBar.svelte**: Properly integrated upstream features:
-   - Added props: `onnewFile`, `onopenFile`, `onsaveFile`, `onsaveFileAs`, `onexit`, `isFullWidth`, `ontoggleFullWidth`, `onopenSettings`
-   - Added toolbar actions for full-width toggle and settings
-   - Preserved customizable toolbar system with drag-and-drop reordering
-   - Preserved theme cycling integration
+2. **TitleBar.svelte**: 正确集成了上游功能：
+   - 添加 props: `onnewFile`, `onopenFile`, `onsaveFile`, `onsaveFileAs`, `onexit`, `isFullWidth`, `ontoggleFullWidth`, `onopenSettings`
+   - 添加全宽切换和设置的工具栏按钮
+   - 保留可定制工具栏系统的拖放重排功能
+   - 保留主题切换集成
 
-3. **settings.svelte.ts**: Merged both feature sets:
-   - Added upstream's vimMode, zenMode, statusBar, etc.
-   - Preserved our themeScheme, codeTheme, toolbarLayout
+3. **settings.svelte.ts**: 合并双方功能集：
+   - 添加上游的 vimMode、zenMode、statusBar 等
+   - 保留我们的 themeScheme、codeTheme、toolbarLayout
 
-## Upstream Features Integrated
+## 上游功能集成状态
 
-The following upstream features have been successfully integrated:
+以下上游功能已成功集成：
 
-| Feature | Status | Notes |
+| 功能 | 状态 | 备注 |
 |---------|--------|-------|
-| Settings.svelte | ✅ Integrated | Added Settings component with `showSettings` state, triggered from toolbar |
-| Full-width Toggle | ✅ Integrated | Added `isFullWidth` state with localStorage persistence, accessible from toolbar |
-| Multimedia Embed | ✅ Integrated | Video/audio embedding via `<video>` tags in processMarkdownHtml |
-| Mermaid Security | ✅ Integrated | DOMPurify sanitization for SVG foreignObject |
-| Zoom Persistence | ✅ Integrated | Zoom level saved to localStorage |
-| Save As | ✅ Integrated | Added `saveContentAs` function and toolbar actions |
-| Exit Shortcut | ✅ Integrated | Ctrl+Q closes the window |
-| Vim Mode | ⚠️ Partial | Settings exist, needs UI exposure in toolbar |
-| Zen Mode | ⚠️ Partial | Settings exist, needs UI implementation |
+| Settings.svelte | ✅ 已集成 | 添加 Settings 组件和 `showSettings` 状态，从工具栏触发 |
+| 全宽切换 | ✅ 已集成 | 添加 `isFullWidth` 状态，支持 localStorage 持久化，可从工具栏访问 |
+| 多媒体嵌入 | ✅ 已集成 | 通过 processMarkdownHtml 中的 `<video>` 标签嵌入视频/音频 |
+| Mermaid 安全 | ✅ 已集成 | SVG foreignObject 的 DOMPurify 清理 |
+| 缩放持久化 | ✅ 已集成 | 缩放级别保存到 localStorage |
+| 另存为 | ✅ 已集成 | 添加 `saveContentAs` 函数和工具栏操作 |
+| 退出快捷键 | ✅ 已集成 | Ctrl+Q 关闭窗口 |
+| Vim 模式 | ⚠️ 部分 | 设置已存在，需要在工具栏中暴露 UI |
+| 禅模式 | ⚠️ 部分 | 设置已存在，需要实现 UI |
 
-## Verification
+## 验证
 
-### Frontend Check
+### 前端检查
 ```
 npm run check
 ```
-Result: 0 errors, 3 warnings (a11y and CSS warnings only)
+结果: 0 个错误，3 个警告（仅 a11y 和 CSS 警告）
 
-### Backend Check
+### 后端检查
 ```
 cargo check
 ```
-Result: Compiled successfully with 5 warnings (unused imports and dead code)
+结果: 编译成功，5 个警告（未使用的导入和死代码）
 
-## Post-Merge Recommendations
+## 合并后建议
 
-1. **Test Settings Integration**: Verify Settings page works correctly with our theme system.
+1. **测试设置集成**: 验证设置页面与我们的主题系统正确配合。
 
-2. **Add Vim Mode UI**: The vim mode toggle exists in settings but needs UI exposure in our TitleBar for quick access.
+2. **添加 Vim 模式 UI**: vim 模式切换已存在于设置中，但需要在工具栏中暴露 UI 以便快速访问。
 
-3. **Implement Zen Mode**: Settings exist but the actual zen mode UI implementation needs to be added.
+3. **实现禅模式**: 设置已存在，但实际的禅模式 UI 实现需要添加。
 
-4. **Test Linux Compatibility**: Upstream added WebKit fixes for Linux Wayland - these should be verified on Linux systems.
+4. **测试 Linux 兼容性**: 上游添加了 Linux Wayland 的 WebKit 修复 - 应在 Linux 系统上验证。
 
-5. **Remove Unused Code**: Clean up the warning about unused imports and dead code in the highlight module.
+5. **清理未使用代码**: 清理高亮模块中关于未使用导入和死代码的警告。
 
-## Files Changed Summary
+## 文件变更摘要
 
 ```
  new file:   .github/ISSUE_TEMPLATE/bug_report.md
@@ -163,6 +163,6 @@ Result: Compiled successfully with 5 warnings (unused imports and dead code)
  modified:   src/styles.css
 ```
 
-## Conclusion
+## 结论
 
-The merge was completed successfully with all conflicts resolved. Our custom features (tree-sitter highlighting, Kroki diagrams, TOC sidebar, theme system, customizable toolbar) are preserved while gaining access to upstream's new features (settings page, vim mode, zen mode, etc.). Some additional integration work is recommended to fully leverage the merged features.
+合并已成功完成，所有冲突已解决。我们的自定义功能（tree-sitter 语法高亮、Kroki 图表、TOC 侧边栏、主题系统、可定制工具栏）已保留，同时获得了上游的新功能（设置页面、vim 模式、禅模式等）。建议进行一些额外的集成工作以充分利用合并的功能。
