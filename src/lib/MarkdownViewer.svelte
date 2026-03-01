@@ -18,6 +18,7 @@
 	import { settings } from './stores/settings.svelte.js';
 	import { createKrokiUrl, SUPPORTED_DIAGRAMS } from './kroki';
 	import { getDiagramType, DIAGRAM_ALIASES, type DiagramRenderMode } from './diagrams';
+	import { renderLocalDiagram, supportsLocalRender } from './localRenderers';
 
 	const appWindow = getCurrentWindow();
 
@@ -359,7 +360,7 @@
 		isRendering = true;
 
 		try {
-			// 1. Diagram Rendering (Mermaid + Kroki supported diagrams)
+			// 1. Diagram Rendering (Mermaid + Kroki + Local renderers)
 			const allCodeBlocks = markdownBody.querySelectorAll('pre code');
 			for (const block of Array.from(allCodeBlocks)) {
 				if (block.closest('.diagram-wrapper')) continue;
@@ -400,21 +401,44 @@
 									console.error('Kroki error:', e);
 									setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
 								}
-							} else if (renderMode === 'local' && normalizedLang === 'mermaid' && mermaid) {
-								// Local Mermaid rendering
-								const div = document.createElement('div');
-								div.className = 'mermaid';
+							} else if (renderMode === 'local') {
+								// Local rendering
+								const rendererId = settings.getDiagramRenderer(normalizedLang) || diagramType.defaultRenderer || '';
+								const code = (block as HTMLElement).textContent || '';
 								
-								try {
-									const id = 'mermaid-' + Math.random().toString(36).substring(2, 11);
-									const { svg } = await mermaid.render(id, block.textContent || '');
-									div.innerHTML = svg;
-								} catch (e) {
-									console.error('Failed to render Mermaid diagram:', e);
-									div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error: ${e}</div>`;
+								// Mermaid has special handling
+								if (normalizedLang === 'mermaid' && mermaid) {
+									const div = document.createElement('div');
+									div.className = 'mermaid';
+									
+									try {
+										const id = 'mermaid-' + Math.random().toString(36).substring(2, 11);
+										const { svg } = await mermaid.render(id, code);
+										div.innerHTML = svg;
+									} catch (e) {
+										console.error('Failed to render Mermaid diagram:', e);
+										div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error: ${e}</div>`;
+									}
+									
+									setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'mermaid');
+								} else if (supportsLocalRender(normalizedLang)) {
+									// Other local renderers
+									const div = document.createElement('div');
+									div.className = `local-diagram local-diagram-${normalizedLang}`;
+									
+									try {
+										const svg = await renderLocalDiagram(normalizedLang, code, rendererId);
+										div.innerHTML = svg;
+									} catch (e) {
+										console.error(`Failed to render ${normalizedLang} diagram:`, e);
+										div.innerHTML = `<div class="diagram-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">${normalizedLang} Render Error: ${e}</div>`;
+									}
+									
+									setupDiagramWrapper(wrapper, div, pre as HTMLElement, normalizedLang);
+								} else {
+									// Fallback: render as source
+									setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
 								}
-								
-								setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'mermaid');
 							} else {
 								// Fallback: render as source
 								setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);

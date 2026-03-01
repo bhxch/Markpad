@@ -466,34 +466,59 @@
 												<span class="diagram-desc">{diagram.description}</span>
 											{/if}
 										</div>
-										<div class="select-wrapper">
-											<select 
-												id="diagram-{diagram.id}" 
-												value={settings.diagramSettings[diagram.id]}
-												onchange={(e) => settings.setDiagramRenderMode(diagram.id, e.currentTarget.value as DiagramRenderMode)}
-											>
-												{#each diagram.supportedModes as mode}
-													<option value={mode}>
-														{#if mode === 'local'}
-															Local (JS/WASM)
-														{:else if mode === 'kroki'}
-															Kroki
-														{:else}
-															Source Code
-														{/if}
-													</option>
-												{/each}
-											</select>
-											<svg
-												class="select-arrow"
-												width="12"
-												height="12"
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="2"
-												stroke-linecap="round"
-												stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+										<div class="diagram-controls">
+											<div class="select-wrapper">
+												<select 
+													id="diagram-{diagram.id}" 
+													value={settings.diagramSettings[diagram.id]}
+													onchange={(e) => settings.setDiagramRenderMode(diagram.id, e.currentTarget.value as DiagramRenderMode)}
+												>
+													{#each diagram.supportedModes as mode}
+														<option value={mode}>
+															{#if mode === 'local'}
+																Local (JS/WASM)
+															{:else if mode === 'kroki'}
+																Kroki
+															{:else}
+																Source Code
+															{/if}
+														</option>
+													{/each}
+												</select>
+												<svg
+													class="select-arrow"
+													width="12"
+													height="12"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+											</div>
+											{#if diagram.supportedModes.includes('local') && diagram.localRenderers && diagram.localRenderers.length > 1 && settings.diagramSettings[diagram.id] === 'local'}
+												<div class="select-wrapper renderer-select">
+													<select 
+														id="renderer-{diagram.id}" 
+														value={settings.diagramRendererSettings[diagram.id] || diagram.defaultRenderer}
+														onchange={(e) => settings.setDiagramRenderer(diagram.id, e.currentTarget.value)}
+													>
+														{#each diagram.localRenderers as renderer}
+															<option value={renderer.id}>{renderer.name}</option>
+														{/each}
+													</select>
+													<svg
+														class="select-arrow"
+														width="12"
+														height="12"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2"
+														stroke-linecap="round"
+														stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+												</div>
+											{/if}
 										</div>
 									</div>
 								{/each}
@@ -993,5 +1018,16 @@
 
 	.diagram-setting-item .select-wrapper select {
 		min-width: 140px;
+	}
+
+	.diagram-controls {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.renderer-select select {
+		min-width: 160px;
+		font-size: 12px;
 	}
 </style>
