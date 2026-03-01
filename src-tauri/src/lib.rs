@@ -6,7 +6,6 @@ use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tauri::menu::ContextMenu;
 use serde::Serialize;
 use std::sync::OnceLock;
 

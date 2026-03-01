@@ -117,7 +117,7 @@ pub fn dark_modern_colors() -> ThemeColors {
     }
 }
 
-/// Lazy-static Dark Modern theme.
+// Lazy-static Dark Modern theme.
 lazy_static::lazy_static! {
     pub static ref DARK_MODERN: ThemeColors = dark_modern_colors();
 }

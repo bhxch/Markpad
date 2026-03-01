@@ -290,6 +290,24 @@
 			handler: () => onopenSettings?.()
 		};
 
+		// Vim mode toggle
+		actions['vim_mode'] = {
+			id: 'vim_mode',
+			label: settings.vimMode ? 'Disable Vim Mode' : 'Enable Vim Mode',
+			icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 8l3 8 3-8"/><path d="M16 8v8"/></svg>`,
+			handler: () => settings.toggleVimMode(),
+			isActive: settings.vimMode
+		};
+
+		// Zen mode toggle
+		actions['zen_mode'] = {
+			id: 'zen_mode',
+			label: settings.zenMode ? 'Exit Zen Mode' : 'Zen Mode',
+			icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`,
+			handler: () => settings.toggleZenMode(),
+			isActive: settings.zenMode
+		};
+
 		return actions;
 	});
 

@@ -32,6 +32,7 @@ impl Theme {
     }
     
     /// Get the CSS class name for a capture.
+    #[allow(dead_code)]
     pub fn css_class(&self, capture: &str) -> Option<&'static str> {
         CAPTURE_TO_CSS.get(capture).copied()
     }
@@ -51,6 +52,7 @@ impl Theme {
     }
     
     /// Get the CSS variable definitions for this theme.
+    #[allow(dead_code)]
     pub fn css_variables(&self) -> String {
         let colors = self.colors();
         let mut vars = String::new();
@@ -99,8 +101,10 @@ pub struct ThemeColors {
     /// Map from capture name to hex color
     pub color_map: HashMap<String, &'static str>,
     /// Background color
+    #[allow(dead_code)]
     pub background: &'static str,
     /// Foreground (default text) color
+    #[allow(dead_code)]
     pub foreground: &'static str,
 }
 

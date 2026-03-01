@@ -8,8 +8,8 @@ export class SettingsStore {
 	codeTheme = $state<string>('auto'); // 'auto' | 'dark-modern' | 'light-modern'
 	
 	toolbarLayout = $state<{ visible: string[]; hidden: string[] }>({
-		visible: ['zoom', 'open_loc', 'split', 'sync', 'live', 'metadata', 'toc', 'theme_scheme', 'code_theme', 'edit'],
-		hidden: []
+		visible: ['zoom', 'open_loc', 'split', 'sync', 'live', 'metadata', 'toc', 'vim_mode', 'zen_mode', 'theme_scheme', 'code_theme', 'edit'],
+		hidden: ['full_width', 'settings']
 	});
 
 	themes = [

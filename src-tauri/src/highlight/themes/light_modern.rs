@@ -117,7 +117,7 @@ pub fn light_modern_colors() -> ThemeColors {
     }
 }
 
-/// Lazy-static Light Modern theme.
+// Lazy-static Light Modern theme.
 lazy_static::lazy_static! {
     pub static ref LIGHT_MODERN: ThemeColors = light_modern_colors();
 }
