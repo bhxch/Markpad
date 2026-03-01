@@ -1,3 +1,6 @@
+import type { DiagramRenderMode } from '../diagrams';
+import { getDefaultDiagramSettings } from '../diagrams';
+
 export class SettingsStore {
 	minimap = $state(false);
 	wordWrap = $state('on');
@@ -53,6 +56,9 @@ export class SettingsStore {
 	
 	// Kroki 自定义 host（支持自托管）
 	krokiHost = $state('https://kroki.io');
+	
+	// 图表渲染设置：每种图表的渲染模式
+	diagramSettings = $state<Record<string, DiagramRenderMode>>(getDefaultDiagramSettings());
 
 	constructor() {
 		if (typeof localStorage !== 'undefined') {
@@ -79,6 +85,7 @@ export class SettingsStore {
 			const savedCodeFont = localStorage.getItem('preview.codeFont');
 			const savedCodeFontSize = localStorage.getItem('preview.codeFontSize');
 			const savedKrokiHost = localStorage.getItem('kroki.host');
+			const savedDiagramSettings = localStorage.getItem('diagram.settings');
 			const parseFontSize = (value: string | null, fallback: number, min: number, max: number) => {
 				if (value === null) return fallback;
 				const parsed = Number.parseInt(value, 10);
@@ -129,6 +136,15 @@ export class SettingsStore {
 			if (savedCodeFont !== null) this.codeFont = savedCodeFont;
 			this.codeFontSize = parseFontSize(savedCodeFontSize, this.codeFontSize, 10, 24);
 			if (savedKrokiHost !== null) this.krokiHost = savedKrokiHost;
+			if (savedDiagramSettings !== null) {
+				try {
+					const parsed = JSON.parse(savedDiagramSettings);
+					// Merge with defaults to ensure all diagram types exist
+					this.diagramSettings = { ...getDefaultDiagramSettings(), ...parsed };
+				} catch (e) {
+					console.error('Failed to parse diagram settings', e);
+				}
+			}
 
 			$effect.root(() => {
 				$effect(() => {
@@ -157,6 +173,7 @@ export class SettingsStore {
 					localStorage.setItem('preview.codeFont', this.codeFont);
 					localStorage.setItem('preview.codeFontSize', String(this.codeFontSize));
 					localStorage.setItem('kroki.host', this.krokiHost);
+					localStorage.setItem('diagram.settings', JSON.stringify(this.diagramSettings));
 					if (this.preZenState) {
 						localStorage.setItem('editor.preZenState', JSON.stringify(this.preZenState));
 					} else {
@@ -263,6 +280,14 @@ export class SettingsStore {
 
 	toggleOccurrencesHighlight() {
 		this.occurrencesHighlight = !this.occurrencesHighlight;
+	}
+
+	setDiagramRenderMode(diagramId: string, mode: DiagramRenderMode) {
+		this.diagramSettings[diagramId] = mode;
+	}
+
+	getDiagramRenderMode(diagramId: string): DiagramRenderMode {
+		return this.diagramSettings[diagramId] || 'kroki';
 	}
 }
 

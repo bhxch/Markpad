@@ -2,6 +2,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { getVersion } from '@tauri-apps/api/app';
 	import { settings } from '../stores/settings.svelte.js';
+	import { DIAGRAM_TYPES, type DiagramRenderMode } from '../diagrams';
 	import { fade, scale } from 'svelte/transition';
 
 	let {
@@ -11,7 +12,7 @@
 		onclose,
 	} = $props<{ show?: boolean; theme?: 'system' | 'dark' | 'light'; onSetTheme?: (t: 'system' | 'dark' | 'light') => void; onclose: () => void }>();
 
-	let activeCategory = $state<'editor' | 'preview' | 'appearance'>('editor');
+	let activeCategory = $state<'editor' | 'preview' | 'appearance' | 'diagrams'>('editor');
 	let systemFonts = $state<string[]>([]);
 	let loaded = $state(false);
 	let settingsModal = $state<HTMLDivElement>();
@@ -164,6 +165,23 @@
 							></path>
 						</svg>
 						Appearance
+					</button>
+					<button class="nav-item" class:active={activeCategory === 'diagrams'} onclick={() => (activeCategory = 'diagrams')}>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round">
+							<polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+							<polyline points="2 17 12 22 22 17"></polyline>
+							<polyline points="2 12 12 17 22 12"></polyline>
+						</svg>
+						Diagrams
 					</button>
 
 					<div class="nav-footer">
@@ -385,30 +403,6 @@
 								</div>
 							</div>
 						</div>
-
-						<div class="settings-group">
-							<div class="settings-group-header">
-								<h2>Kroki Settings</h2>
-								<button
-									class="reset-text-btn"
-									class:disabled={settings.krokiHost === 'https://kroki.io'}
-									onclick={() => (settings.krokiHost = 'https://kroki.io')}>
-									Reset to default
-								</button>
-							</div>
-
-							<div class="setting-item">
-								<label for="kroki-host">Kroki Host</label>
-								<input
-									type="url"
-									id="kroki-host"
-									class="text-input"
-									placeholder="https://kroki.io"
-									bind:value={settings.krokiHost}
-								/>
-							</div>
-							<p class="setting-hint">自定义 Kroki 服务地址，支持自托管服务。默认使用 https://kroki.io</p>
-						</div>
 					{:else if activeCategory === 'appearance'}
 						<div class="settings-group">
 							<h2>Appearance Settings</h2>
@@ -457,6 +451,77 @@
 									<span class="toggle-slider"></span>
 								</label>
 							</div>
+						</div>
+					{:else if activeCategory === 'diagrams'}
+						<div class="settings-group">
+							<h2>Diagram Render Settings</h2>
+							<p class="settings-description">Configure how different diagram types are rendered in the preview.</p>
+							
+							<div class="diagram-settings-list">
+								{#each DIAGRAM_TYPES as diagram}
+									<div class="diagram-setting-item">
+										<div class="diagram-info">
+											<span class="diagram-name">{diagram.name}</span>
+											{#if diagram.description}
+												<span class="diagram-desc">{diagram.description}</span>
+											{/if}
+										</div>
+										<div class="select-wrapper">
+											<select 
+												id="diagram-{diagram.id}" 
+												value={settings.diagramSettings[diagram.id]}
+												onchange={(e) => settings.setDiagramRenderMode(diagram.id, e.currentTarget.value as DiagramRenderMode)}
+											>
+												{#each diagram.supportedModes as mode}
+													<option value={mode}>
+														{#if mode === 'local'}
+															Local (JS/WASM)
+														{:else if mode === 'kroki'}
+															Kroki
+														{:else}
+															Source Code
+														{/if}
+													</option>
+												{/each}
+											</select>
+											<svg
+												class="select-arrow"
+												width="12"
+												height="12"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+												stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+										</div>
+									</div>
+								{/each}
+							</div>
+						</div>
+						
+						<div class="settings-group">
+							<div class="settings-group-header">
+								<h2>Kroki Settings</h2>
+								<button
+									class="reset-text-btn"
+									class:disabled={settings.krokiHost === 'https://kroki.io'}
+									onclick={() => (settings.krokiHost = 'https://kroki.io')}>
+									Reset to default
+								</button>
+							</div>
+
+							<div class="setting-item">
+								<label for="kroki-host">Kroki Host</label>
+								<input
+									type="url"
+									id="kroki-host"
+									class="text-input"
+									placeholder="https://kroki.io"
+									bind:value={settings.krokiHost}
+								/>
+							</div>
+							<p class="setting-hint">自定义 Kroki 服务地址，支持自托管服务。默认使用 https://kroki.io</p>
 						</div>
 					{/if}
 				</div>
@@ -882,5 +947,51 @@
 		color: var(--color-fg-muted);
 		margin: 8px 0 0 0;
 		line-height: 1.4;
+	}
+
+	.settings-description {
+		font-size: 12px;
+		color: var(--color-fg-muted);
+		margin: -8px 0 16px 0;
+		line-height: 1.4;
+	}
+
+	.diagram-settings-list {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.diagram-setting-item {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 8px 0;
+		border-bottom: 1px solid var(--color-border-muted);
+	}
+
+	.diagram-setting-item:last-child {
+		border-bottom: none;
+	}
+
+	.diagram-info {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.diagram-name {
+		font-size: 13px;
+		color: var(--color-fg-default);
+		font-weight: 500;
+	}
+
+	.diagram-desc {
+		font-size: 11px;
+		color: var(--color-fg-muted);
+	}
+
+	.diagram-setting-item .select-wrapper select {
+		min-width: 140px;
 	}
 </style>

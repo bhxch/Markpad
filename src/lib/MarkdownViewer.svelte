@@ -17,6 +17,7 @@
 	import { tabManager } from './stores/tabs.svelte.js';
 	import { settings } from './stores/settings.svelte.js';
 	import { createKrokiUrl, SUPPORTED_DIAGRAMS } from './kroki';
+	import { getDiagramType, DIAGRAM_ALIASES, type DiagramRenderMode } from './diagrams';
 
 	const appWindow = getCurrentWindow();
 
@@ -358,36 +359,7 @@
 		isRendering = true;
 
 		try {
-			// 1. Mermaid Rendering
-			if (mermaid) {
-				const mermaidBlocks = markdownBody.querySelectorAll('pre code.language-mermaid');
-				for (const block of Array.from(mermaidBlocks)) {
-					if (block.closest('.diagram-wrapper')) continue;
-
-					const pre = block.parentElement;
-					if (pre && pre.tagName === 'PRE') {
-						const div = document.createElement('div');
-						div.className = 'mermaid';
-						
-						try {
-							const id = 'mermaid-' + Math.random().toString(36).substring(2, 11);
-							const { svg } = await mermaid.render(id, block.textContent || '');
-							// Mermaid output is trusted, skip DOMPurify for full SVG support
-							div.innerHTML = svg;
-						} catch (e) {
-							console.error('Failed to render Mermaid diagram:', e);
-							div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error: ${e}</div>`;
-						}
-
-						const wrapper = document.createElement('div');
-						wrapper.className = 'diagram-wrapper';
-						pre.replaceWith(wrapper);
-						setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'mermaid');
-					}
-				}
-			}
-
-			// 2. Kroki Rendering
+			// 1. Diagram Rendering (Mermaid + Kroki supported diagrams)
 			const allCodeBlocks = markdownBody.querySelectorAll('pre code');
 			for (const block of Array.from(allCodeBlocks)) {
 				if (block.closest('.diagram-wrapper')) continue;
@@ -396,26 +368,56 @@
 				const langClass = classes.find((c) => c.startsWith('language-'));
 				if (langClass) {
 					const lang = langClass.replace('language-', '').toLowerCase();
-					if (SUPPORTED_DIAGRAMS.includes(lang)) {
+					const normalizedLang = DIAGRAM_ALIASES[lang] || lang;
+					const diagramType = getDiagramType(normalizedLang);
+					
+					if (diagramType) {
+						const renderMode = settings.getDiagramRenderMode(normalizedLang);
 						const pre = block.parentElement;
 						if (pre && pre.tagName === 'PRE') {
-							try {
-								const url = createKrokiUrl(lang, (block as HTMLElement).textContent || '', settings.krokiHost);
-								const img = document.createElement('img');
-								img.src = url;
-								img.className = 'kroki-chart';
-								img.alt = `${lang} diagram`;
+							const wrapper = document.createElement('div');
+							wrapper.className = 'diagram-wrapper';
+							pre.replaceWith(wrapper);
+							
+							if (renderMode === 'source') {
+								// Show source code only
+								setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
+							} else if (renderMode === 'kroki') {
+								// Render via Kroki
+								try {
+									const url = createKrokiUrl(normalizedLang, (block as HTMLElement).textContent || '', settings.krokiHost);
+									const img = document.createElement('img');
+									img.src = url;
+									img.className = 'kroki-chart';
+									img.alt = `${normalizedLang} diagram`;
+									
+									const chartWrapper = document.createElement('div');
+									chartWrapper.className = 'kroki-container';
+									chartWrapper.appendChild(img);
+									
+									setupDiagramWrapper(wrapper, chartWrapper, pre as HTMLElement, normalizedLang);
+								} catch (e) {
+									console.error('Kroki error:', e);
+									setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
+								}
+							} else if (renderMode === 'local' && normalizedLang === 'mermaid' && mermaid) {
+								// Local Mermaid rendering
+								const div = document.createElement('div');
+								div.className = 'mermaid';
 								
-								const chartWrapper = document.createElement('div');
-								chartWrapper.className = 'kroki-container';
-								chartWrapper.appendChild(img);
+								try {
+									const id = 'mermaid-' + Math.random().toString(36).substring(2, 11);
+									const { svg } = await mermaid.render(id, block.textContent || '');
+									div.innerHTML = svg;
+								} catch (e) {
+									console.error('Failed to render Mermaid diagram:', e);
+									div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error: ${e}</div>`;
+								}
 								
-								const wrapper = document.createElement('div');
-								wrapper.className = 'diagram-wrapper';
-								pre.replaceWith(wrapper);
-								setupDiagramWrapper(wrapper, chartWrapper, pre as HTMLElement, lang);
-							} catch (e) {
-								console.error('Kroki error:', e);
+								setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'mermaid');
+							} else {
+								// Fallback: render as source
+								setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
 							}
 						}
 					}
@@ -431,7 +433,8 @@
 				
 				const langClass = Array.from(block.classList).find((c) => c.startsWith('language-'));
 				const lang = langClass ? langClass.replace('language-', '').toLowerCase() : '';
-				if (lang === 'mermaid' || SUPPORTED_DIAGRAMS.includes(lang)) return;
+				const normalizedLang = DIAGRAM_ALIASES[lang] || lang;
+				if (getDiagramType(normalizedLang)) continue; // Skip diagrams (already processed above)
 
 				// Try tree-sitter first
 				const tsSuccess = await highlightCodeWithTreeSitter(block as HTMLElement, lang);
@@ -1189,7 +1192,14 @@
 		return { duration: 0 };
 	}
 
-	function setupDiagramWrapper(container: HTMLElement, renderEl: HTMLElement, codeEl: HTMLElement, lang: string) {
+	function setupDiagramWrapper(container: HTMLElement, renderEl: HTMLElement | null, codeEl: HTMLElement, lang: string) {
+		// If no render element, just show source code
+		if (!renderEl) {
+			codeEl.style.setProperty('display', 'block', 'important');
+			container.appendChild(codeEl);
+			return;
+		}
+
 		// Toggle Button
 		const btn = document.createElement('button');
 		btn.className = 'diagram-toggle-btn';
