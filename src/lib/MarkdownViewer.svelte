@@ -400,7 +400,7 @@
 						const pre = block.parentElement;
 						if (pre && pre.tagName === 'PRE') {
 							try {
-								const url = createKrokiUrl(lang, (block as HTMLElement).textContent || '');
+								const url = createKrokiUrl(lang, (block as HTMLElement).textContent || '', settings.krokiHost);
 								const img = document.createElement('img');
 								img.src = url;
 								img.className = 'kroki-chart';

@@ -385,6 +385,30 @@
 								</div>
 							</div>
 						</div>
+
+						<div class="settings-group">
+							<div class="settings-group-header">
+								<h2>Kroki Settings</h2>
+								<button
+									class="reset-text-btn"
+									class:disabled={settings.krokiHost === 'https://kroki.io'}
+									onclick={() => (settings.krokiHost = 'https://kroki.io')}>
+									Reset to default
+								</button>
+							</div>
+
+							<div class="setting-item">
+								<label for="kroki-host">Kroki Host</label>
+								<input
+									type="url"
+									id="kroki-host"
+									class="text-input"
+									placeholder="https://kroki.io"
+									bind:value={settings.krokiHost}
+								/>
+							</div>
+							<p class="setting-hint">自定义 Kroki 服务地址，支持自托管服务。默认使用 https://kroki.io</p>
+						</div>
 					{:else if activeCategory === 'appearance'}
 						<div class="settings-group">
 							<h2>Appearance Settings</h2>
@@ -830,5 +854,33 @@
 	.toggle input:checked + .toggle-slider:before {
 		transform: translateX(20px);
 		background-color: white;
+	}
+
+	.text-input {
+		padding: 6px 12px;
+		border: 1px solid var(--color-border-default);
+		border-radius: 6px;
+		background-color: var(--color-canvas-default);
+		color: var(--color-fg-default);
+		font-size: 13px;
+		min-width: 200px;
+		flex: 1;
+		max-width: 280px;
+	}
+
+	.text-input:focus {
+		outline: none;
+		border-color: var(--color-accent-fg);
+	}
+
+	.text-input::placeholder {
+		color: var(--color-fg-muted);
+	}
+
+	.setting-hint {
+		font-size: 12px;
+		color: var(--color-fg-muted);
+		margin: 8px 0 0 0;
+		line-height: 1.4;
 	}
 </style>

@@ -1,6 +1,6 @@
 import pako from 'pako';
 
-const KROKI_BASE_URL = 'https://kroki.io';
+const DEFAULT_KROKI_HOST = 'https://kroki.io';
 
 export const SUPPORTED_DIAGRAMS = [
     'plantuml', 'c4plantuml', 
@@ -11,10 +11,11 @@ export const SUPPORTED_DIAGRAMS = [
     'erd', 'nomnoml', 'bpmn', 'pikchr', 'svgbob', 'vega', 'vegalite'
 ];
 
-export function createKrokiUrl(type: string, text: string): string {
+export function createKrokiUrl(type: string, text: string, host?: string): string {
     // Map aliases
     if (type === 'dot') type = 'graphviz';
     
+    const krokiHost = host || DEFAULT_KROKI_HOST;
     const data = new TextEncoder().encode(text);
     const compressed = pako.deflate(data, { level: 9 });
     
@@ -28,5 +29,5 @@ export function createKrokiUrl(type: string, text: string): string {
         .replace(/\//g, '_')
         .replace(/=+$/, '');
 
-    return `${KROKI_BASE_URL}/${type}/svg/${base64}`;
+    return `${krokiHost}/${type}/svg/${base64}`;
 }

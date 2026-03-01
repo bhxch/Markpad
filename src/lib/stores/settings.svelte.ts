@@ -50,6 +50,9 @@ export class SettingsStore {
 	previewFontSize = $state(16);
 	codeFont = $state('Consolas');
 	codeFontSize = $state(14);
+	
+	// Kroki 自定义 host（支持自托管）
+	krokiHost = $state('https://kroki.io');
 
 	constructor() {
 		if (typeof localStorage !== 'undefined') {
@@ -75,6 +78,7 @@ export class SettingsStore {
 			const savedPreviewFontSize = localStorage.getItem('preview.fontSize');
 			const savedCodeFont = localStorage.getItem('preview.codeFont');
 			const savedCodeFontSize = localStorage.getItem('preview.codeFontSize');
+			const savedKrokiHost = localStorage.getItem('kroki.host');
 			const parseFontSize = (value: string | null, fallback: number, min: number, max: number) => {
 				if (value === null) return fallback;
 				const parsed = Number.parseInt(value, 10);
@@ -124,6 +128,7 @@ export class SettingsStore {
 			this.previewFontSize = parseFontSize(savedPreviewFontSize, this.previewFontSize, 12, 28);
 			if (savedCodeFont !== null) this.codeFont = savedCodeFont;
 			this.codeFontSize = parseFontSize(savedCodeFontSize, this.codeFontSize, 10, 24);
+			if (savedKrokiHost !== null) this.krokiHost = savedKrokiHost;
 
 			$effect.root(() => {
 				$effect(() => {
@@ -151,6 +156,7 @@ export class SettingsStore {
 					localStorage.setItem('preview.fontSize', String(this.previewFontSize));
 					localStorage.setItem('preview.codeFont', this.codeFont);
 					localStorage.setItem('preview.codeFontSize', String(this.codeFontSize));
+					localStorage.setItem('kroki.host', this.krokiHost);
 					if (this.preZenState) {
 						localStorage.setItem('editor.preZenState', JSON.stringify(this.preZenState));
 					} else {
