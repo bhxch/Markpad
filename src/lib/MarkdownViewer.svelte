@@ -1635,7 +1635,7 @@
 {/if}
 
 {#if showSettings}
-	<Settings onclose={() => (showSettings = false)} />
+	<Settings show={showSettings} onclose={() => (showSettings = false)} />
 {/if}
 
 <style>
