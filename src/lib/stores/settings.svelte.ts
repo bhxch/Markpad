@@ -1,5 +1,5 @@
 import type { DiagramRenderMode } from '../diagrams';
-import { getDefaultDiagramSettings, getDefaultRendererSettings } from '../diagrams';
+import { getDefaultDiagramSettings, getDefaultRendererSettings, getDefaultRustRendererSettings } from '../diagrams';
 
 export class SettingsStore {
 	minimap = $state(false);
@@ -60,8 +60,11 @@ export class SettingsStore {
 	// 图表渲染设置：每种图表的渲染模式
 	diagramSettings = $state<Record<string, DiagramRenderMode>>(getDefaultDiagramSettings());
 	
-	// 图表渲染器选择：每种图表使用的本地渲染库
+	// 图表渲染器选择：每种图表使用的本地渲染库 (JS/WASM)
 	diagramRendererSettings = $state<Record<string, string>>(getDefaultRendererSettings());
+	
+	// 图表 Rust 渲染器选择：每种图表使用的 Rust 渲染库
+	diagramRustRendererSettings = $state<Record<string, string>>(getDefaultRustRendererSettings());
 
 	constructor() {
 		if (typeof localStorage !== 'undefined') {
@@ -90,6 +93,7 @@ export class SettingsStore {
 			const savedKrokiHost = localStorage.getItem('kroki.host');
 			const savedDiagramSettings = localStorage.getItem('diagram.settings');
 			const savedDiagramRendererSettings = localStorage.getItem('diagram.rendererSettings');
+			const savedDiagramRustRendererSettings = localStorage.getItem('diagram.rustRendererSettings');
 			const parseFontSize = (value: string | null, fallback: number, min: number, max: number) => {
 				if (value === null) return fallback;
 				const parsed = Number.parseInt(value, 10);
@@ -158,6 +162,15 @@ export class SettingsStore {
 					console.error('Failed to parse diagram renderer settings', e);
 				}
 			}
+			if (savedDiagramRustRendererSettings !== null) {
+				try {
+					const parsed = JSON.parse(savedDiagramRustRendererSettings);
+					// Merge with defaults
+					this.diagramRustRendererSettings = { ...getDefaultRustRendererSettings(), ...parsed };
+				} catch (e) {
+					console.error('Failed to parse diagram rust renderer settings', e);
+				}
+			}
 
 			$effect.root(() => {
 				$effect(() => {
@@ -188,6 +201,7 @@ export class SettingsStore {
 					localStorage.setItem('kroki.host', this.krokiHost);
 					localStorage.setItem('diagram.settings', JSON.stringify(this.diagramSettings));
 					localStorage.setItem('diagram.rendererSettings', JSON.stringify(this.diagramRendererSettings));
+					localStorage.setItem('diagram.rustRendererSettings', JSON.stringify(this.diagramRustRendererSettings));
 					if (this.preZenState) {
 						localStorage.setItem('editor.preZenState', JSON.stringify(this.preZenState));
 					} else {
@@ -310,6 +324,14 @@ export class SettingsStore {
 
 	getDiagramRenderer(diagramId: string): string {
 		return this.diagramRendererSettings[diagramId] || '';
+	}
+
+	setDiagramRustRenderer(diagramId: string, rendererId: string) {
+		this.diagramRustRendererSettings[diagramId] = rendererId;
+	}
+
+	getDiagramRustRenderer(diagramId: string): string {
+		return this.diagramRustRendererSettings[diagramId] || '';
 	}
 }
 

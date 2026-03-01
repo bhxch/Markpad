@@ -18,7 +18,7 @@
 	import { settings } from './stores/settings.svelte.js';
 	import { createKrokiUrl, SUPPORTED_DIAGRAMS } from './kroki';
 	import { getDiagramType, DIAGRAM_ALIASES, type DiagramRenderMode } from './diagrams';
-	import { renderLocalDiagram, supportsLocalRender } from './localRenderers';
+	import { renderLocalDiagram, supportsLocalRender, renderRustDiagram, supportsRustRender } from './localRenderers';
 
 	const appWindow = getCurrentWindow();
 
@@ -432,6 +432,28 @@
 									} catch (e) {
 										console.error(`Failed to render ${normalizedLang} diagram:`, e);
 										div.innerHTML = `<div class="diagram-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">${normalizedLang} Render Error: ${e}</div>`;
+									}
+									
+									setupDiagramWrapper(wrapper, div, pre as HTMLElement, normalizedLang);
+								} else {
+									// Fallback: render as source
+									setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
+								}
+							} else if (renderMode === 'rust') {
+								// Rust backend rendering
+								const rendererId = settings.getDiagramRustRenderer(normalizedLang) || diagramType.defaultRustRenderer || '';
+								const code = (block as HTMLElement).textContent || '';
+								
+								if (supportsRustRender(normalizedLang)) {
+									const div = document.createElement('div');
+									div.className = `rust-diagram rust-diagram-${normalizedLang}`;
+									
+									try {
+										const svg = await renderRustDiagram(normalizedLang, code, rendererId);
+										div.innerHTML = svg;
+									} catch (e) {
+										console.error(`Failed to render ${normalizedLang} diagram (Rust):`, e);
+										div.innerHTML = `<div class="diagram-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">${normalizedLang} Rust Render Error: ${e}</div>`;
 									}
 									
 									setupDiagramWrapper(wrapper, div, pre as HTMLElement, normalizedLang);

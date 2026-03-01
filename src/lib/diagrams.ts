@@ -2,9 +2,9 @@
  * 图表渲染类型定义
  */
 
-export type DiagramRenderMode = 'local' | 'kroki' | 'source';
+export type DiagramRenderMode = 'local' | 'rust' | 'kroki' | 'source';
 
-export interface LocalRenderer {
+export interface Renderer {
 	id: string;
 	name: string;
 	package: string;
@@ -16,13 +16,15 @@ export interface DiagramType {
 	name: string;
 	supportedModes: DiagramRenderMode[];
 	defaultMode: DiagramRenderMode;
-	localRenderers?: LocalRenderer[];  // 可用的本地渲染库
-	defaultRenderer?: string;  // 默认使用的本地渲染库 ID
+	localRenderers?: Renderer[];  // 可用的 JS/WASM 渲染库
+	rustRenderers?: Renderer[];   // 可用的 Rust 渲染库
+	defaultRenderer?: string;     // 默认使用的本地渲染库 ID (JS/WASM)
+	defaultRustRenderer?: string; // 默认使用的 Rust 渲染库 ID
 	description?: string;
 }
 
 /**
- * 本地渲染库定义
+ * JS/WASM 渲染库定义
  */
 export const LOCAL_RENDERERS = {
 	// GraphViz 渲染库
@@ -76,9 +78,30 @@ export const LOCAL_RENDERERS = {
 } as const;
 
 /**
+ * Rust 渲染库定义
+ */
+export const RUST_RENDERERS = {
+	// GraphViz 渲染库 (纯 Rust)
+	'layout-rs': {
+		id: 'layout-rs',
+		name: 'layout-rs',
+		package: 'layout-rs',
+		description: '纯 Rust GraphViz 实现'
+	},
+	// svgbob 渲染库 (纯 Rust)
+	'svgbob-rust': {
+		id: 'svgbob-rust',
+		name: 'svgbob',
+		package: 'svgbob',
+		description: '纯 Rust ASCII 转 SVG'
+	}
+} as const;
+
+/**
  * 支持的图表类型及其渲染方式
  * 
  * local: 本地 Web 渲染 (JS/WASM)
+ * rust: 本地 Rust 后端渲染
  * kroki: Kroki 服务渲染
  * source: 显示源码
  */
@@ -95,10 +118,12 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 	{
 		id: 'graphviz',
 		name: 'GraphViz (DOT)',
-		supportedModes: ['local', 'kroki', 'source'],
+		supportedModes: ['local', 'rust', 'kroki', 'source'],
 		defaultMode: 'local',
 		localRenderers: [LOCAL_RENDERERS['viz-js'], LOCAL_RENDERERS['hpcc-wasm']],
+		rustRenderers: [RUST_RENDERERS['layout-rs']],
 		defaultRenderer: 'viz-js',
+		defaultRustRenderer: 'layout-rs',
 		description: '有向图和无向图'
 	},
 	{
@@ -192,10 +217,12 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 	{
 		id: 'svgbob',
 		name: 'Svgbob',
-		supportedModes: ['local', 'kroki', 'source'],
+		supportedModes: ['local', 'rust', 'kroki', 'source'],
 		defaultMode: 'local',
 		localRenderers: [LOCAL_RENDERERS['svgbob-wasm']],
+		rustRenderers: [RUST_RENDERERS['svgbob-rust']],
 		defaultRenderer: 'svgbob-wasm',
+		defaultRustRenderer: 'svgbob-rust',
 		description: 'ASCII 艺术转 SVG'
 	},
 	{
@@ -244,17 +271,35 @@ export function getDefaultRendererSettings(): Record<string, string> {
 	return settings;
 }
 
+// 获取默认 Rust 渲染器设置
+export function getDefaultRustRendererSettings(): Record<string, string> {
+	const settings: Record<string, string> = {};
+	for (const diagram of DIAGRAM_TYPES) {
+		if (diagram.defaultRustRenderer) {
+			settings[diagram.id] = diagram.defaultRustRenderer;
+		}
+	}
+	return settings;
+}
+
 // 根据语言 ID 获取图表类型
 export function getDiagramType(langId: string): DiagramType | undefined {
 	const normalizedId = DIAGRAM_ALIASES[langId] || langId;
 	return DIAGRAM_TYPES.find(d => d.id === normalizedId);
 }
 
-// 根据图表 ID 和渲染器 ID 获取渲染器信息
-export function getLocalRenderer(diagramId: string, rendererId: string): LocalRenderer | undefined {
+// 根据图表 ID 和渲染器 ID 获取 JS/WASM 渲染器信息
+export function getLocalRenderer(diagramId: string, rendererId: string): Renderer | undefined {
 	const diagram = getDiagramType(diagramId);
 	if (!diagram?.localRenderers) return undefined;
 	return diagram.localRenderers.find(r => r.id === rendererId);
+}
+
+// 根据图表 ID 和渲染器 ID 获取 Rust 渲染器信息
+export function getRustRenderer(diagramId: string, rendererId: string): Renderer | undefined {
+	const diagram = getDiagramType(diagramId);
+	if (!diagram?.rustRenderers) return undefined;
+	return diagram.rustRenderers.find(r => r.id === rendererId);
 }
 
 // Kroki 支持的语言列表

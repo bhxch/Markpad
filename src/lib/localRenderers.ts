@@ -3,7 +3,8 @@
  * 支持多种图表语言的 JS/WASM 本地渲染
  */
 
-import type { LocalRenderer } from './diagrams';
+import { invoke } from '@tauri-apps/api/core';
+import type { Renderer } from './diagrams';
 
 // 渲染器缓存
 let vizInstance: any = null;
@@ -181,4 +182,49 @@ export async function renderLocalDiagram(
  */
 export function supportsLocalRender(diagramId: string): boolean {
 	return ['graphviz', 'nomnoml', 'vega', 'vegalite', 'svgbob', 'bpmn', 'mermaid'].includes(diagramId);
+}
+
+/**
+ * 检查图表类型是否支持 Rust 渲染
+ */
+export function supportsRustRender(diagramId: string): boolean {
+	return ['graphviz', 'svgbob'].includes(diagramId);
+}
+
+/**
+ * Rust 渲染 GraphViz (使用 layout-rs)
+ */
+export async function renderGraphVizRust(code: string): Promise<string> {
+	return await invoke<string>('render_graphviz_rust', { code });
+}
+
+/**
+ * Rust 渲染 svgbob (使用 svgbob crate)
+ */
+export async function renderSvgbobRust(code: string): Promise<string> {
+	return await invoke<string>('render_svgbob_rust', { code });
+}
+
+/**
+ * 统一 Rust 渲染入口
+ * @param diagramId 图表类型 ID
+ * @param code 源代码
+ * @param rendererId 渲染器 ID
+ * @returns 渲染后的 SVG 字符串
+ */
+export async function renderRustDiagram(
+	diagramId: string,
+	code: string,
+	rendererId: string
+): Promise<string> {
+	switch (diagramId) {
+		case 'graphviz':
+			return renderGraphVizRust(code);
+		
+		case 'svgbob':
+			return renderSvgbobRust(code);
+		
+		default:
+			throw new Error(`No Rust renderer for diagram type: ${diagramId}`);
+	}
 }

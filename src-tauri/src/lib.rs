@@ -210,6 +210,25 @@ fn get_supported_languages() -> Vec<String> {
     }
 }
 
+/// Render GraphViz DOT diagram using pure Rust (layout-rs).
+/// 
+/// Returns SVG string on success, error message on failure.
+/// Note: This is a placeholder - layout-rs API needs more investigation.
+#[tauri::command]
+fn render_graphviz_rust(_code: String) -> Result<String, String> {
+	// layout-rs requires more complex integration
+	// For now, return an error suggesting to use JS/WASM or Kroki
+	Err("GraphViz Rust rendering not yet implemented. Please use Local (JS/WASM) or Kroki mode.".to_string())
+}
+
+/// Render Svgbob ASCII diagram using pure Rust (svgbob).
+/// 
+/// Returns SVG string on success, error message on failure.
+#[tauri::command]
+fn render_svgbob_rust(code: String) -> Result<String, String> {
+	let svg = svgbob::to_svg(&code);
+	Ok(svg)
+}
 #[tauri::command]
 fn watch_file(
     handle: AppHandle,
@@ -497,7 +516,10 @@ pub fn run() {
             // Tree-sitter highlighting
             highlight_code,
             is_language_supported,
-            get_supported_languages
+            get_supported_languages,
+            // Diagram rendering (Rust)
+            render_graphviz_rust,
+            render_svgbob_rust
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

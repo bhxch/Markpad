@@ -477,6 +477,8 @@
 														<option value={mode}>
 															{#if mode === 'local'}
 																Local (JS/WASM)
+															{:else if mode === 'rust'}
+																Local (Rust)
 															{:else if mode === 'kroki'}
 																Kroki
 															{:else}
@@ -504,6 +506,29 @@
 														onchange={(e) => settings.setDiagramRenderer(diagram.id, e.currentTarget.value)}
 													>
 														{#each diagram.localRenderers as renderer}
+															<option value={renderer.id}>{renderer.name}</option>
+														{/each}
+													</select>
+													<svg
+														class="select-arrow"
+														width="12"
+														height="12"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2"
+														stroke-linecap="round"
+														stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+												</div>
+											{/if}
+											{#if diagram.supportedModes.includes('rust') && diagram.rustRenderers && diagram.rustRenderers.length > 1 && settings.diagramSettings[diagram.id] === 'rust'}
+												<div class="select-wrapper renderer-select">
+													<select 
+														id="rust-renderer-{diagram.id}" 
+														value={settings.diagramRustRendererSettings[diagram.id] || diagram.defaultRustRenderer}
+														onchange={(e) => settings.setDiagramRustRenderer(diagram.id, e.currentTarget.value)}
+													>
+														{#each diagram.rustRenderers as renderer}
 															<option value={renderer.id}>{renderer.name}</option>
 														{/each}
 													</select>
