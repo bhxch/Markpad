@@ -13,7 +13,6 @@
 	import Editor from './components/Editor.svelte';
 	import Modal from './components/Modal.svelte';
 
-	import DOMPurify from 'dompurify';
 	import HomePage from './components/HomePage.svelte';
 	import { tabManager } from './stores/tabs.svelte.js';
 	import { settings } from './stores/settings.svelte.js';
@@ -373,11 +372,8 @@
 						try {
 							const id = 'mermaid-' + Math.random().toString(36).substring(2, 11);
 							const { svg } = await mermaid.render(id, block.textContent || '');
-							// Use DOMPurify for SVG security
-							div.innerHTML = DOMPurify.sanitize(svg, {
-								ADD_TAGS: ['foreignObject'],
-								ADD_ATTR: ['dominant-baseline', 'text-anchor'],
-							});
+							// Mermaid output is trusted, skip DOMPurify for full SVG support
+							div.innerHTML = svg;
 						} catch (e) {
 							console.error('Failed to render Mermaid diagram:', e);
 							div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error: ${e}</div>`;
