@@ -48,6 +48,7 @@ phf = { version = "0.11", features = ["macros"] }
 include_dir = "0.7"
 
 # Diagram rendering libraries (pure Rust)
+layout-rs = "0.1"
 svgbob = "0.7"
 
 [target.'cfg(windows)'.dependencies]

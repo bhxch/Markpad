@@ -9,6 +9,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use serde::Serialize;
 use std::sync::OnceLock;
 
+// layout-rs for GraphViz DOT rendering
+use layout::backends::svg::SVGWriter;
+use layout::gv::{DotParser, GraphBuilder};
+
 mod highlight;
 mod setup;
 
@@ -213,12 +217,22 @@ fn get_supported_languages() -> Vec<String> {
 /// Render GraphViz DOT diagram using pure Rust (layout-rs).
 /// 
 /// Returns SVG string on success, error message on failure.
-/// Note: This is a placeholder - layout-rs API needs more investigation.
 #[tauri::command]
-fn render_graphviz_rust(_code: String) -> Result<String, String> {
-	// layout-rs requires more complex integration
-	// For now, return an error suggesting to use JS/WASM or Kroki
-	Err("GraphViz Rust rendering not yet implemented. Please use Local (JS/WASM) or Kroki mode.".to_string())
+fn render_graphviz_rust(code: String) -> Result<String, String> {
+	// Parse DOT code into AST
+	let mut parser = DotParser::new(&code);
+	let graph = parser.process().map_err(|e| format!("DOT parse error: {}", e))?;
+	
+	// Build VisualGraph from AST
+	let mut builder = GraphBuilder::new();
+	builder.visit_graph(&graph);
+	let mut visual_graph = builder.get();
+	
+	// Render to SVG
+	let mut svg_writer = SVGWriter::new();
+	visual_graph.do_it(false, false, false, &mut svg_writer);
+	
+	Ok(svg_writer.finalize())
 }
 
 /// Render Svgbob ASCII diagram using pure Rust (svgbob).
@@ -541,4 +555,45 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_graphviz_rust_render() {
+		let dot_code = r#"
+digraph G {
+	rankdir=LR;
+	node [shape=box, style=filled, color=lightblue];
+	A -> B;
+	B -> C;
+}
+"#;
+		let result = render_graphviz_rust(dot_code.to_string());
+		assert!(result.is_ok(), "GraphViz Rust rendering failed: {:?}", result.err());
+		let svg = result.unwrap();
+		assert!(svg.contains("<svg"), "Result should contain SVG element");
+		println!("Generated SVG length: {} bytes", svg.len());
+	}
+
+	#[test]
+	fn test_svgbob_rust_render() {
+		let code = r#"
+  +---+
+  | A |
+  +---+
+    |
+    v
+  +---+
+  | B |
+  +---+
+"#;
+		let result = render_svgbob_rust(code.to_string());
+		assert!(result.is_ok(), "Svgbob Rust rendering failed: {:?}", result.err());
+		let svg = result.unwrap();
+		assert!(svg.contains("<svg"), "Result should contain SVG element");
+		println!("Generated SVG length: {} bytes", svg.len());
+	}
 }
