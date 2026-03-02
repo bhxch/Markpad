@@ -61,6 +61,13 @@ export const LOCAL_RENDERERS = {
 		package: 'bpmn-js',
 		description: 'BPMN.io 官方库'
 	},
+	// Excalidraw 渲染库
+	'excalidraw-utils': {
+		id: 'excalidraw-utils',
+		name: '@excalidraw/utils',
+		package: '@excalidraw/utils',
+		description: 'Excalidraw 工具库'
+	},
 	// Mermaid 渲染库
 	'mermaid-js': {
 		id: 'mermaid-js',
@@ -112,7 +119,7 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 		id: 'graphviz',
 		name: 'GraphViz (DOT)',
 		supportedModes: ['local', 'rust', 'kroki', 'source'],
-		defaultMode: 'local',
+		defaultMode: 'rust',
 		localRenderers: [LOCAL_RENDERERS['viz-js'], LOCAL_RENDERERS['hpcc-wasm']],
 		rustRenderers: [RUST_RENDERERS['layout-rs']],
 		defaultRenderer: 'viz-js',
@@ -143,8 +150,10 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 	{
 		id: 'excalidraw',
 		name: 'Excalidraw',
-		supportedModes: ['kroki', 'source'],
-		defaultMode: 'kroki',
+		supportedModes: ['local', 'kroki', 'source'],
+		defaultMode: 'local',
+		localRenderers: [LOCAL_RENDERERS['excalidraw-utils']],
+		defaultRenderer: 'excalidraw-utils',
 		description: '手绘风格图表'
 	},
 	{
@@ -220,7 +229,7 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 		id: 'vega',
 		name: 'Vega',
 		supportedModes: ['local', 'kroki', 'source'],
-		defaultMode: 'local',
+		defaultMode: 'kroki',
 		localRenderers: [LOCAL_RENDERERS['vega-embed']],
 		defaultRenderer: 'vega-embed',
 		description: '可视化规范'
@@ -229,7 +238,7 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 		id: 'vegalite',
 		name: 'Vega-Lite',
 		supportedModes: ['local', 'kroki', 'source'],
-		defaultMode: 'local',
+		defaultMode: 'kroki',
 		localRenderers: [LOCAL_RENDERERS['vega-embed']],
 		defaultRenderer: 'vega-embed',
 		description: '高级可视化语法'

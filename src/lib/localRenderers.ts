@@ -11,6 +11,7 @@ let vizInstance: any = null;
 let vegaEmbed: any = null;
 let bpmnViewer: any = null;
 let nomnomlModule: any = null;
+let excalidrawUtils: any = null;
 
 /**
  * GraphViz 渲染 (@viz-js/viz)
@@ -126,6 +127,40 @@ export async function renderBpmn(code: string): Promise<string> {
 }
 
 /**
+ * Excalidraw 渲染 (@excalidraw/utils)
+ */
+export async function renderExcalidraw(code: string): Promise<string> {
+	if (!excalidrawUtils) {
+		excalidrawUtils = await import('@excalidraw/utils');
+	}
+	
+	try {
+		// 解析 JSON 数据
+		const data = JSON.parse(code);
+		
+		// Excalidraw 数据格式：
+		// { type: "excalidraw", elements: [...], appState: {...} }
+		// 或者直接是 { elements: [...], appState: {...} }
+		const elements = data.elements || [];
+		const appState = data.appState || {};
+		
+		// 使用 exportToSvg 渲染
+		const svg = await excalidrawUtils.exportToSvg({
+			elements,
+			appState: {
+				...appState,
+				exportBackground: true,
+				viewBackgroundColor: appState.viewBackgroundColor || '#ffffff'
+			}
+		});
+		
+		return svg.outerHTML;
+	} catch (e) {
+		throw new Error(`Excalidraw render error: ${e}`);
+	}
+}
+
+/**
  * 统一渲染入口
  * @param diagramId 图表类型 ID
  * @param code 源代码
@@ -153,6 +188,9 @@ export async function renderLocalDiagram(
 		case 'bpmn':
 			return renderBpmn(code);
 		
+		case 'excalidraw':
+			return renderExcalidraw(code);
+		
 		// Mermaid 由 MarkdownViewer.svelte 单独处理（已有实现）
 		
 		default:
@@ -164,7 +202,7 @@ export async function renderLocalDiagram(
  * 检查图表类型是否支持本地渲染
  */
 export function supportsLocalRender(diagramId: string): boolean {
-	return ['graphviz', 'nomnoml', 'vega', 'vegalite', 'bpmn', 'mermaid'].includes(diagramId);
+	return ['graphviz', 'nomnoml', 'vega', 'vegalite', 'bpmn', 'excalidraw', 'mermaid'].includes(diagramId);
 }
 
 /**
