@@ -12,7 +12,9 @@ description: 这是一个展示 Markpad 核心功能的综合测试文档。
 
 ## 1. 绘图引擎展示
 
-### 1.1 Mermaid (本地渲染)
+Markpad 支持多种图表渲染模式：**本地 JS/WASM 渲染**、**本地 Rust 渲染**、**Kroki 远程渲染**。
+
+### 1.1 Mermaid (本地 JS 渲染)
 ```mermaid
 graph TB
     A[用户输入] --> B{Markpad 后端}
@@ -23,7 +25,76 @@ graph TB
     E --> F[丝滑显示效果]
 ```
 
-### 1.2 PlantUML (Kroki)
+### 1.2 GraphViz / DOT (本地 WASM 或 Rust 渲染)
+```dot
+digraph G {
+  rankdir=LR;
+  node [shape=box, style=filled, color=lightblue];
+  Rust -> "Tree-sitter";
+  "Tree-sitter" -> HTML;
+  HTML -> Svelte5;
+  Svelte5 -> "CSS Variables";
+}
+```
+
+### 1.3 Nomnoml (本地 JS 渲染)
+```nomnoml
+[<frame>Decorator pattern|
+  [<abstract>Component|
+    operation()]
+  [Client] depends --> [Component]
+  [Decorator] decorates -- [ConcreteComponent]
+  [ConcreteComponent] inherits -- [Component]
+  [Decorator] inherits -- [Component]
+]
+```
+
+### 1.4 Vega-Lite (本地 JS 渲染)
+```vegalite
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "A simple bar chart with embedded data.",
+  "data": {
+    "values": [
+      {"a": "A", "b": 28}, {"a": "B", "b": 55}, {"a": "C", "b": 43},
+      {"a": "D", "b": 91}, {"a": "E", "b": 81}, {"a": "F", "b": 53}
+    ]
+  },
+  "mark": "bar",
+  "encoding": {
+    "x": {"field": "a", "type": "nominal", "axis": {"labelAngle": 0}},
+    "y": {"field": "b", "type": "quantitative"}
+  }
+}
+```
+
+### 1.5 BPMN (本地 JS 渲染)
+```bpmn
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_1" name="Start"/>
+    <bpmn:task id="Task_1" name="Review Document"/>
+    <bpmn:endEvent id="EndEvent_1" name="End"/>
+    <bpmn:sequenceFlow sourceRef="StartEvent_1" targetRef="Task_1"/>
+    <bpmn:sequenceFlow sourceRef="Task_1" targetRef="EndEvent_1"/>
+  </bpmn:process>
+</bpmn:definitions>
+```
+
+### 1.6 Svgbob (本地 Rust 渲染)
+```svgbob
++---------+       +---------+
+|  Input  | ----> | Process |
++---------+       +---------+
+     |                 |
+     v                 v
++---------+       +---------+
+| Parser  |       | Output |
++---------+       +---------+
+```
+
+### 1.7 PlantUML (Kroki 远程渲染)
 ```plantuml
 @startuml
 actor User
@@ -36,19 +107,7 @@ CE -> User: 瞬间完成变色 (无刷新)
 @enduml
 ```
 
-### 1.3 GraphViz / DOT (Kroki)
-```dot
-digraph G {
-  rankdir=LR;
-  node [shape=box, style=filled, color=lightblue];
-  Rust -> "Tree-sitter";
-  "Tree-sitter" -> HTML;
-  HTML -> Svelte5;
-  Svelte5 -> "CSS Variables";
-}
-```
-
-### 1.4 Excalidraw (Kroki)
+### 1.8 Excalidraw (Kroki 远程渲染)
 ```excalidraw
 {
   "type": "excalidraw",
