@@ -17,9 +17,9 @@
         "script-src": "'self' 'unsafe-inline'",
         "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
         "img-src": "'self' asset: https: http://asset.localhost blob: data:",
-        "connect-src": "'self'",
+        "connect-src": "'self' ipc.localhost http://ipc.localhost",
         "frame-src": "https://www.youtube.com https://www.youtube-nocookie.com",
-        "font-src": "'self' https://fonts.gstatic.com"
+        "font-src": "'self' https://fonts.gstatic.com data:"
       },
       "assetProtocol": {
         "enable": true,
