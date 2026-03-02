@@ -14,7 +14,7 @@
     "security": {
       "csp": {
         "default-src": "'self'",
-        "script-src": "'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+        "script-src": "'self' 'unsafe-inline' 'wasm-unsafe-eval' 'unsafe-eval'",
         "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
         "img-src": "'self' asset: https: http://asset.localhost blob: data:",
         "connect-src": "'self' ipc.localhost http://ipc.localhost",

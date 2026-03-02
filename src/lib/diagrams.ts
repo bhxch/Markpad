@@ -119,7 +119,7 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 		id: 'graphviz',
 		name: 'GraphViz (DOT)',
 		supportedModes: ['local', 'rust', 'kroki', 'source'],
-		defaultMode: 'rust',
+		defaultMode: 'local',
 		localRenderers: [LOCAL_RENDERERS['viz-js'], LOCAL_RENDERERS['hpcc-wasm']],
 		rustRenderers: [RUST_RENDERERS['layout-rs']],
 		defaultRenderer: 'viz-js',
@@ -229,7 +229,7 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 		id: 'vega',
 		name: 'Vega',
 		supportedModes: ['local', 'kroki', 'source'],
-		defaultMode: 'kroki',
+		defaultMode: 'local',
 		localRenderers: [LOCAL_RENDERERS['vega-embed']],
 		defaultRenderer: 'vega-embed',
 		description: '可视化规范'
@@ -238,7 +238,7 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 		id: 'vegalite',
 		name: 'Vega-Lite',
 		supportedModes: ['local', 'kroki', 'source'],
-		defaultMode: 'kroki',
+		defaultMode: 'local',
 		localRenderers: [LOCAL_RENDERERS['vega-embed']],
 		defaultRenderer: 'vega-embed',
 		description: '高级可视化语法'
