@@ -40,26 +40,12 @@ export const LOCAL_RENDERERS = {
 		package: '@hpcc-js/wasm-graphviz',
 		description: 'HPCC GraphViz WASM'
 	},
-	// nomnoml 渲染库
-	'nomnoml-js': {
-		id: 'nomnoml-js',
-		name: 'nomnoml',
-		package: 'nomnoml',
-		description: 'Nomnoml 官方 JS 库'
-	},
 	// Vega/Vega-Lite 渲染库
 	'vega-embed': {
 		id: 'vega-embed',
 		name: 'vega-embed',
 		package: 'vega-embed',
 		description: 'Vega 官方嵌入库'
-	},
-	// svgbob 渲染库
-	'svgbob-wasm': {
-		id: 'svgbob-wasm',
-		name: 'svgbob-wasm',
-		package: 'svgbob-wasm',
-		description: 'Svgbob WASM 版本'
 	},
 	// BPMN 渲染库
 	'bpmn-js': {
@@ -192,10 +178,8 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 	{
 		id: 'nomnoml',
 		name: 'Nomnoml',
-		supportedModes: ['local', 'kroki', 'source'],
-		defaultMode: 'local',
-		localRenderers: [LOCAL_RENDERERS['nomnoml-js']],
-		defaultRenderer: 'nomnoml-js',
+		supportedModes: ['kroki', 'source'],
+		defaultMode: 'kroki',
 		description: 'UML 图表'
 	},
 	{
@@ -217,11 +201,9 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 	{
 		id: 'svgbob',
 		name: 'Svgbob',
-		supportedModes: ['local', 'rust', 'kroki', 'source'],
-		defaultMode: 'local',
-		localRenderers: [LOCAL_RENDERERS['svgbob-wasm']],
+		supportedModes: ['rust', 'kroki', 'source'],
+		defaultMode: 'rust',
 		rustRenderers: [RUST_RENDERERS['svgbob-rust']],
-		defaultRenderer: 'svgbob-wasm',
 		defaultRustRenderer: 'svgbob-rust',
 		description: 'ASCII 艺术转 SVG'
 	},

@@ -8,9 +8,7 @@ import type { Renderer } from './diagrams';
 
 // 渲染器缓存
 let vizInstance: any = null;
-let nomnomlModule: any = null;
 let vegaEmbed: any = null;
-let svgbobWasm: any = null;
 let bpmnViewer: any = null;
 
 /**
@@ -31,18 +29,6 @@ export async function renderGraphViz(code: string, rendererId: string): Promise<
 		const svg = vizInstance.renderSVGElement(code);
 		return svg.outerHTML;
 	}
-}
-
-/**
- * nomnoml 渲染
- */
-export async function renderNomnoml(code: string): Promise<string> {
-	if (!nomnomlModule) {
-		nomnomlModule = await import('nomnoml');
-	}
-	// nomnoml.renderSvg 返回 SVG 字符串
-	const svg = nomnomlModule.draw(code);
-	return svg;
 }
 
 /**
@@ -88,18 +74,6 @@ export async function renderVegaLite(spec: string): Promise<string> {
 	} catch (e) {
 		throw new Error(`Vega-Lite render error: ${e}`);
 	}
-}
-
-/**
- * svgbob 渲染
- */
-export async function renderSvgbob(code: string): Promise<string> {
-	if (!svgbobWasm) {
-		svgbobWasm = await import('svgbob-wasm');
-	}
-	
-	const svg = await svgbobWasm.render(code);
-	return svg;
 }
 
 /**
@@ -155,17 +129,11 @@ export async function renderLocalDiagram(
 		case 'graphviz':
 			return renderGraphViz(code, rendererId);
 		
-		case 'nomnoml':
-			return renderNomnoml(code);
-		
 		case 'vega':
 			return renderVega(code);
 		
 		case 'vegalite':
 			return renderVegaLite(code);
-		
-		case 'svgbob':
-			return renderSvgbob(code);
 		
 		case 'bpmn':
 			return renderBpmn(code);
@@ -181,7 +149,7 @@ export async function renderLocalDiagram(
  * 检查图表类型是否支持本地渲染
  */
 export function supportsLocalRender(diagramId: string): boolean {
-	return ['graphviz', 'nomnoml', 'vega', 'vegalite', 'svgbob', 'bpmn', 'mermaid'].includes(diagramId);
+	return ['graphviz', 'vega', 'vegalite', 'bpmn', 'mermaid'].includes(diagramId);
 }
 
 /**
