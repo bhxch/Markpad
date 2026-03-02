@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
+import { fileURLToPath } from "url";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -11,8 +12,8 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       // 为浏览器环境提供空的 polyfill，解决 nomnoml 等包的 Node.js 依赖
-      fs: "data:text/javascript,export default {}",
-      path: "data:text/javascript,export default {}",
+      fs: fileURLToPath(new URL("./src/polyfills/fs.js", import.meta.url)),
+      path: fileURLToPath(new URL("./src/polyfills/path.js", import.meta.url)),
     },
   },
 

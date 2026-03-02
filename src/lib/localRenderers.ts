@@ -130,13 +130,32 @@ export async function renderBpmn(code: string): Promise<string> {
 		// 提取 SVG 内容
 		const svgElement = container.querySelector('svg');
 		if (svgElement) {
-			// 获取图形边界
-			const viewbox = canvas.viewbox();
+			// 获取图形实际边界
+			const elements = elementRegistry.getAll();
+			let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+			
+			for (const el of elements) {
+				if (el.type === 'label') continue;
+				const bounds = el;
+				if (bounds.x !== undefined && bounds.y !== undefined && 
+					bounds.width !== undefined && bounds.height !== undefined) {
+					minX = Math.min(minX, bounds.x);
+					minY = Math.min(minY, bounds.y);
+					maxX = Math.max(maxX, bounds.x + bounds.width);
+					maxY = Math.max(maxY, bounds.y + bounds.height);
+				}
+			}
+			
+			// 如果没有找到有效边界，使用默认值
+			const vbX = Number.isFinite(minX) ? minX : 0;
+			const vbY = Number.isFinite(minY) ? minY : 0;
+			const vbWidth = Number.isFinite(maxX - minX) && (maxX - minX) > 0 ? (maxX - minX) : 600;
+			const vbHeight = Number.isFinite(maxY - minY) && (maxY - minY) > 0 ? (maxY - minY) : 200;
 			const padding = 20;
 			
 			// 设置 viewBox 以包含所有内容
 			svgElement.setAttribute('viewBox', 
-				`${viewbox.x - padding} ${viewbox.y - padding} ${viewbox.width + padding * 2} ${viewbox.height + padding * 2}`
+				`${vbX - padding} ${vbY - padding} ${vbWidth + padding * 2} ${vbHeight + padding * 2}`
 			);
 			
 			// 移除固定尺寸，使其自适应
@@ -144,7 +163,7 @@ export async function renderBpmn(code: string): Promise<string> {
 			svgElement.removeAttribute('height');
 			svgElement.style.width = '100%';
 			svgElement.style.height = 'auto';
-			svgElement.style.minHeight = `${Math.min(viewbox.height + padding * 2, 300)}px`;
+			svgElement.style.minHeight = `${Math.min(vbHeight + padding * 2, 300)}px`;
 			
 			return svgElement.outerHTML;
 		}
