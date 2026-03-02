@@ -123,7 +123,6 @@ export async function renderBpmn(code: string): Promise<string> {
 		try {
 			canvas.zoom('fit-viewport');
 		} catch (zoomError) {
-			// 如果 fit-viewport 失败，尝试固定缩放
 			console.warn('BPMN zoom fit-viewport failed:', zoomError);
 			canvas.zoom(1.0);
 		}
@@ -131,11 +130,22 @@ export async function renderBpmn(code: string): Promise<string> {
 		// 提取 SVG 内容
 		const svgElement = container.querySelector('svg');
 		if (svgElement) {
+			// 获取图形边界
+			const viewbox = canvas.viewbox();
+			const padding = 20;
+			
+			// 设置 viewBox 以包含所有内容
+			svgElement.setAttribute('viewBox', 
+				`${viewbox.x - padding} ${viewbox.y - padding} ${viewbox.width + padding * 2} ${viewbox.height + padding * 2}`
+			);
+			
 			// 移除固定尺寸，使其自适应
 			svgElement.removeAttribute('width');
 			svgElement.removeAttribute('height');
 			svgElement.style.width = '100%';
 			svgElement.style.height = 'auto';
+			svgElement.style.minHeight = `${Math.min(viewbox.height + padding * 2, 300)}px`;
+			
 			return svgElement.outerHTML;
 		}
 		throw new Error('Failed to extract SVG from BPMN viewer');
