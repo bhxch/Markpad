@@ -100,22 +100,42 @@ export async function renderBpmn(code: string): Promise<string> {
 	}
 	
 	const container = document.createElement('div');
-	container.style.width = '100%';
-	container.style.minHeight = '200px';
+	container.style.width = '800px';
+	container.style.height = '400px';
 	
 	const viewer = new bpmnViewer({
 		container
 	});
 	
 	try {
-		await viewer.importXML(code);
-		// 获取 SVG
+		const { warnings } = await viewer.importXML(code);
+		
+		// 检查是否有图形信息
 		const canvas = viewer.get('canvas');
-		canvas.zoom('fit-viewport');
+		const elementRegistry = viewer.get('elementRegistry');
+		const rootElement = elementRegistry.find((el: any) => !el.parent);
+		
+		if (!rootElement) {
+			throw new Error('No diagram to display - missing BPMNDiagram information');
+		}
+		
+		// 安全缩放
+		try {
+			canvas.zoom('fit-viewport');
+		} catch (zoomError) {
+			// 如果 fit-viewport 失败，尝试固定缩放
+			console.warn('BPMN zoom fit-viewport failed:', zoomError);
+			canvas.zoom(1.0);
+		}
 		
 		// 提取 SVG 内容
 		const svgElement = container.querySelector('svg');
 		if (svgElement) {
+			// 移除固定尺寸，使其自适应
+			svgElement.removeAttribute('width');
+			svgElement.removeAttribute('height');
+			svgElement.style.width = '100%';
+			svgElement.style.height = 'auto';
 			return svgElement.outerHTML;
 		}
 		throw new Error('Failed to extract SVG from BPMN viewer');
