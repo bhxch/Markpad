@@ -8,6 +8,14 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [sveltekit()],
 
+  resolve: {
+    alias: {
+      // 为浏览器环境提供空的 polyfill，解决 nomnoml 等包的 Node.js 依赖
+      fs: "data:text/javascript,export default {}",
+      path: "data:text/javascript,export default {}",
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

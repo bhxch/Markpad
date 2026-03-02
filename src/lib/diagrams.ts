@@ -47,6 +47,13 @@ export const LOCAL_RENDERERS = {
 		package: 'vega-embed',
 		description: 'Vega 官方嵌入库'
 	},
+	// nomnoml 渲染库
+	'nomnoml-js': {
+		id: 'nomnoml-js',
+		name: 'nomnoml',
+		package: 'nomnoml',
+		description: 'Nomnoml 官方 JS 库'
+	},
 	// BPMN 渲染库
 	'bpmn-js': {
 		id: 'bpmn-js',
@@ -178,8 +185,10 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 	{
 		id: 'nomnoml',
 		name: 'Nomnoml',
-		supportedModes: ['kroki', 'source'],
-		defaultMode: 'kroki',
+		supportedModes: ['local', 'kroki', 'source'],
+		defaultMode: 'local',
+		localRenderers: [LOCAL_RENDERERS['nomnoml-js']],
+		defaultRenderer: 'nomnoml-js',
 		description: 'UML 图表'
 	},
 	{

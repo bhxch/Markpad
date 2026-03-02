@@ -10,6 +10,7 @@ import type { Renderer } from './diagrams';
 let vizInstance: any = null;
 let vegaEmbed: any = null;
 let bpmnViewer: any = null;
+let nomnomlModule: any = null;
 
 /**
  * GraphViz 渲染 (@viz-js/viz)
@@ -52,6 +53,17 @@ export async function renderVega(spec: string): Promise<string> {
 	} catch (e) {
 		throw new Error(`Vega render error: ${e}`);
 	}
+}
+
+/**
+ * nomnoml 渲染
+ */
+export async function renderNomnoml(code: string): Promise<string> {
+	if (!nomnomlModule) {
+		nomnomlModule = await import('nomnoml');
+	}
+	// nomnoml.renderSvg 返回 SVG 字符串
+	return nomnomlModule.renderSvg(code);
 }
 
 /**
@@ -129,6 +141,9 @@ export async function renderLocalDiagram(
 		case 'graphviz':
 			return renderGraphViz(code, rendererId);
 		
+		case 'nomnoml':
+			return renderNomnoml(code);
+		
 		case 'vega':
 			return renderVega(code);
 		
@@ -149,7 +164,7 @@ export async function renderLocalDiagram(
  * 检查图表类型是否支持本地渲染
  */
 export function supportsLocalRender(diagramId: string): boolean {
-	return ['graphviz', 'vega', 'vegalite', 'bpmn', 'mermaid'].includes(diagramId);
+	return ['graphviz', 'nomnoml', 'vega', 'vegalite', 'bpmn', 'mermaid'].includes(diagramId);
 }
 
 /**
