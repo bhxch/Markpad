@@ -1582,7 +1582,7 @@
 					{#if showToc && toc.length > 0}
 						<div class="pane toc-sidebar" transition:fly={{ x: -20, duration: 250 }}>
 							<div class="toc-title">ON THIS PAGE</div>
-							<div class="toc-list">
+							<div class="toc-list" style="max-height: calc(100vh / ({zoomLevel} / 100) - 100px);">
 								{#each toc as item}
 									<!-- svelte-ignore a11y_click_events_have_key_events -->
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -2016,6 +2016,8 @@
 		flex-direction: column;
 		padding: 20px 0;
 		z-index: 10;
+		overflow-y: auto !important;
+		overflow-x: hidden !important;
 	}
 
 	.toc-title {
@@ -2024,11 +2026,13 @@
 		color: var(--color-fg-muted);
 		padding: 0 20px 12px;
 		letter-spacing: 0.05em;
+		flex-shrink: 0;
 	}
 
 	.toc-list {
 		overflow-y: auto;
-		flex: 1;
+		flex: 1 1 auto;
+		min-height: 0;
 	}
 
 	.toc-item {
