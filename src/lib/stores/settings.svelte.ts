@@ -11,7 +11,7 @@ export class SettingsStore {
 	codeTheme = $state<string>('auto'); // 'auto' | 'dark-modern' | 'light-modern'
 	
 	toolbarLayout = $state<{ visible: string[]; hidden: string[] }>({
-		visible: ['zoom', 'open_loc', 'split', 'sync', 'live', 'metadata', 'toc', 'vim_mode', 'zen_mode', 'theme_scheme', 'code_theme', 'settings', 'edit'],
+		visible: ['zoom', 'open_loc', 'split', 'sync', 'live', 'metadata', 'toc', 'export', 'vim_mode', 'zen_mode', 'theme_scheme', 'code_theme', 'settings', 'edit'],
 		hidden: ['full_width']
 	});
 

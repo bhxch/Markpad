@@ -1,4 +1,5 @@
 // Empty fs polyfill for browser
+// @ts-nocheck
 export default {};
 export const readFileSync = () => '';
 export const writeFileSync = () => {};

@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
+// @ts-expect-error url module is available at runtime
 import { fileURLToPath } from "url";
 
 // @ts-expect-error process is a nodejs global

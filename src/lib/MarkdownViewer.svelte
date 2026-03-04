@@ -12,6 +12,9 @@
 	import TitleBar from './components/TitleBar.svelte';
 	import Editor from './components/Editor.svelte';
 	import Modal from './components/Modal.svelte';
+	import ExportModal from './components/ExportModal.svelte';
+	import type { ExportFormat, PdfPageSize } from './export';
+	import { exportAsHtml, exportAsPdf } from './export';
 
 	import HomePage from './components/HomePage.svelte';
 	import { tabManager } from './stores/tabs.svelte.js';
@@ -150,6 +153,23 @@
 		showSave: false,
 		resolve: null,
 	});
+
+	let showExportModal = $state(false);
+
+	async function handleExport(format: ExportFormat, pageSize: PdfPageSize) {
+		showExportModal = false;
+		
+		const container = document.querySelector('.markdown-container') as HTMLElement;
+		if (!container) return;
+
+		const fileName = tabManager.activeTab?.title || 'document';
+
+		if (format === 'html') {
+			await exportAsHtml(container, showToc, fileName);
+		} else {
+			await exportAsPdf(container, showToc, pageSize);
+		}
+	}
 
 	function askCustom(message: string, options: { title: string; kind: 'info' | 'warning' | 'error'; showSave?: boolean }): Promise<'save' | 'discard' | 'cancel'> {
 		return new Promise((resolve) => {
@@ -1520,6 +1540,7 @@
 		{isFullWidth}
 		ontoggleFullWidth={() => (isFullWidth = !isFullWidth)}
 		onopenSettings={() => (showSettings = true)}
+		onexport={() => (showExportModal = true)}
 		oncloseTab={(id) => {
 			canCloseTab(id).then((can) => {
 				if (can) tabManager.closeTab(id);
@@ -1561,6 +1582,7 @@
 		{isFullWidth}
 		ontoggleFullWidth={() => (isFullWidth = !isFullWidth)}
 		onopenSettings={() => (showSettings = true)}
+		onexport={() => (showExportModal = true)}
 		oncloseTab={(id) => {
 			canCloseTab(id).then((can) => {
 				if (can) tabManager.closeTab(id);
@@ -1588,6 +1610,7 @@
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<div
 										class="toc-item level-{item.level}"
+										data-target-id={item.id}
 										onclick={() => scrollToHeader(item.id)}>
 										{item.text}
 									</div>
@@ -1662,6 +1685,11 @@
 		onconfirm={handleModalConfirm}
 		onsave={handleModalSave}
 		oncancel={handleModalCancel} />
+
+	<ExportModal
+		show={showExportModal}
+		onexport={handleExport}
+		oncancel={() => (showExportModal = false)} />
 
 	{#if isDragging && !isEditing}
 		<div class="drag-overlay" role="presentation">

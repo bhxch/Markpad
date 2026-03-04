@@ -1,4 +1,5 @@
 // Empty path polyfill for browser
+// @ts-nocheck
 export default {};
 export const join = (...args) => args.join('/');
 export const resolve = (...args) => args.join('/');
