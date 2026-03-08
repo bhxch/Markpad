@@ -370,16 +370,6 @@ fn is_win11() -> bool {
 }
 
 #[tauri::command]
-fn get_system_fonts() -> Vec<String> {
-    use font_kit::source::SystemSource;
-    let source = SystemSource::new();
-    let mut families = source.all_families().unwrap_or_default();
-    families.sort();
-    families.dedup();
-    families
-}
-
-#[tauri::command]
 fn get_os_type() -> String {
     #[cfg(target_os = "macos")]
     {
