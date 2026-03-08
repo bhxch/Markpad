@@ -390,6 +390,11 @@ export class SettingsStore {
 	}
 
 	async initOSType() {
+		// Check if we're in a Tauri environment
+		if (typeof window === 'undefined') {
+			this.osType = 'unknown';
+			return;
+		}
 		try {
 			const osType = await invoke<string>('get_os_type');
 			this.osType = osType as OSType;
