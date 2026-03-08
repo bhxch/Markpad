@@ -1,9 +1,100 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { settings } from './stores/settings.svelte.js';
+import { i18n } from './i18n';
 
 export type ExportFormat = 'html' | 'pdf';
 export type PdfPageSize = 'dynamic' | 'a4' | 'a3' | 'letter' | 'legal';
+
+// Platform detection (cached)
+let currentPlatform: 'windows' | 'macos' | 'linux' | 'unknown' = 'unknown';
+
+/**
+ * Detect current platform
+ */
+export async function detectPlatform(): Promise<'windows' | 'macos' | 'linux' | 'unknown'> {
+	if (currentPlatform !== 'unknown') return currentPlatform;
+	
+	try {
+		const ua = navigator.userAgent.toLowerCase();
+		if (ua.includes('windows')) {
+			currentPlatform = 'windows';
+		} else if (ua.includes('mac')) {
+			currentPlatform = 'macos';
+		} else if (ua.includes('linux')) {
+			currentPlatform = 'linux';
+		}
+	} catch {
+		currentPlatform = 'unknown';
+	}
+	
+	return currentPlatform;
+}
+
+/**
+ * Get platform-specific print instructions
+ */
+export function getPrintInstructions(): string {
+	const platform = currentPlatform;
+	const t = i18n.getAll();
+	
+	switch (platform) {
+		case 'windows':
+			return t.printInstructionsWindows;
+		case 'macos':
+			return t.printInstructionsMacos;
+		case 'linux':
+			return t.printInstructionsLinux;
+		default:
+			return t.printInstructionsDefault;
+	}
+}
+
+/**
+ * Export as PDF using browser print dialog
+ */
+export async function exportAsPdf(
+	container: HTMLElement,
+	showToc: boolean,
+	pageSize: PdfPageSize
+): Promise<{ success: boolean; message: string }> {
+	return new Promise((resolve) => {
+		try {
+			const html = generateExportHtml(container, showToc, pageSize, true);
+			
+			const iframe = document.createElement('iframe');
+			iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0;border:none;';
+			document.body.appendChild(iframe);
+			
+			const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+			if (!iframeDoc) {
+				document.body.removeChild(iframe);
+				resolve({ success: false, message: 'Failed to create print document' });
+				return;
+			}
+			
+			iframeDoc.open();
+			iframeDoc.write(html);
+			iframeDoc.close();
+			
+			setTimeout(() => {
+				try {
+					iframe.contentWindow?.focus();
+					iframe.contentWindow?.print();
+					resolve({ success: true, message: 'Print dialog opened' });
+				} catch (e) {
+					resolve({ success: false, message: `Print failed: ${e}` });
+				}
+				
+				setTimeout(() => {
+					document.body.removeChild(iframe);
+				}, 1000);
+			}, 500);
+		} catch (e) {
+			resolve({ success: false, message: `PDF export failed: ${e}` });
+		}
+	});
+}
 
 // Page size dimensions in mm
 const PAGE_SIZES: Record<string, { width: number; height: number }> = {
@@ -342,6 +433,71 @@ ${getTreeSitterStyles()}
 	border: 1px solid var(--color-border-default);
 }
 
+/* Diagram Wrapper & Toggle Button */
+.diagram-wrapper {
+	margin: 1.5em 0;
+	position: relative;
+}
+
+.diagram-wrapper pre {
+	margin: 0 !important;
+	padding: 16px;
+	background: var(--hljs-bg, var(--color-canvas-subtle));
+	border: 1px solid var(--color-border-default);
+	border-radius: 6px;
+	overflow-x: auto;
+}
+
+.diagram-wrapper svg {
+	max-width: 100%;
+	height: auto;
+}
+
+.diagram-chart-layer {
+	width: 100%;
+}
+
+.diagram-source-layer {
+	display: none;
+	width: 100%;
+}
+
+.diagram-wrapper.show-source .diagram-chart-layer {
+	display: none;
+}
+
+.diagram-wrapper.show-source .diagram-source-layer {
+	display: block;
+}
+
+.diagram-toggle-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	width: 28px;
+	height: 28px;
+	background-color: var(--color-canvas-default);
+	border: 1px solid var(--color-border-default);
+	border-radius: 4px;
+	color: var(--color-fg-muted);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.2s, background-color 0.1s;
+}
+
+.diagram-wrapper:hover .diagram-toggle-btn {
+	opacity: 0.6;
+}
+
+.diagram-toggle-btn:hover {
+	opacity: 1 !important;
+	background-color: var(--color-canvas-subtle);
+	color: var(--color-fg-default);
+}
+
 /* Print styles */
 @media print {
 	.markdown-container {
@@ -482,8 +638,14 @@ export function generateExportHtml(
 	// Clone the container
 	const clone = container.cloneNode(true) as HTMLElement;
 
-	// Remove interactive elements
-	clone.querySelectorAll('.editor-pane, .split-bar, .diagram-toggle-btn, .lang-label').forEach(el => el.remove());
+	// Remove interactive elements (but keep diagram-toggle-btn for HTML export)
+	if (forPrint) {
+		// For PDF: remove TOC sidebar, diagram toggle buttons, and other interactive elements
+		clone.querySelectorAll('.toc-sidebar, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label').forEach(el => el.remove());
+	} else {
+		// For HTML: keep diagram toggle buttons, remove other interactive elements
+		clone.querySelectorAll('.editor-pane, .split-bar, .lang-label').forEach(el => el.remove());
+	}
 	
 	// Remove event handlers
 	clone.querySelectorAll('[onclick], [onmousedown], [onwheel]').forEach(el => {
@@ -492,20 +654,22 @@ export function generateExportHtml(
 		el.removeAttribute('onwheel');
 	});
 
-	// Fix TOC items to be proper anchor links
-	clone.querySelectorAll('.toc-item').forEach(item => {
-		const tocItem = item as HTMLElement;
-		const targetId = tocItem.getAttribute('data-target-id');
-		if (targetId) {
-			// Convert to anchor link
-			const link = document.createElement('a');
-			link.href = `#${targetId}`;
-			link.className = tocItem.className;
-			link.textContent = tocItem.textContent;
-			link.setAttribute('data-target-id', targetId);
-			tocItem.replaceWith(link);
-		}
-	});
+	// For HTML export: Fix TOC items to be proper anchor links
+	if (!forPrint && showToc) {
+		clone.querySelectorAll('.toc-item').forEach(item => {
+			const tocItem = item as HTMLElement;
+			const targetId = tocItem.getAttribute('data-target-id');
+			if (targetId) {
+				// Convert to anchor link
+				const link = document.createElement('a');
+				link.href = `#${targetId}`;
+				link.className = tocItem.className;
+				link.textContent = tocItem.textContent;
+				link.setAttribute('data-target-id', targetId);
+				tocItem.replaceWith(link);
+			}
+		});
+	}
 
 	// Ensure headings have proper IDs for TOC links
 	clone.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6').forEach(heading => {
@@ -537,9 +701,10 @@ export function generateExportHtml(
 		dynamicHeightStyle = `@page { size: 210mm ${height}mm; margin: 15mm; }`;
 	}
 
-	// Add smooth scrolling script for TOC navigation (only for HTML export)
-	const smoothScrollScript = forPrint ? '' : `
+	// Add scripts for HTML export (TOC navigation + diagram toggle)
+	const htmlScripts = forPrint ? '' : `
 <script>
+// TOC smooth scrolling
 document.querySelectorAll('.toc-item, .toc-sidebar a[data-target-id]').forEach(item => {
 	item.addEventListener('click', function(e) {
 		e.preventDefault();
@@ -549,6 +714,27 @@ document.querySelectorAll('.toc-item, .toc-sidebar a[data-target-id]').forEach(i
 			if (target) {
 				target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 				history.pushState(null, '', '#' + targetId);
+			}
+		}
+	});
+});
+
+// Diagram toggle functionality
+document.querySelectorAll('.diagram-toggle-btn').forEach(btn => {
+	btn.addEventListener('click', function() {
+		const wrapper = this.closest('.diagram-wrapper');
+		if (wrapper) {
+			wrapper.classList.toggle('show-source');
+			const chartLayer = wrapper.querySelector('.diagram-chart-layer');
+			const sourceLayer = wrapper.querySelector('.diagram-source-layer');
+			if (chartLayer && sourceLayer) {
+				if (wrapper.classList.contains('show-source')) {
+					chartLayer.style.display = 'none';
+					sourceLayer.style.display = 'block';
+				} else {
+					chartLayer.style.display = 'block';
+					sourceLayer.style.display = 'none';
+				}
 			}
 		}
 	});
@@ -576,7 +762,7 @@ ${dynamicHeightStyle}
 </head>
 <body>
 	${clone.outerHTML}
-	${smoothScrollScript}
+	${htmlScripts}
 </body>
 </html>`;
 
@@ -601,71 +787,4 @@ export async function exportAsHtml(
 	const html = generateExportHtml(container, showToc);
 	await invoke('save_file_content', { path: filePath, content: html });
 	return true;
-}
-
-/**
- * Export as PDF via print dialog
- */
-export async function exportAsPdf(
-	container: HTMLElement,
-	showToc: boolean,
-	pageSize: PdfPageSize
-): Promise<void> {
-	const html = generateExportHtml(container, showToc, pageSize, true);
-
-	// Create a hidden iframe for printing
-	const iframe = document.createElement('iframe');
-	iframe.style.position = 'fixed';
-	iframe.style.left = '-9999px';
-	iframe.style.top = '0';
-	iframe.style.width = '0';
-	iframe.style.height = '0';
-	iframe.style.border = 'none';
-	document.body.appendChild(iframe);
-
-	const printDoc = iframe.contentDocument || iframe.contentWindow?.document;
-	if (!printDoc) {
-		document.body.removeChild(iframe);
-		throw new Error('无法创建打印文档');
-	}
-
-	printDoc.open();
-	printDoc.write(html);
-	printDoc.close();
-
-	// Wait for content to load
-	return new Promise((resolve, reject) => {
-		const checkReady = () => {
-			try {
-				// Check if document is ready
-				if (printDoc.readyState === 'complete') {
-					setTimeout(() => {
-						try {
-							iframe.contentWindow?.focus();
-							iframe.contentWindow?.print();
-							resolve();
-						} catch (e) {
-							reject(new Error('打印失败: ' + e));
-						}
-					}, 500);
-				} else {
-					setTimeout(checkReady, 100);
-				}
-			} catch (e) {
-				reject(new Error('打印失败: ' + e));
-			}
-		};
-
-		// Start checking after a short delay
-		setTimeout(checkReady, 300);
-
-		// Cleanup after print dialog is shown (user will handle the rest)
-		setTimeout(() => {
-			try {
-				document.body.removeChild(iframe);
-			} catch {
-				// Already removed
-			}
-		}, 5000);
-	});
 }

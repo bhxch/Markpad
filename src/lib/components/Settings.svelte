@@ -4,6 +4,17 @@
 	import { settings } from '../stores/settings.svelte.js';
 	import { DIAGRAM_TYPES, type DiagramRenderMode } from '../diagrams';
 	import { fade, scale } from 'svelte/transition';
+	import { i18n, type Locale } from '../i18n';
+
+	// Reactive translations
+	let t = $state(i18n.getAll());
+	let locale = $state(i18n.getLocale());
+
+	function setLocale(newLocale: Locale) {
+		i18n.setLocale(newLocale);
+		locale = newLocale;
+		t = i18n.getAll();
+	}
 
 	let {
 		show = false,
@@ -406,6 +417,26 @@
 					{:else if activeCategory === 'appearance'}
 						<div class="settings-group">
 							<h2>Appearance Settings</h2>
+
+							<div class="setting-item">
+								<label for="appearance-language">Language / 语言</label>
+								<div class="select-wrapper">
+									<select id="appearance-language" value={locale} onchange={(e) => setLocale(e.currentTarget.value as Locale)}>
+										<option value="zh">中文</option>
+										<option value="en">English</option>
+									</select>
+									<svg
+										class="select-arrow"
+										width="12"
+										height="12"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+								</div>
+							</div>
 
 							<div class="setting-item">
 								<label for="appearance-theme">Theme</label>

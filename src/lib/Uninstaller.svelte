@@ -2,6 +2,10 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import iconUrl from '../assets/icon.png';
+	import { i18n } from './i18n';
+
+	// Reactive translations
+	let t = $state(i18n.getAll());
 
 	let uninstalling = $state(false);
 	let error = $state('');
@@ -35,8 +39,8 @@
 	<div class="content">
 		<div class="header">
 			<img src={iconUrl} alt="App Icon" class="app-icon" />
-			<h1>Uninstall Markpad?</h1>
-			<p class="subtitle">This will remove the application and all its shortcuts.</p>
+			<h1>{t.uninstallTitle}?</h1>
+			<p class="subtitle">{t.uninstallMessage}</p>
 		</div>
 
 		{#if !uninstalling}
@@ -46,14 +50,14 @@
 				{/if}
 
 				<div class="actions">
-					<button class="cancel-btn" onclick={closeApp}>Cancel</button>
-					<button class="uninstall-btn" onclick={handleUninstall}> Uninstall </button>
+					<button class="cancel-btn" onclick={closeApp}>{t.cancel}</button>
+					<button class="uninstall-btn" onclick={handleUninstall}> {t.uninstallButton} </button>
 				</div>
 			</div>
 		{:else}
 			<div class="installing-state">
 				<div class="spinner"></div>
-				<p>Removing Markpad...</p>
+				<p>{t.uninstalling}</p>
 			</div>
 		{/if}
 	</div>

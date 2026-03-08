@@ -1,5 +1,9 @@
 <script lang="ts">
 	import { fade, scale } from 'svelte/transition';
+	import { i18n } from '../i18n';
+
+	// Reactive translations
+	let t = $state(i18n.getAll());
 
 	let {
 		show,
@@ -112,13 +116,13 @@
 				<p>{message}</p>
 			</div>
 			<div class="modal-footer">
-				<button class="modal-btn secondary" onclick={oncancel}>Cancel</button>
+				<button class="modal-btn secondary" onclick={oncancel}>{t.cancel}</button>
 				<div class="footer-spacer"></div>
 				<button class="modal-btn secondary" onclick={onconfirm}>
-					{kind === 'warning' ? "Don't Save" : 'Confirm'}
+					{kind === 'warning' ? t.dontSave : t.confirm}
 				</button>
 				{#if showSave}
-					<button class="modal-btn primary" onclick={onsave}>Save</button>
+					<button class="modal-btn primary" onclick={onsave}>{t.save}</button>
 				{/if}
 			</div>
 		</div>

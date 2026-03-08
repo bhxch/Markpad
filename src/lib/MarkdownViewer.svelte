@@ -15,6 +15,10 @@
 	import ExportModal from './components/ExportModal.svelte';
 	import type { ExportFormat, PdfPageSize } from './export';
 	import { exportAsHtml, exportAsPdf } from './export';
+	import { i18n } from './i18n';
+
+	// Reactive translations
+	let t = $state(i18n.getAll());
 
 	import HomePage from './components/HomePage.svelte';
 	import { tabManager } from './stores/tabs.svelte.js';
@@ -155,6 +159,7 @@
 	});
 
 	let showExportModal = $state(false);
+	let exportMessage = $state<{ show: boolean; text: string }>({ show: false, text: '' });
 
 	async function handleExport(format: ExportFormat, pageSize: PdfPageSize) {
 		showExportModal = false;
@@ -164,10 +169,23 @@
 
 		const fileName = tabManager.activeTab?.title || 'document';
 
-		if (format === 'html') {
-			await exportAsHtml(container, showToc, fileName);
-		} else {
-			await exportAsPdf(container, showToc, pageSize);
+		try {
+			if (format === 'html') {
+				const success = await exportAsHtml(container, showToc, fileName);
+				if (success) {
+					exportMessage = { show: true, text: t.exportSuccess };
+					setTimeout(() => { exportMessage = { show: false, text: '' }; }, 3000);
+				}
+			} else {
+				// Use tauri-plugin-printer-v2 for PDF export
+				const result = await exportAsPdf(container, showToc, pageSize);
+				exportMessage = { show: true, text: result.message };
+				setTimeout(() => { exportMessage = { show: false, text: '' }; }, 5000);
+			}
+		} catch (e) {
+			console.error('Export failed:', e);
+			exportMessage = { show: true, text: `${t.exportFailed}: ${e}` };
+			setTimeout(() => { exportMessage = { show: false, text: '' }; }, 5000);
 		}
 	}
 
@@ -1691,6 +1709,13 @@
 		onexport={handleExport}
 		oncancel={() => (showExportModal = false)} />
 
+	{#if exportMessage.show}
+		<div class="export-message">
+			<span>{exportMessage.text}</span>
+			<button class="close-btn" onclick={() => { exportMessage = { show: false, text: '' }; }}>×</button>
+		</div>
+	{/if}
+
 	{#if isDragging && !isEditing}
 		<div class="drag-overlay" role="presentation">
 			<div class="drag-message">
@@ -1835,6 +1860,50 @@
 		left: 0;
 		padding-top: 36px;
 		box-sizing: border-box;
+	}
+
+	.export-message {
+		position: fixed;
+		bottom: 24px;
+		right: 24px;
+		background: var(--color-canvas-default);
+		border: 1px solid var(--color-border-default);
+		border-radius: 8px;
+		padding: 12px 16px;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+		z-index: 50000;
+		max-width: 400px;
+		font-size: 14px;
+		color: var(--color-fg-default);
+		animation: slideIn 0.3s ease-out;
+	}
+
+	.export-message .close-btn {
+		background: transparent;
+		border: none;
+		font-size: 18px;
+		color: var(--color-fg-muted);
+		cursor: pointer;
+		padding: 0 4px;
+		line-height: 1;
+	}
+
+	.export-message .close-btn:hover {
+		color: var(--color-fg-default);
+	}
+
+	@keyframes slideIn {
+		from {
+			opacity: 0;
+			transform: translateX(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
 	}
 
 	.drag-overlay {

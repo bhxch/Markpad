@@ -1,8 +1,18 @@
 <script lang="ts">
 	import { fade, scale } from 'svelte/transition';
+	import { i18n, type Locale } from '../i18n';
 
 	export type ExportFormat = 'html' | 'pdf';
 	export type PdfPageSize = 'dynamic' | 'a4' | 'a3' | 'letter' | 'legal';
+
+	// Reactive translations
+	let t = $state(i18n.getAll());
+	let currentLocale = $state(i18n.getLocale());
+
+	function updateTranslations() {
+		t = i18n.getAll();
+		currentLocale = i18n.getLocale();
+	}
 
 	let {
 		show,
@@ -17,13 +27,20 @@
 	let format = $state<ExportFormat>('html');
 	let pageSize = $state<PdfPageSize>('dynamic');
 
-	const pageSizes: { value: PdfPageSize; label: string }[] = [
-		{ value: 'dynamic', label: '单页（动态高度）' },
-		{ value: 'a4', label: 'A4' },
-		{ value: 'a3', label: 'A3' },
-		{ value: 'letter', label: 'Letter' },
-		{ value: 'legal', label: 'Legal' },
+	const pageSizes: { value: PdfPageSize }[] = [
+		{ value: 'dynamic' },
+		{ value: 'a4' },
+		{ value: 'a3' },
+		{ value: 'letter' },
+		{ value: 'legal' },
 	];
+
+	function getPageSizeLabel(size: PdfPageSize): string {
+		switch (size) {
+			case 'dynamic': return t.dynamicSinglePage;
+			default: return size.toUpperCase();
+		}
+	}
 
 	let modalContent = $state<HTMLDivElement>();
 	let previousActiveElement: HTMLElement | null = null;
@@ -76,37 +93,37 @@
 			tabindex="-1"
 			onkeydown={handleKeydown}>
 			<div class="modal-header">
-				<h3>导出</h3>
+				<h3>{t.export}</h3>
 			</div>
 			<div class="modal-body">
 				<div class="form-group">
-					<label class="form-label">导出格式</label>
+					<label class="form-label">{t.exportFormat}</label>
 					<div class="radio-group">
 						<label class="radio-item">
 							<input type="radio" name="format" value="html" bind:group={format} />
-							<span>导出 HTML</span>
+							<span>{t.exportHtml}</span>
 						</label>
 						<label class="radio-item">
 							<input type="radio" name="format" value="pdf" bind:group={format} />
-							<span>导出 PDF</span>
+							<span>{t.exportPdf}</span>
 						</label>
 					</div>
 				</div>
 
 				{#if format === 'pdf'}
 					<div class="form-group">
-						<label class="form-label">PDF 尺寸</label>
+						<label class="form-label">{t.pdfSize}</label>
 						<select class="select-input" bind:value={pageSize}>
 							{#each pageSizes as size}
-								<option value={size.value}>{size.label}</option>
+								<option value={size.value}>{getPageSizeLabel(size.value)}</option>
 							{/each}
 						</select>
 					</div>
 				{/if}
 			</div>
 			<div class="modal-footer">
-				<button class="modal-btn secondary" onclick={oncancel}>取消</button>
-				<button class="modal-btn primary" onclick={handleExport}>导出</button>
+				<button class="modal-btn secondary" onclick={oncancel}>{t.cancel}</button>
+				<button class="modal-btn primary" onclick={handleExport}>{t.export}</button>
 			</div>
 		</div>
 	</div>
