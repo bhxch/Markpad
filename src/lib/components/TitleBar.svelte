@@ -99,13 +99,27 @@
 
 	const appWindow = getCurrentWindow();
 
+	let innerWidth = $state(1000);
+	let isCollapsed = $derived(innerWidth <= 450 || settings.zenMode);
+
 	// DEBUG: Set this to true to simulate macOS traffic lights on Windows
 	const DEBUG_MACOS = false;
 
 	const isMac = typeof navigator !== 'undefined' && (navigator.userAgent.includes('Macintosh') || DEBUG_MACOS);
+	const useNativeMacChrome = isMac && !DEBUG_MACOS;
+	const modifier = isMac ? 'Cmd' : 'Ctrl';
 
 	let isWin11 = $state(false);
 	let showMoreMenu = $state(false);
+
+	$effect(() => {
+		innerWidth = window.innerWidth;
+		const handleResize = () => {
+			innerWidth = window.innerWidth;
+		};
+		window.addEventListener('resize', handleResize);
+		return () => window.removeEventListener('resize', handleResize);
+	});
 
 	$effect(() => {
 		invoke('is_win11')
