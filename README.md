@@ -1,65 +1,88 @@
+<div align="center">
+  <img src="src-tauri/icons/128x128.png" width="128" alt="Markpad Icon" />
+  <h1>Markpad</h1>
+  <p><b>The Notepad equivalent for Markdown</b></p>
+  
+  [![GitHub Release](https://img.shields.io/github/v/release/alecdotdev/Markpad?style=flat-square)](https://github.com/alecdotdev/Markpad/releases/latest)
+
+  <p>A lightweight, minimalist Markdown viewer and text editor built for productivity across Windows, macOS, and Linux.</p>
+
+  <a href="https://markpad.sftwr.dev">Website</a> // <a href="https://github.com/alecdotdev/Markpad/releases/latest">Download Latest Release</a> // <a href="https://github.com/alecdotdev/Markpad/issues">Report a Bug</a>
+</div>
+
+<br />
 
 ![demo](pics/demo.gif)
-
-# [Markpad](https://markpad.sftwr.dev)
-
-A simple, lightweight Markdown viewer and text editor for Windows, macOS, and Linux.
-
-Download from [markpad.sftwr.dev](https://markpad.sftwr.dev)
-
 ## Features
 
 - Tabbed interface
 - Monaco editor (VS Code)
 - Split view
 - Syntax highlighting both in editor and code blocks
+- Math equation support (KaTeX)
 - Mermaid diagram support
 - Vim mode
 - Auto-reload
 - Zen mode
+- Custom typography and font settings
+- Content zooming
 - Image and YouTube embeds
 - Familiar GitHub styled markdown rendering
 - Tiny memory usage (~10MB)
 - No telemetry or bloat
 - Free and open-source
 - Lightweight native UI
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md)
+- Cross-platform (Windows, macOS, Linux)
 
 ## Installation
 
-Download the latest executable or installer from the [releases page](https://github.com/alecdotdev/Markpad/releases/latest) or from [markpad.sftwr.dev](https://markpad.sftwr.dev)
+### Package Managers
 
-<!-- #### Snap Store (Linux)
-You can install Markpad from the Snap Store:
-```bash
-sudo snap install markpad
+#### Windows (Chocolatey)
+
+```powershell
+choco install markpad-app --version=2.5.0 # version flag is temporary for now
 ```
 
-#### Chocolatey (Windows)
-You can install Markpad using Chocolatey:
-```powershell
-choco install markpad
-``` -->
+#### Linux (Snap)
 
-#### Windows Installer
-Automatically configures `.md` file association 
+```bash
+sudo snap install markpad 
+```
 
-#### Other Platforms & Windows Portable
-Right click on a markdown file and select "Open with" and select the downloaded or installed executable
+### Direct Download
+
+Download the latest executable or installer from the [releases page](https://github.com/alecdotdev/Markpad/releases/latest) or from [markpad.sftwr.dev](https://markpad.sftwr.dev)
 
 ## Installation from source
 
 - Clone the repository
 - Run `npm install` to install dependencies
-- Run `npm run tauri build` to build the installer
-- Repeat the steps above to set the executable as the default program to open `.md` files
+- Run `npm run tauri build` to build the executable 
+- [Optional] Rename to `MarkpadInstaller.exe` to run as installer
+
+## Issues & Feedback
+
+If you find a bug, have a feature request, or just want to leave some feedback, please [open an issue](https://github.com/alecdotdev/Markpad/issues/new/choose). I'm actively developing Markpad and love hearing from users!
+
+## Contributing
+
+Contributions are always welcome! Markpad is built with SvelteKit and Tauri. 
+
+1. **Fork & Clone** the repository
+2. **Install dependencies**: `npm install`
+3. **Run the dev server**: `npm run tauri dev` (to run the Tauri app locally)
+4. **Make your changes** and ensure type checking passes: `npm run check`
+5. **Open a Pull Request**!
+
+Please ensure your code follows the existing style and that you add descriptions for any new features.
 
 ## Screenshots
 
-![readme splitview demo](pics/image.png)
-![codeblock demonstration](pics/image1.png)
-![editor view](pics/image2.png)
-![home page](pics/image3.png)
+![split view](pics/splitview.png)
+![home page](pics/home.png)
+![split view minimal](pics/splitview-minimal.png)
+![code block](pics/codeblock.png)
+![light mode](pics/lightmode.png)
+![settings](pics/settings.png)
+![zen mode](pics/zenmode-view.png)

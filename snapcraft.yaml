@@ -1,7 +1,33 @@
 name: markpad
+title: Markpad
 adopt-info: markpad
+icon: src-tauri/icons/128x128.png
 summary: The Notepad equivalent for Markdown
-description: A lightweight, fast, and beautiful markdown viewer and editor.
+description: |
+  A lightweight, minimalist Markdown viewer and text editor built for productivity across Windows, macOS, and Linux.
+  Features:
+  -   Tabbed interface
+  -   Monaco editor
+  -   Split view
+  -   Syntax highlighting both in editor and code blocks
+  -   Math equation support (KaTeX)
+  -   Mermaid diagram support
+  -   Vim mode
+  -   Auto-reload
+  -   Zen mode
+  -   Custom typography and font settings
+  -   Content zooming
+  -   Image and YouTube embeds
+  -   Familiar GitHub styled markdown rendering
+  -   Tiny memory usage (~10MB)
+  -   No telemetry or bloat
+  -   Free and open-source
+  -   Lightweight native UI
+license: BSD-3-Clause
+website: https://markpad.sftwr.dev
+donation: https://github.com/sponsors/alecdotdev
+source-code: https://github.com/alecdotdev/Markpad
+issues: https://github.com/alecdotdev/Markpad/issues
 
 confinement: strict
 base: core24
@@ -9,7 +35,7 @@ grade: stable
 
 apps:
   markpad:
-    command: markpad
+    command: bin/markpad
     desktop: usr/share/applications/markpad.desktop
     extensions: [gnome]
     plugs:
@@ -43,10 +69,10 @@ parts:
       craftctl set version="$(node -p "require('./package.json').version")"
       npm install
       export CARGO_BUILD_JOBS=2
-      npx tauri build -b none
+      npx tauri build --no-bundle
       
       # The binary is built in src-tauri/target/release/
-      install -D -m755 src-tauri/target/release/Markpad $CRAFT_PART_INSTALL/markpad
+      install -D -m755 src-tauri/target/release/Markpad $CRAFT_PART_INSTALL/bin/markpad
       
       # Install the icon
       install -D -m644 src-tauri/icons/128x128.png $CRAFT_PART_INSTALL/usr/share/icons/hicolor/128x128/apps/markpad.png
