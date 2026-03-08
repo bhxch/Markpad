@@ -121,7 +121,7 @@ digraph G {
      |                 |
      v                 v
 +---------+       +---------+
-| Parser  |       | Output |
+| Parser  |       | Output  |
 +---------+       +---------+
 ```
 
@@ -164,7 +164,7 @@ using System;
 namespace Markpad.Demo {
     public class ChromaEngine {
         public string Name { get; set; } = "Tree-sitter";
-        
+
         public void Render(string code) {
             Console.WriteLine($"Rendering {Name}: {code}");
         }
