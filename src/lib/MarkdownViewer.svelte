@@ -178,8 +178,8 @@
 					setTimeout(() => { exportMessage = { show: false, text: '' }; }, 3000);
 				}
 			} else {
-				// Use tauri-plugin-printer-v2 for PDF export
-				const result = await exportAsPdf(container, showToc, pageSize);
+				// Use browser print for PDF export
+				const result = await exportAsPdf(container, showToc, pageSize, fileName);
 				exportMessage = { show: true, text: result.message };
 				setTimeout(() => { exportMessage = { show: false, text: '' }; }, 5000);
 			}
