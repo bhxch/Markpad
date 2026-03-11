@@ -168,7 +168,9 @@
 		const container = document.querySelector('.markdown-container') as HTMLElement;
 		if (!container) return;
 
-		const fileName = tabManager.activeTab?.title || 'document';
+		// Get filename without .md extension
+		const rawTitle = tabManager.activeTab?.title || 'document';
+		const fileName = rawTitle.replace(/\.md$/i, '');
 
 		try {
 			if (format === 'html') {
