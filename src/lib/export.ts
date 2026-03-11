@@ -56,11 +56,12 @@ export function getPrintInstructions(): string {
 export async function exportAsPdf(
 	container: HTMLElement,
 	showToc: boolean,
-	pageSize: PdfPageSize
+	pageSize: PdfPageSize,
+	title: string = 'Exported Document'
 ): Promise<{ success: boolean; message: string }> {
 	return new Promise((resolve) => {
 		try {
-			const html = generateExportHtml(container, showToc, pageSize, true);
+			const html = generateExportHtml(container, showToc, pageSize, true, title);
 			
 			const iframe = document.createElement('iframe');
 			iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0;border:none;';
@@ -633,7 +634,8 @@ export function generateExportHtml(
 	container: HTMLElement,
 	showToc: boolean,
 	pageSize: PdfPageSize = 'dynamic',
-	forPrint: boolean = false
+	forPrint: boolean = false,
+	title: string = 'Exported Document'
 ): string {
 	// Clone the container
 	const clone = container.cloneNode(true) as HTMLElement;
@@ -747,7 +749,7 @@ document.querySelectorAll('.diagram-toggle-btn').forEach(btn => {
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Exported Document</title>
+	<title>${title}</title>
 	<style>
 :root {
 ${cssVariables}
@@ -784,7 +786,7 @@ export async function exportAsHtml(
 
 	if (!filePath) return false;
 
-	const html = generateExportHtml(container, showToc);
+	const html = generateExportHtml(container, showToc, 'dynamic', false, defaultFileName);
 	await invoke('save_file_content', { path: filePath, content: html });
 	return true;
 }
