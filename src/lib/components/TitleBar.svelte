@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { invoke } from '@tauri-apps/api/core';
+	import { getVersion } from '@tauri-apps/api/app';
 	import { fly, slide } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import iconUrl from '../../assets/icon.png';
@@ -111,6 +112,8 @@
 
 	let isWin11 = $state(false);
 	let showMoreMenu = $state(false);
+	let homeMenuOpen = $state(false);
+	let appVersion = $state('');
 
 	$effect(() => {
 		innerWidth = window.innerWidth;
@@ -122,12 +125,30 @@
 	});
 
 	$effect(() => {
+		// Check if we're in a Tauri environment
+		if (typeof window === 'undefined') {
+			return;
+		}
 		invoke('is_win11')
 			.then((res) => {
 				isWin11 = res as boolean;
 			})
 			.catch(() => {
 				isWin11 = false;
+			});
+	});
+
+	$effect(() => {
+		// Check if we're in a Tauri environment
+		if (typeof window === 'undefined') {
+			return;
+		}
+		getVersion()
+			.then((v) => {
+				appVersion = v;
+			})
+			.catch((e) => {
+				console.error('Failed to get app version:', e);
 			});
 	});
 
@@ -141,7 +162,7 @@
 	});
 
 	function showTooltip(e: MouseEvent, text: string, shortcutKey: string = '') {
-		if (showMoreMenu) return; // Don't show tooltip if menu is open
+		if (showMoreMenu || homeMenuOpen) return; // Don't show tooltip if menu is open
 		
 		const target = e.currentTarget as HTMLElement;
 		const rect = target.getBoundingClientRect();
@@ -402,9 +423,102 @@
 				</button>
 			</div>
 		{/if}
-		<button class="icon-home-btn {showHome ? 'active' : ''}" onclick={ontoggleHome} aria-label="Home" onmouseenter={(e) => showTooltip(e, 'Home')} onmouseleave={hideTooltip}>
-			<img src={iconUrl} alt="icon" class="window-icon" />
-		</button>
+		<div class="home-menu-container" role="presentation">
+			<button
+				class="icon-home-btn {showHome || homeMenuOpen ? 'active' : ''}"
+				onclick={(e) => {
+					e.stopPropagation();
+					homeMenuOpen = !homeMenuOpen;
+					if (homeMenuOpen) {
+						showMoreMenu = false;
+						hideTooltip();
+					}
+				}}
+				aria-label="Menu"
+				onmouseenter={(e) => {
+					if (!homeMenuOpen) showTooltip(e, 'Menu');
+				}}
+				onmouseleave={hideTooltip}>
+				<img src={iconUrl} alt="icon" class="window-icon" />
+			</button>
+			{#if homeMenuOpen}
+				<div class="home-dropdown-menu" role="menu" transition:fly={{ y: 5, duration: 150 }} onclick={(e) => e.stopPropagation()}>
+					<button
+						class="home-menu-item"
+						onclick={() => {
+							homeMenuOpen = false;
+							ontoggleHome();
+						}}>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+						Home
+					</button>
+					<button
+						class="home-menu-item"
+						onclick={() => {
+							homeMenuOpen = false;
+							onnewFile?.();
+						}}>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16h16V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+						New File
+						<span class="menu-shortcut">{modifier}+T</span>
+					</button>
+					<button
+						class="home-menu-item"
+						onclick={() => {
+							homeMenuOpen = false;
+							onopenFile?.();
+						}}>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><polyline points="15 13 18 13 18 10"></polyline><line x1="14" y1="14" x2="18" y2="10"></line></svg>
+						Open File...
+						<span class="menu-shortcut">{modifier}+O</span>
+					</button>
+					{#if currentFile !== '' || (tabManager.activeTab && tabManager.activeTab.isEditing)}
+						<button
+							class="home-menu-item"
+							onclick={() => {
+								homeMenuOpen = false;
+								onsaveFile?.();
+							}}>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+							Save
+							<span class="menu-shortcut">{modifier}+S</span>
+						</button>
+						<button
+							class="home-menu-item"
+							onclick={() => {
+								homeMenuOpen = false;
+								onsaveFileAs?.();
+							}}>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+							Save As...
+							<span class="menu-shortcut">{modifier}+Shift+S</span>
+						</button>
+					{/if}
+					<div class="home-menu-divider"></div>
+					<button
+						class="home-menu-item"
+						onclick={() => {
+							homeMenuOpen = false;
+							onexit?.();
+						}}>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+						Exit
+						<span class="menu-shortcut">{modifier}+Q</span>
+					</button>
+					<div class="home-menu-divider"></div>
+					<button
+						class="home-menu-footer"
+						onclick={() => {
+							homeMenuOpen = false;
+							import('@tauri-apps/plugin-opener')
+								.then((m) => m.openUrl('https://github.com/bhxch/Markpad'))
+								.catch(() => window.open('https://github.com/bhxch/Markpad', '_blank'));
+						}}>
+						v{appVersion}
+					</button>
+				</div>
+			{/if}
+		</div>
 	</div>
 
 	{#if tabManager.tabs.length > 0}
@@ -621,6 +735,82 @@
 	.icon-home-btn:hover,
 	.icon-home-btn.active {
 		background: var(--color-canvas-subtle);
+	}
+
+	.home-menu-container {
+		position: relative;
+	}
+
+	.home-dropdown-menu {
+		position: absolute;
+		top: 100%;
+		left: 0;
+		margin-top: 4px;
+		background-color: var(--color-canvas-default);
+		border: 1px solid var(--color-border-default);
+		border-radius: 8px;
+		padding: 4px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+		z-index: 10006;
+		min-width: 180px;
+	}
+
+	.home-menu-item {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+		padding: 8px 12px;
+		background: transparent;
+		border: none;
+		border-radius: 4px;
+		color: var(--color-fg-default);
+		font-size: 13px;
+		font-family: var(--win-font);
+		cursor: pointer;
+		transition: background 0.1s;
+		text-align: left;
+	}
+
+	.home-menu-item:hover {
+		background: var(--color-canvas-subtle);
+	}
+
+	.home-menu-item svg {
+		flex-shrink: 0;
+		color: var(--color-fg-muted);
+	}
+
+	.home-menu-item .menu-shortcut {
+		margin-left: auto;
+		color: var(--color-fg-muted);
+		font-size: 11px;
+	}
+
+	.home-menu-divider {
+		height: 1px;
+		background: var(--color-border-default);
+		margin: 4px 8px;
+	}
+
+	.home-menu-footer {
+		display: block;
+		width: 100%;
+		padding: 6px 12px;
+		background: transparent;
+		border: none;
+		border-radius: 4px;
+		color: var(--color-fg-muted);
+		font-size: 11px;
+		font-family: var(--win-font);
+		cursor: pointer;
+		transition: background 0.1s;
+		text-align: center;
+	}
+
+	.home-menu-footer:hover {
+		background: var(--color-canvas-subtle);
+		color: var(--color-fg-default);
 	}
 
 	.window-title-container {
