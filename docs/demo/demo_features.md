@@ -264,8 +264,70 @@ print("Is \(chroma.name) on? \(chroma.isEnabled)")
 
 ## 4. 数学公式与其它
 
-支持 KaTeX 渲染：
+### 4.1 KaTeX 支持情况
+
+项目已集成 KaTeX (v0.16.27)，通过 `katex/dist/contrib/auto-render` 实现。
+
+**支持的格式：**
+
+| 分隔符 | 类型 | 示例 |
+|--------|------|------|
+| `$$...$$` | 块级公式 | `$$E=mc^2$$` |
+| `$...$` | 行内公式 | `$x^2$` |
+| `\(...\)` | 行内公式 | `\(x^2\)` |
+| `\[...\]` | 块级公式 | `\[E=mc^2\]` |
+
+**不支持的格式：**
+
+| 格式 | 说明 |
+|------|------|
+| ` ```math ` 代码块 | 会当作普通代码块处理，由 highlight.js 高亮 |
+| ` ```latex ` 代码块 | 会当作普通代码块处理，由 highlight.js 高亮 |
+
+### 4.2 KaTeX 渲染示例
+
+块级公式 `$$...$$`：
 $$\Gamma(z) = \int_0^\infty t^{z-1}e^{-t}dt$$
+
+行内公式 `$...$`：质能方程 $E=mc^2$ 是物理学中最著名的公式之一。
+
+LaTeX 分隔符 `\[...\]`：
+\[\sum_{i=1}^{n} i = \frac{n(n+1)}{2}\]
+
+多行块级公式（麦克斯韦方程组）：
+$$
+\begin{aligned}
+\nabla \cdot \mathbf{E} &= \frac{\rho}{\varepsilon_0} \\
+\nabla \cdot \mathbf{B} &= 0 \\
+\nabla \times \mathbf{E} &= -\frac{\partial \mathbf{B}}{\partial t} \\
+\nabla \times \mathbf{B} &= \mu_0 \mathbf{J} + \mu_0 \varepsilon_0 \frac{\partial \mathbf{E}}{\partial t}
+\end{aligned}
+$$
+
+矩阵公式：
+$$
+\mathbf{A} = \begin{pmatrix}
+a_{11} & a_{12} & \cdots & a_{1n} \\
+a_{21} & a_{22} & \cdots & a_{2n} \\
+\vdots & \vdots & \ddots & \vdots \\
+a_{m1} & a_{m2} & \cdots & a_{mn}
+\end{pmatrix}
+$$
+
+### 4.3 不支持的格式示例（仅作为代码展示）
+
+```math
+\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+```
+
+```latex
+\begin{matrix}
+a & b \\
+c & d
+\end{matrix}
+```
+
+以上两个代码块只会显示为语法高亮的代码，不会渲染为数学公式。
 
 甚至简单的黑白绘图 **Ditaa**：
 ```ditaa
