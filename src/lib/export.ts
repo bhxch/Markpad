@@ -6,6 +6,221 @@ import { i18n } from './i18n';
 export type ExportFormat = 'html' | 'pdf';
 export type PdfPageSize = 'dynamic' | 'a4' | 'a3' | 'letter' | 'legal';
 
+// Page constants (in mm)
+const A4_WIDTH = 210;
+const A4_HEIGHT = 297;
+const MARGIN = 15;
+const USABLE_HEIGHT = A4_HEIGHT - MARGIN * 2; // ~267mm
+
+// Element types that should not be split
+const UNSPLITTABLE_TAGS = ['PRE', 'TABLE', 'FIGURE', 'SVG', 'IFRAME', 'IMG', 'VIDEO', 'CANVAS'];
+
+/**
+ * Represents a single page for PDF export
+ */
+export interface PdfPage {
+	html: string;           // HTML content for this page
+	height: number;         // Page height in mm (A4 or extended)
+	width: number;          // Page width in mm (always A4)
+}
+
+/**
+ * Result of pagination
+ */
+export interface PaginationResult {
+	pages: PdfPage[];
+	totalHeight: number;
+}
+
+/**
+ * Smart pagination algorithm
+ * Splits content into pages, avoiding breaking unsplittable elements
+ */
+export function paginateContent(
+	container: HTMLElement,
+	showToc: boolean,
+	title: string = 'Exported Document'
+): PaginationResult {
+	// Clone the container
+	const clone = container.cloneNode(true) as HTMLElement;
+	
+	// Remove interactive elements
+	clone.querySelectorAll('.toc-sidebar, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label').forEach(el => el.remove());
+	clone.querySelectorAll('[onclick], [onmousedown], [onwheel]').forEach(el => {
+		el.removeAttribute('onclick');
+		el.removeAttribute('onmousedown');
+		el.removeAttribute('onwheel');
+	});
+	
+	// Get the markdown body
+	const markdownBody = clone.querySelector('.markdown-body') as HTMLElement;
+	if (!markdownBody) {
+		return { pages: [], totalHeight: 0 };
+	}
+	
+	// Get all direct children
+	const elements = Array.from(markdownBody.children) as HTMLElement[];
+	
+	// Calculate page height in pixels (for measurement)
+	// Assuming 96 DPI: 1mm ≈ 3.78px
+	const pxPerMm = 96 / 25.4;
+	const usableHeightPx = USABLE_HEIGHT * pxPerMm;
+	const marginPx = MARGIN * pxPerMm;
+	
+	// Get theme info
+	const themeMode = document.documentElement.getAttribute('data-theme-mode') || 'light';
+	const themeScheme = document.documentElement.getAttribute('data-theme-scheme') || 'github-light';
+	const cssVariables = extractCssVariables();
+	
+	// Paginate elements
+	const pages: PdfPage[] = [];
+	let currentPageElements: HTMLElement[] = [];
+	let currentPageHeight = 0;
+	
+	for (const element of elements) {
+		// Clone element for measurement
+		const measureEl = element.cloneNode(true) as HTMLElement;
+		
+		// Create temporary container for measurement
+		const measureContainer = document.createElement('div');
+		measureContainer.style.cssText = `
+			position: absolute;
+			visibility: hidden;
+			width: ${A4_WIDTH - MARGIN * 2}mm;
+			font-size: 16px;
+			line-height: 1.6;
+		`;
+		measureContainer.appendChild(measureEl);
+		document.body.appendChild(measureContainer);
+		
+		const elementHeight = measureEl.offsetHeight;
+		const elementHeightMm = elementHeight / pxPerMm;
+		
+		document.body.removeChild(measureContainer);
+		
+		// Check if element is a heading (prefer starting new page before heading)
+		const isHeading = /^H[1-6]$/.test(element.tagName);
+		
+		// Check if element is unsplittable
+		const isUnsplittable = UNSPLITTABLE_TAGS.includes(element.tagName) || 
+			element.querySelector(UNSPLITTABLE_TAGS.join(',')) !== null;
+		
+		// Decision: should we start a new page?
+		const wouldExceedHeight = currentPageHeight + elementHeightMm > USABLE_HEIGHT;
+		const shouldStartNewPage = (wouldExceedHeight && currentPageElements.length > 0) ||
+			(isHeading && currentPageHeight > USABLE_HEIGHT * 0.7);
+		
+		if (shouldStartNewPage) {
+			// Finalize current page
+			if (currentPageElements.length > 0) {
+				const pageHeight = Math.max(A4_HEIGHT, currentPageHeight + MARGIN * 2);
+				pages.push(createPage(currentPageElements, pageHeight, themeMode, themeScheme, cssVariables, title, showToc));
+			}
+			currentPageElements = [];
+			currentPageHeight = 0;
+		}
+		
+		// Add element to current page
+		currentPageElements.push(element.cloneNode(true) as HTMLElement);
+		currentPageHeight += elementHeightMm;
+		
+		// If single element exceeds A4 height, create an extended page
+		if (isUnsplittable && elementHeightMm > USABLE_HEIGHT) {
+			// This element needs an extended page
+			const extendedHeight = elementHeightMm + MARGIN * 2;
+			pages.push(createPage([element.cloneNode(true) as HTMLElement], extendedHeight, themeMode, themeScheme, cssVariables, title, showToc));
+			currentPageElements = [];
+			currentPageHeight = 0;
+		}
+	}
+	
+	// Finalize last page
+	if (currentPageElements.length > 0) {
+		const pageHeight = Math.max(A4_HEIGHT, currentPageHeight + MARGIN * 2);
+		pages.push(createPage(currentPageElements, pageHeight, themeMode, themeScheme, cssVariables, title, showToc));
+	}
+	
+	// Calculate total height
+	const totalHeight = pages.reduce((sum, p) => sum + p.height, 0);
+	
+	return { pages, totalHeight };
+}
+
+/**
+ * Create a single page HTML
+ */
+function createPage(
+	elements: HTMLElement[],
+	height: number,
+	themeMode: string,
+	themeScheme: string,
+	cssVariables: string,
+	title: string,
+	showToc: boolean
+): PdfPage {
+	const contentHtml = elements.map(el => el.outerHTML).join('\n');
+	
+	const html = `<!DOCTYPE html>
+<html lang="zh-CN" data-theme-mode="${themeMode}" data-theme-scheme="${themeScheme}">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>${title}</title>
+	<style>
+:root {
+${cssVariables}
+}
+
+${getBaseStyles()}
+
+@page {
+	size: ${A4_WIDTH}mm ${height}mm;
+	margin: ${MARGIN}mm;
+}
+
+@media print {
+	html, body {
+		height: auto !important;
+		overflow: visible !important;
+		margin: 0;
+		padding: 0;
+	}
+	
+	.markdown-container {
+		display: block;
+	}
+	
+	.markdown-body {
+		max-width: none;
+		padding: 0;
+	}
+	
+	pre, table, figure, img, svg {
+		break-inside: avoid;
+	}
+}
+	</style>
+</head>
+<body>
+	<div class="markdown-container">
+		<div class="layout-container">
+			<div class="viewer-pane">
+				<div class="markdown-body">
+${contentHtml}
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+</html>`;
+
+	return {
+		html,
+		height,
+		width: A4_WIDTH
+	};
+}
+
 // Platform detection (cached)
 let currentPlatform: 'windows' | 'macos' | 'linux' | 'unknown' = 'unknown';
 
@@ -789,4 +1004,162 @@ export async function exportAsHtml(
 	const html = generateExportHtml(container, showToc, 'dynamic', false, defaultFileName);
 	await invoke('save_file_content', { path: filePath, content: html });
 	return true;
+}
+
+/**
+ * Export as PDF with smart pagination
+ * Uses browser print dialog with CSS @page for custom page sizes
+ * 
+ * Note: The browser print dialog will appear, but the page size
+ * is set via CSS @page which is respected by the print output.
+ */
+export async function exportAsPdfPaginated(
+	container: HTMLElement,
+	showToc: boolean,
+	title: string = 'Exported Document'
+): Promise<{ success: boolean; message: string }> {
+	try {
+		// 1. Paginate content
+		const { pages, totalHeight } = paginateContent(container, showToc, title);
+		
+		if (pages.length === 0) {
+			return { success: false, message: 'No content to export' };
+		}
+		
+		// 2. For single page, generate directly with dynamic height
+		if (pages.length === 1) {
+			return exportAsPdf(container, showToc, 'dynamic', title);
+		}
+		
+		// 3. For multiple pages, we need to either:
+		// a) Print each page separately (user will see multiple print dialogs)
+		// b) Generate a single HTML with page breaks
+		// 
+		// Option (b) is more user-friendly, but requires all pages to be same size
+		// Option (a) allows different page heights but more user interaction
+		//
+		// For now, use option (b) with A4 pages and page breaks
+		return exportMultiPagePdf(pages, title);
+		
+	} catch (e) {
+		console.error('PDF export failed:', e);
+		return { success: false, message: `PDF export failed: ${e}` };
+	}
+}
+
+/**
+ * Export multiple pages as PDF with page breaks
+ */
+async function exportMultiPagePdf(
+	pages: PdfPage[],
+	title: string
+): Promise<{ success: boolean; message: string }> {
+	return new Promise((resolve) => {
+		try {
+			// Combine all pages into one HTML with page breaks
+			const themeMode = document.documentElement.getAttribute('data-theme-mode') || 'light';
+			const themeScheme = document.documentElement.getAttribute('data-theme-scheme') || 'github-light';
+			const cssVariables = extractCssVariables();
+			
+			// Calculate max height for consistency
+			const maxHeight = Math.max(...pages.map(p => p.height));
+			
+			const combinedHtml = `<!DOCTYPE html>
+<html lang="zh-CN" data-theme-mode="${themeMode}" data-theme-scheme="${themeScheme}">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>${title}</title>
+	<style>
+:root {
+${cssVariables}
+}
+
+${getBaseStyles()}
+
+@page {
+	size: ${A4_WIDTH}mm ${maxHeight}mm;
+	margin: ${MARGIN}mm;
+}
+
+@media print {
+	.page-break {
+		break-before: page;
+		page-break-before: always;
+	}
+	
+	html, body {
+		height: auto !important;
+		overflow: visible !important;
+		margin: 0;
+		padding: 0;
+	}
+	
+	.markdown-container {
+		display: block;
+	}
+	
+	.markdown-body {
+		max-width: none;
+		padding: 0;
+	}
+	
+	pre, table, figure, img, svg {
+		break-inside: avoid;
+	}
+}
+	</style>
+</head>
+<body>
+	<div class="markdown-container">
+		<div class="layout-container">
+			<div class="viewer-pane">
+${pages.map((page, i) => {
+	// Extract body content from each page HTML
+	const bodyMatch = page.html.match(/<div class="markdown-body">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>\s*<\/div>/);
+	const content = bodyMatch ? bodyMatch[1] : '';
+	const pageBreakClass = i > 0 ? ' page-break' : '';
+	return `				<div class="markdown-body${pageBreakClass}">
+${content}
+				</div>`;
+}).join('\n')}
+			</div>
+		</div>
+	</div>
+</body>
+</html>`;
+			
+			// Create hidden iframe for printing
+			const iframe = document.createElement('iframe');
+			iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0;border:none;';
+			document.body.appendChild(iframe);
+			
+			const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+			if (!iframeDoc) {
+				document.body.removeChild(iframe);
+				resolve({ success: false, message: 'Failed to create print document' });
+				return;
+			}
+			
+			iframeDoc.open();
+			iframeDoc.write(combinedHtml);
+			iframeDoc.close();
+			
+			setTimeout(() => {
+				try {
+					iframe.contentWindow?.focus();
+					iframe.contentWindow?.print();
+					resolve({ success: true, message: 'Print dialog opened for multi-page PDF' });
+				} catch (e) {
+					resolve({ success: false, message: `Print failed: ${e}` });
+				}
+				
+				setTimeout(() => {
+					document.body.removeChild(iframe);
+				}, 1000);
+			}, 500);
+		} catch (e) {
+			resolve({ success: false, message: `PDF export failed: ${e}` });
+		}
+	});
 }

@@ -18,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 cc = "1"
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "devtools"] }
+tauri = { version = "2", features = ["protocol-asset", "devtools", "unstable"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
@@ -51,9 +51,19 @@ include_dir = "0.7"
 layout-rs = "0.1"
 svgbob = "0.7"
 
+# PDF generation
+lopdf = "0.34"
+
 [target.'cfg(windows)'.dependencies]
 mslnk = "0.1"
 winreg = "0.52"
+webview2-com = "0.33"
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+] }
 
 [profile.release]
 panic = "abort"

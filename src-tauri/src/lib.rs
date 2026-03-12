@@ -15,6 +15,7 @@ use layout::gv::{DotParser, GraphBuilder};
 
 mod highlight;
 mod setup;
+mod pdf;
 
 use highlight::{TreeSitterHighlighter, Theme};
 
@@ -576,7 +577,10 @@ pub fn run() {
             get_supported_languages,
             // Diagram rendering (Rust)
             render_graphviz_rust,
-            render_svgbob_rust
+            render_svgbob_rust,
+            // PDF generation
+            pdf::prepare_pdf_pages,
+            pdf::merge_pdf_files
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
