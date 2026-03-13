@@ -276,13 +276,8 @@ print("Is \(chroma.name) on? \(chroma.isEnabled)")
 | `$...$` | 行内公式 | `$x^2$` |
 | `\(...\)` | 行内公式 | `\(x^2\)` |
 | `\[...\]` | 块级公式 | `\[E=mc^2\]` |
-
-**不支持的格式：**
-
-| 格式 | 说明 |
-|------|------|
-| ` ```math ` 代码块 | 会当作普通代码块处理，由 highlight.js 高亮 |
-| ` ```latex ` 代码块 | 会当作普通代码块处理，由 highlight.js 高亮 |
+| ` ```math ` 代码块 | 块级公式 | 数学公式代码块 |
+| ` ```latex ` 代码块 | 块级公式 | LaTeX 公式代码块 |
 
 ### 4.2 KaTeX 渲染示例
 
@@ -314,7 +309,9 @@ a_{m1} & a_{m2} & \cdots & a_{mn}
 \end{pmatrix}
 $$
 
-### 4.3 不支持的格式示例（仅作为代码展示）
+### 4.3 代码块数学公式
+
+使用 `math` 或 `latex` 代码块：
 
 ```math
 \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
@@ -327,7 +324,19 @@ c & d
 \end{matrix}
 ```
 
-以上两个代码块只会显示为语法高亮的代码，不会渲染为数学公式。
+复杂的矩阵运算：
+
+```math
+\mathbf{C} = \mathbf{A} \times \mathbf{B} = \begin{pmatrix}
+\sum_{k=1}^{n} a_{1k}b_{k1} & \sum_{k=1}^{n} a_{1k}b_{k2} & \cdots \\
+\sum_{k=1}^{n} a_{2k}b_{k1} & \sum_{k=1}^{n} a_{2k}b_{k2} & \cdots \\
+\vdots & \vdots & \ddots
+\end{pmatrix}
+```
+
+---
+
+## 5. 其他图表
 
 甚至简单的黑白绘图 **Ditaa**：
 ```ditaa
