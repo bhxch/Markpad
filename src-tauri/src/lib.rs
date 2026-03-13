@@ -949,4 +949,109 @@ digraph G {
 			println!("Demo file not found at {}", demo_path.display());
 		}
 	}
+	
+	#[test]
+	fn test_inline_code_with_latex() {
+		// Test that \[...\] inside backticks is NOT converted
+		let input = r#"LaTeX 分隔符 `\[...\]`："#;
+		
+		println!("=== Input ===");
+		println!("{}", input);
+		
+		let processed = process_latex_delimiters(input);
+		println!("=== After process_latex_delimiters ===");
+		println!("{}", processed);
+		
+		// Should NOT contain $$ because \[...\] is inside backticks
+		assert!(!processed.contains("$$"), "Should NOT convert \\[...\\] inside backticks");
+		
+		// Should still contain the original \[...\]
+		assert!(processed.contains(r#"\["#), "Should contain original \\[");
+		assert!(processed.contains(r#"\]"#), "Should contain original \\]");
+		
+		// Now test the actual markdown rendering
+		let html = convert_markdown(input);
+		println!("=== Final HTML ===");
+		println!("{}", html);
+		
+		// The HTML should contain <code> tag with \[...\] inside
+		// Note: comrak might generate different HTML structure
+		// Just check that the backticks are processed correctly by our function
+	}
+	
+	#[test]
+	fn test_actual_line_281_282() {
+		// Test the exact lines from demo file
+		let input = r#"LaTeX 分隔符 `\[...\]`：
+\[\sum_{i=1}^{n} i = \frac{n(n+1)}{2}\]"#;
+		
+		eprintln!("=== Input ===");
+		eprintln!("{}", input);
+		
+		let processed = process_latex_delimiters(input);
+		eprintln!("\n=== After process_latex_delimiters ===");
+		eprintln!("{}", processed);
+		
+		// Line 1 should NOT be converted (inside backticks)
+		let line1 = processed.lines().next().unwrap();
+		eprintln!("\nLine 1: {}", line1);
+		assert!(line1.contains(r#"\["#), "Line 1 should still have \\[");
+		assert!(!line1.contains("$$"), "Line 1 should NOT have $$");
+		
+		// Line 2 SHOULD be converted (not inside backticks)
+		let line2 = processed.lines().nth(1).unwrap();
+		eprintln!("Line 2: {}", line2);
+		assert!(line2.contains("$$"), "Line 2 should have $$");
+		
+		// Final HTML check
+		let html = convert_markdown(input);
+		eprintln!("\n=== Final HTML ===");
+		eprintln!("{}", html);
+	}
+	
+	#[test]
+	fn test_backtick_state_reset() {
+		// Test that inline code state is properly reset at end of line
+		let input = "Some `inline code` here\nNext line with \\[math\\]";
+		
+		eprintln!("=== Input ===");
+		eprintln!("{}", input);
+		
+		let processed = process_latex_delimiters(input);
+		eprintln!("\n=== After processing ===");
+		eprintln!("{}", processed);
+		
+		// The math on line 2 should be converted
+		assert!(processed.contains("$$"), "Math should be converted");
+	}
+	
+	#[test]
+	fn test_comrak_code_math() {
+		// Test how comrak handles math inside code blocks
+		use comrak::{markdown_to_html, ComrakOptions};
+		
+		// Test 1: $$ inside backticks
+		let input1 = r#"Test `$$x^2$$` here"#;
+		let mut options = ComrakOptions::default();
+		options.extension.math_dollars = true;
+		options.render.unsafe_ = true;
+		options.render.sourcepos = true;
+		
+		let html1 = markdown_to_html(input1, &options);
+		eprintln!("=== Input: {} ===", input1);
+		eprintln!("HTML: {}", html1);
+		
+		// Test 2: Our preprocessing result - \[...\] in backticks should stay as-is
+		let input2 = r#"LaTeX 分隔符 `\[...\]`："#;
+		let processed2 = process_latex_delimiters(input2);
+		eprintln!("\n=== Input: {} ===", input2);
+		eprintln!("Processed: {}", processed2);
+		
+		let html2 = markdown_to_html(&processed2, &options);
+		eprintln!("HTML: {}", html2);
+		
+		// Check if comrak adds data-math-style inside code tags
+		let has_math_in_code = html2.contains("<code>") && html2.contains("data-math-style");
+		eprintln!("Has math inside code: {}", has_math_in_code);
+	}
 }
