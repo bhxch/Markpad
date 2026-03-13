@@ -424,7 +424,7 @@
 							
 							if (renderMode === 'source') {
 								// Show source code only
-								setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
+								await setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
 							} else if (renderMode === 'kroki') {
 								// Render via Kroki
 								try {
@@ -438,10 +438,10 @@
 									chartWrapper.className = 'kroki-container';
 									chartWrapper.appendChild(img);
 									
-									setupDiagramWrapper(wrapper, chartWrapper, pre as HTMLElement, normalizedLang);
+									await setupDiagramWrapper(wrapper, chartWrapper, pre as HTMLElement, normalizedLang);
 								} catch (e) {
 									console.error('Kroki error:', e);
-									setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
+									await setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
 								}
 							} else if (renderMode === 'local') {
 								// Local rendering
@@ -462,7 +462,7 @@
 										div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error: ${e}</div>`;
 									}
 									
-									setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'mermaid');
+									await setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'mermaid');
 								} else if (normalizedLang === 'math' && katex) {
 									// Math/LaTeX code block rendering
 									const div = document.createElement('div');
@@ -480,7 +480,7 @@
 										div.innerHTML = `<div class="math-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">KaTeX Error: ${e}</div>`;
 									}
 									
-									setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'math');
+									await setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'math');
 								} else if (supportsLocalRender(normalizedLang)) {
 									// Other local renderers
 									const div = document.createElement('div');
@@ -494,10 +494,10 @@
 										div.innerHTML = `<div class="diagram-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">${normalizedLang} Render Error: ${e}</div>`;
 									}
 									
-									setupDiagramWrapper(wrapper, div, pre as HTMLElement, normalizedLang);
+									await setupDiagramWrapper(wrapper, div, pre as HTMLElement, normalizedLang);
 								} else {
 									// Fallback: render as source
-									setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
+									await setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
 								}
 							} else if (renderMode === 'rust') {
 								// Rust backend rendering
@@ -516,14 +516,14 @@
 										div.innerHTML = `<div class="diagram-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">${normalizedLang} Rust Render Error: ${e}</div>`;
 									}
 									
-									setupDiagramWrapper(wrapper, div, pre as HTMLElement, normalizedLang);
+									await setupDiagramWrapper(wrapper, div, pre as HTMLElement, normalizedLang);
 								} else {
 									// Fallback: render as source
-									setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
+									await setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
 								}
 							} else {
 								// Fallback: render as source
-								setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
+								await setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
 							}
 						}
 					}
@@ -1444,11 +1444,27 @@
 	// Global diagram toggle handler - set up once
 	let diagramToggleHandlerAdded = false;
 
-	function setupDiagramWrapper(container: HTMLElement, renderEl: HTMLElement | null, codeEl: HTMLElement, lang: string) {
-		// If no render element, just show source code
+	async function setupDiagramWrapper(container: HTMLElement, renderEl: HTMLElement | null, codeEl: HTMLElement, lang: string) {
+		// Helper function to highlight code block
+		const highlightCodeBlock = async (block: HTMLElement, language: string) => {
+			const codeElement = block.querySelector('code') || block;
+			if (!codeElement.textContent?.trim()) return;
+			
+			// Try tree-sitter first
+			const tsSuccess = await highlightCodeWithTreeSitter(codeElement as HTMLElement, language);
+			
+			// Fallback to hljs if tree-sitter failed
+			if (!tsSuccess && hljs) {
+				hljs.highlightElement(codeElement as HTMLElement);
+			}
+		};
+		
+		// If no render element, just show source code with highlighting
 		if (!renderEl) {
 			codeEl.style.setProperty('display', 'block', 'important');
 			container.appendChild(codeEl);
+			// Apply syntax highlighting to the code block
+			await highlightCodeBlock(codeEl, lang);
 			return;
 		}
 
@@ -1472,11 +1488,14 @@
 		container.appendChild(btn);
 		container.appendChild(renderEl);
 		container.appendChild(codeEl);
+		
+		// Store language for toggle handler
+		container.dataset.diagramLang = lang;
 
 		// Set up global click handler once
 		if (!diagramToggleHandlerAdded) {
 			diagramToggleHandlerAdded = true;
-			document.addEventListener('click', (e) => {
+			document.addEventListener('click', async (e) => {
 				const target = e.target as HTMLElement;
 				const toggleBtn = target.closest('.diagram-toggle-btn') as HTMLElement | null;
 				if (!toggleBtn) return;
@@ -1501,6 +1520,16 @@
 					codeElement.style.setProperty('display', 'block', 'important');
 					toggleBtn.innerHTML = `<svg style="pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`;
 					toggleBtn.title = 'Show Diagram';
+					
+					// Highlight code when showing source
+					const lang = wrapper.dataset.diagramLang || '';
+					const codeEl = codeElement.querySelector('code') || codeElement;
+					if (codeEl.textContent?.trim()) {
+						const tsSuccess = await highlightCodeWithTreeSitter(codeEl as HTMLElement, lang);
+						if (!tsSuccess && hljs) {
+							hljs.highlightElement(codeEl as HTMLElement);
+						}
+					}
 				} else {
 					renderElement.style.setProperty('display', 'block', 'important');
 					codeElement.style.setProperty('display', 'none', 'important');
