@@ -242,13 +242,21 @@ export const DIAGRAM_TYPES: DiagramType[] = [
 		localRenderers: [LOCAL_RENDERERS['vega-embed']],
 		defaultRenderer: 'vega-embed',
 		description: '高级可视化语法'
+	},
+	{
+		id: 'math',
+		name: 'Math (KaTeX)',
+		supportedModes: ['local', 'source'],
+		defaultMode: 'local',
+		description: 'LaTeX 数学公式渲染'
 	}
 ];
 
 // 语言别名映射
 export const DIAGRAM_ALIASES: Record<string, string> = {
 	'dot': 'graphviz',
-	'vega-lite': 'vegalite'
+	'vega-lite': 'vegalite',
+	'latex': 'math'
 };
 
 // 获取默认设置
