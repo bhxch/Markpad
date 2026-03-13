@@ -1,4 +1,4 @@
-use comrak::{markdown_to_html, ComrakExtensionOptions, ComrakOptions};
+use comrak::{markdown_to_html, ComrakOptions};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use regex::{Captures, Regex};
 use std::borrow::Cow;
@@ -103,24 +103,134 @@ fn process_obsidian_embeds(content: &str) -> Cow<'_, str> {
     })
 }
 
+/// Convert LaTeX delimiters \[...\] to $$...$$ and \(...\) to $...$
+/// This is needed because comrak only supports $...$$ and $...$ natively
+/// Skips content inside code blocks (`...` and ```...```)
+fn process_latex_delimiters(content: &str) -> String {
+    let mut result = String::new();
+    let chars: Vec<char> = content.chars().collect();
+    let mut i = 0;
+    
+    // State tracking
+    let mut in_inline_code = false;      // `...`
+    let mut in_code_block = false;       // ```...```
+    let mut in_display_math = false;     // \[...\]
+    let mut in_inline_math = false;      // \(...\)
+    let mut math_content = String::new();
+    
+    while i < chars.len() {
+        let c = chars[i];
+        
+        // Check for backtick-related patterns first
+        if c == '`' {
+            // Always check for ``` first (higher priority than single `)
+            if i + 2 < chars.len() && chars[i + 1] == '`' && chars[i + 2] == '`' {
+                // Found ```
+                if !in_inline_code {
+                    // Only toggle code block if not inside inline code
+                    in_code_block = !in_code_block;
+                }
+                result.push_str("```");
+                i += 3;
+                continue;
+            }
+            
+            // Single backtick - only process if not in code block
+            if !in_code_block && !in_display_math && !in_inline_math {
+                in_inline_code = !in_inline_code;
+            }
+            result.push(c);
+            i += 1;
+            continue;
+        }
+        
+        // If inside code (inline or block), just pass through
+        if in_inline_code || in_code_block {
+            result.push(c);
+            i += 1;
+            continue;
+        }
+        
+        // Now process LaTeX delimiters
+        if !in_display_math && !in_inline_math {
+            // Check for \[ (display math start)
+            if c == '\\' && i + 1 < chars.len() && chars[i + 1] == '[' {
+                in_display_math = true;
+                math_content.clear();
+                result.push_str("$$");
+                i += 2;
+                continue;
+            }
+            // Check for \( (inline math start)
+            if c == '\\' && i + 1 < chars.len() && chars[i + 1] == '(' {
+                in_inline_math = true;
+                math_content.clear();
+                result.push('$');
+                i += 2;
+                continue;
+            }
+            result.push(c);
+            i += 1;
+        } else if in_display_math {
+            // Inside display math, look for \]
+            if c == '\\' && i + 1 < chars.len() && chars[i + 1] == ']' {
+                in_display_math = false;
+                result.push_str(&math_content);
+                result.push_str("$$");
+                math_content.clear();
+                i += 2;
+            } else {
+                math_content.push(c);
+                i += 1;
+            }
+        } else if in_inline_math {
+            // Inside inline math, look for \)
+            if c == '\\' && i + 1 < chars.len() && chars[i + 1] == ')' {
+                in_inline_math = false;
+                result.push_str(&math_content);
+                result.push('$');
+                math_content.clear();
+                i += 2;
+            } else {
+                math_content.push(c);
+                i += 1;
+            }
+        }
+    }
+    
+    // Handle unclosed math
+    if in_display_math {
+        result.push_str(&math_content);
+    }
+    if in_inline_math {
+        result.push_str(&math_content);
+    }
+    
+    result
+}
+
 #[tauri::command]
 fn convert_markdown(content: &str) -> String {
-    let processed = process_obsidian_embeds(content);
+    let after_obsidian = process_obsidian_embeds(content);
+    let processed = process_latex_delimiters(&after_obsidian);
+    
+    // Debug: log if LaTeX delimiters are found
+    if content.contains(r#"\["#) || content.contains(r#"\("#) {
+        eprintln!("[latex] Input contains \\[ or \\(");
+        eprintln!("[latex] After processing: {}", if processed.contains("$$") { "contains $$" } else { "NO $$" });
+    }
 
-    let mut options = ComrakOptions {
-        extension: ComrakExtensionOptions {
-            strikethrough: true,
-            table: true,
-            autolink: true,
-            tasklist: true,
-            superscript: false,
-            footnotes: true,
-            description_lists: true,
-            header_ids: Some("".to_string()),
-            ..ComrakExtensionOptions::default()
-        },
-        ..ComrakOptions::default()
-    };
+    let mut options = ComrakOptions::default();
+    options.extension.strikethrough = true;
+    options.extension.table = true;
+    options.extension.autolink = true;
+    options.extension.tasklist = true;
+    options.extension.superscript = false;
+    options.extension.footnotes = true;
+    options.extension.description_lists = true;
+    options.extension.header_ids = Some("".to_string());
+    options.extension.math_dollars = true;
+    options.extension.math_code = true;
     options.render.unsafe_ = true;
     options.render.hardbreaks = true;
     options.render.sourcepos = true;
@@ -642,5 +752,201 @@ digraph G {
 		let svg = result.unwrap();
 		assert!(svg.contains("<svg"), "Result should contain SVG element");
 		println!("Generated SVG length: {} bytes", svg.len());
+	}
+
+	#[test]
+	fn test_process_latex_delimiters() {
+		// Test \[...\] -> $$...$$
+		let input1 = r#"Some text \[\sum_{i=1}^{n} i = \frac{n(n+1)}{2}\] more text"#;
+		let output1 = process_latex_delimiters(input1);
+		println!("Input1: {}", input1);
+		println!("Output1: {}", output1);
+		assert!(output1.contains("$$"), "Should contain $$ for display math");
+		assert!(!output1.contains(r#"\["#), "Should not contain \\[");
+		assert!(!output1.contains(r#"\]"#), "Should not contain \\]");
+		
+		// Test \(...\) -> $...$
+		let input2 = r#"Inline math \(x^2\) here"#;
+		let output2 = process_latex_delimiters(input2);
+		println!("Input2: {}", input2);
+		println!("Output2: {}", output2);
+		assert!(output2.contains("$x^2$"), "Should convert \\(\\) to $");
+		assert!(!output2.contains(r#"\("#), "Should not contain \\(");
+		assert!(!output2.contains(r#"\)"#), "Should not contain \\)");
+	}
+
+	#[test]
+	fn test_convert_markdown_latex() {
+		// Test full markdown conversion with LaTeX delimiters
+		let input = r#"LaTeX 分隔符 \[...\]：
+\[\sum_{i=1}^{n} i = \frac{n(n+1)}{2}\]
+"#;
+		let output = convert_markdown(input);
+		println!("=== Markdown Input ===");
+		println!("{}", input);
+		println!("=== HTML Output ===");
+		println!("{}", output);
+		
+		// Should contain data-math-style="display" from comrak
+		assert!(output.contains("data-math-style"), "Should contain data-math-style attribute");
+		
+		// Count math spans
+		let count = output.matches("data-math-style").count();
+		println!("Number of math spans: {}", count);
+	}
+	
+	#[test]
+	fn test_specific_line() {
+		// Test the specific line from demo_features.md
+		let input = r#"\[\sum_{i=1}^{n} i = \frac{n(n+1)}{2}\]"#;
+		println!("=== Input ===");
+		println!("{}", input);
+		
+		let processed = process_latex_delimiters(input);
+		println!("=== After process_latex_delimiters ===");
+		println!("{}", processed);
+		
+		let output = convert_markdown(input);
+		println!("=== Final HTML ===");
+		println!("{}", output);
+		
+		assert!(output.contains("data-math-style"), "Should contain data-math-style");
+	}
+	
+	#[test]
+	fn test_lines_289_290() {
+		// Test the exact content of lines 289-290
+		let input = "LaTeX 分隔符 `\\[...\\]`：\n\\[\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\\]";
+		
+		println!("=== Input ===");
+		println!("{}", input);
+		
+		let processed = process_latex_delimiters(input);
+		println!("\n=== After process_latex_delimiters ===");
+		println!("{}", processed);
+		
+		// Line 290 should be converted to $$...$$
+		assert!(processed.contains("$$\\sum"), "Line 290 should be converted to $$ format");
+	}
+	
+	#[test]
+	fn test_debug_state() {
+		// Test to debug the state tracking issue
+		let demo_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+			.parent()
+			.unwrap()
+			.join("docs/demo/demo_features.md");
+		
+		let content = std::fs::read_to_string(&demo_path).expect("Failed to read file");
+		
+		// Simulate the process_latex_delimiters function with debug output
+		let mut in_inline_code = false;
+		let mut in_code_block = false;
+		let mut line_num = 1;
+		
+		for line in content.lines() {
+			let chars: Vec<char> = line.chars().collect();
+			let mut i = 0;
+			
+			while i < chars.len() {
+				let c = chars[i];
+				
+				// Check for code block
+				if !in_inline_code {
+					if c == '`' && i + 2 < chars.len() && chars[i + 1] == '`' && chars[i + 2] == '`' {
+						in_code_block = !in_code_block;
+						i += 3;
+						println!("Line {}: CODE BLOCK TOGGLE (now {})", line_num, in_code_block);
+						continue;
+					}
+				}
+				
+				// Check for inline code
+				if !in_code_block {
+					if c == '`' {
+						in_inline_code = !in_inline_code;
+						i += 1;
+						println!("Line {}: INLINE CODE TOGGLE (now {})", line_num, in_inline_code);
+						continue;
+					}
+				}
+				
+				i += 1;
+			}
+			
+			// Print state at specific lines
+			if line_num >= 288 && line_num <= 292 {
+				println!("Line {} END: in_inline_code={}, in_code_block={}, content: {}", 
+					line_num, in_inline_code, in_code_block, 
+					if line.len() > 50 { &line[..50] } else { line });
+			}
+			
+			line_num += 1;
+		}
+		
+		println!("\nFinal state: in_inline_code={}, in_code_block={}", in_inline_code, in_code_block);
+	}
+	
+	#[test]
+	fn test_demo_features_file() {
+		// Test the actual demo_features.md file
+		let demo_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+			.parent()
+			.unwrap()
+			.join("docs/demo/demo_features.md");
+		
+		println!("=== Reading demo file: {} ===", demo_path.display());
+		
+		if demo_path.exists() {
+			let content = std::fs::read_to_string(&demo_path).expect("Failed to read demo file");
+			println!("File size: {} bytes", content.len());
+			
+			// Check if file contains \[ delimiters
+			let has_latex_bracket = content.contains(r#"\["#);
+			println!("Contains \\[ delimiter: {}", has_latex_bracket);
+			
+			// Count occurrences
+			let bracket_count = content.matches(r#"\["#).count();
+			println!("Number of \\[ occurrences: {}", bracket_count);
+			
+			// Process the content
+			let processed = process_latex_delimiters(&content);
+			let dollar_count = processed.matches("$$").count();
+			println!("Number of $$ after processing: {}", dollar_count);
+			
+			// Find and print line 290 specifically
+			for (i, line) in content.lines().enumerate() {
+				if i == 289 { // 0-indexed, line 290
+					println!("\n=== Line 290 original ===");
+					println!("{}", line);
+					println!("Bytes: {:?}", line.as_bytes());
+				}
+			}
+			
+			// Find and print line 290 in processed content
+			for (i, line) in processed.lines().enumerate() {
+				if i == 289 {
+					println!("\n=== Line 290 after processing ===");
+					println!("{}", line);
+				}
+			}
+			
+			// Render to HTML
+			let html = convert_markdown(&content);
+			let math_span_count = html.matches("data-math-style").count();
+			println!("\nNumber of data-math-style spans in HTML: {}", math_span_count);
+			
+			// Find and print the specific LaTeX section
+			if let Some(start) = html.find("LaTeX 分隔符") {
+				let end = std::cmp::min(start + 500, html.len());
+				println!("\n=== LaTeX section in HTML ===");
+				println!("{}", &html[start..end]);
+			}
+			
+			assert!(has_latex_bracket, "Demo file should contain \\[ delimiters");
+			assert!(dollar_count > 0, "Processed content should contain $$");
+		} else {
+			println!("Demo file not found at {}", demo_path.display());
+		}
 	}
 }
