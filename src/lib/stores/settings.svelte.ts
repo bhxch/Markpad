@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { DiagramRenderMode } from '../diagrams';
-import { getDefaultDiagramSettings, getDefaultRendererSettings, getDefaultRustRendererSettings } from '../diagrams';
+import { getDefaultDiagramSettings, getDefaultRendererSettings, getDefaultRustRendererSettings, getDiagramType } from '../diagrams';
 
 export type OSType = 'macos' | 'windows' | 'linux' | 'unknown';
 
@@ -370,7 +370,13 @@ export class SettingsStore {
 	}
 
 	getDiagramRenderMode(diagramId: string): DiagramRenderMode {
-		return this.diagramSettings[diagramId] || 'kroki';
+		// First check if user has a saved setting
+		if (this.diagramSettings[diagramId]) {
+			return this.diagramSettings[diagramId];
+		}
+		// Fallback to default mode from DIAGRAM_TYPES
+		const diagramType = getDiagramType(diagramId);
+		return diagramType?.defaultMode || 'kroki';
 	}
 
 	setDiagramRenderer(diagramId: string, rendererId: string) {
