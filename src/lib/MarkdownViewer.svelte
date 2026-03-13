@@ -599,8 +599,9 @@
 					const textNodes: Text[] = [];
 					while (walker.nextNode()) {
 						const node = walker.currentNode as Text;
-						// Skip if inside an already processed element
-						if (!node.parentElement?.closest('.katex, .katex-display, [data-math-style]')) {
+						// Skip if inside an already processed element or code blocks
+						// code, pre elements contain code that should not be processed as math
+						if (!node.parentElement?.closest('.katex, .katex-display, [data-math-style], code, pre')) {
 							textNodes.push(node);
 						}
 					}
