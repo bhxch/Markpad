@@ -1450,11 +1450,16 @@
 			const codeElement = block.querySelector('code') || block;
 			if (!codeElement.textContent?.trim()) return;
 			
+			// Map math to latex for highlighting
+			const highlightLang = language === 'math' ? 'latex' : language;
+			
 			// Try tree-sitter first
-			const tsSuccess = await highlightCodeWithTreeSitter(codeElement as HTMLElement, language);
+			const tsSuccess = await highlightCodeWithTreeSitter(codeElement as HTMLElement, highlightLang);
 			
 			// Fallback to hljs if tree-sitter failed
 			if (!tsSuccess && hljs) {
+				// Set language class for hljs
+				codeElement.className = `language-${highlightLang}`;
 				hljs.highlightElement(codeElement as HTMLElement);
 			}
 		};
