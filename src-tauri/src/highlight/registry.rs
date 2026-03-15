@@ -158,6 +158,7 @@ impl LanguageRegistry {
             ("koka", "koka"),
             ("kotlin", "kotlin"),
             ("koto", "koto"),
+            ("latex", "latex"),
             ("ld", "ld"),
             ("ldif", "ldif"),
             ("lean", "lean"),
@@ -317,6 +318,7 @@ impl LanguageRegistry {
         registry.register_aliases("java", &["jsp"]);
         registry.register_aliases("scala", &["sc"]);
         registry.register_aliases("kotlin", &["kt", "kts"]);
+        registry.register_aliases("latex", &["tex", "math"]);
         registry.register_aliases("swift", &["swiftlang"]);
         registry.register_aliases("lua", &["lua54", "lua53", "lua51"]);
         registry.register_aliases("haskell", &["hs"]);

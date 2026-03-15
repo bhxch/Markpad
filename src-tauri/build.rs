@@ -144,6 +144,7 @@ fn main() {
         ("koka", "koka", ""),
         ("kotlin", "kotlin", ""),
         ("koto", "koto", ""),
+        ("latex", "latex", ""),
         ("ld", "ld", ""),
         ("ldif", "ldif", ""),
         ("lean", "lean", ""),
