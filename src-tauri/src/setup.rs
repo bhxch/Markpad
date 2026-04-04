@@ -14,6 +14,7 @@ use winreg::enums::*;
 #[cfg(target_os = "windows")]
 use winreg::RegKey;
 
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 const APP_NAME: &str = "Markpad";
 #[cfg(target_os = "windows")]
 const EXE_NAME: &str = "Markpad.exe";
