@@ -4,8 +4,6 @@
 ;; Let binding
 [ "let" ] @keyword
 
-; (let_bindings (symbol) @variable)
-
 ;; Apply
 (apply_stmt . (symbol) @function)
 
@@ -47,6 +45,10 @@
 
 (lambda_stmt parameters: (parameters (symbol) @variable.parameter))
 
+;; Decons bindings.
+(decons_stmt (symbol) @variable.parameter)
+(decons_item (symbol) @variable.parameter)
+
 ;; Atoms
 (char) @constant.character
 (comment) @comment
@@ -57,6 +59,7 @@
 [ "(" ")" ] @punctuation.bracket
 
 ;; Operators
+(column) @operator
 (dot) @operator
 (tilde) @operator
 (backquote) @operator
@@ -64,11 +67,14 @@
 (unquote) @operator
 (unquote_splice) @operator
 
-;; Highlight nil t as constant
+;; Highlight wildcard as constant
+(wildcard) @constant.builtin
+
+;; Highlight nil as constant
 [ "nil" ] @constant.builtin
 
 ;; Highlight as t as boolean constant
 [ "T" ] @constant.builtin.boolean
 
 ;; Highlight variable names used in anamorphic macros.
-[ "it" ] @variable.builtin
+[ "it" "self" ] @variable.builtin

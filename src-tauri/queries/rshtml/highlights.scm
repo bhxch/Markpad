@@ -12,25 +12,25 @@
 
 (string_line) @string
 
-(comment_block) @comment.block
+(comment_block) @comment
 (open_comment) @operator
 (close_comment) @operator
 
-(continue_) @keyword.control.conditional
-(break_) @keyword.control.conditional
+(continue_) @keyword.conditional
+(break_) @keyword.conditional
 
 (
-  (start_symbol) @keyword.control.import
+  (start_symbol) @keyword.import
   .
-  (extends_) @keyword.control.import
+  (extends_) @keyword.import
 )
 
 (raw_) @keyword
 
 (
-  (start_symbol) @keyword.control.import
+  (start_symbol) @keyword.import
   .
-  (include_directive (include_) @keyword.control.import)
+  (include_directive (include_) @keyword.import)
 )
 
 (render_) @keyword
@@ -45,13 +45,13 @@
 (as_clause
   alias: (rust_identifier) @type)
 (
-  (start_symbol) @keyword.control.import
+  (start_symbol) @keyword.import
   .
-  (use_directive (use_) @keyword.control.import)
+  (use_directive (use_) @keyword.import)
 )
 
-(number) @constant.numeric
-(bool) @constant.builtin.boolean
+(number) @number
+(bool) @boolean
 
 (tag_open) @punctuation.bracket
 (tag_close) @punctuation.bracket
@@ -65,16 +65,16 @@
   name_close: (component_tag_identifier) @tag)
 
 (component_tag_parameter
-  name: (rust_identifier) @attribute)
+  name: (rust_identifier) @variable.parameter)
 
 (
-  (start_symbol) @function.method
+  (start_symbol) @function.call
   .
   (rust_expr_simple)
 )
 
 (
-  (start_symbol) @function.method
+  (start_symbol) @function.call
   .
   (rust_expr_paren)
 )
@@ -86,7 +86,7 @@
 )
 
 (
-  (start_symbol) @keyword.control.conditional
+  (start_symbol) @keyword.conditional
   .
   (if_stmt)
 )
@@ -96,16 +96,16 @@
   (for_stmt)
 )
 (
-  (start_symbol) @keyword.control.repeat
+  (start_symbol) @keyword.repeat
   .
   (while_stmt)
 )
 (
-  (start_symbol) @keyword.control.conditional
+  (start_symbol) @keyword.conditional
   .
   (match_stmt)
 )
 
 ;this is for now extra
 (else_clause
-  head: (rust_text) @keyword.control.conditional)
+  head: (rust_text) @keyword.conditional)

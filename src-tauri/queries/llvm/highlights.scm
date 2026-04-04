@@ -29,10 +29,11 @@
   "volatile"
   "inbounds"
   "inrange"
-  (icmp_cond)
-  (fcmp_cond)
-  (fast_math)
 ] @keyword.control
+(icmp_cond) @keyword.control
+(fcmp_cond) @keyword.control
+
+(fast_math) @keyword.control
 
 (_ callee: _ @function)
 (function_header name: _ @function)
@@ -40,8 +41,8 @@
 [
   "declare"
   "define"
-  (calling_conv)
 ] @keyword.function
+(calling_conv) @keyword.function
 
 [
   "target"
@@ -82,14 +83,14 @@
   "attributes"
   "vscale"
   "no_cfi"
-  (linkage_aux)
-  (dso_local)
-  (visibility)
-  (dll_storage_class)
-  (unnamed_addr)
-  (attribute_name)
 ] @keyword
 
+(linkage_aux) @keyword
+(dso_local) @keyword
+(visibility) @keyword
+(dll_storage_class) @keyword
+(unnamed_addr) @keyword
+(attribute_name) @keyword
 
 (function_header [
     (linkage)
@@ -97,13 +98,10 @@
     (unnamed_addr)
   ] @keyword.function)
 
-[
-  (string)
-  (cstring)
-] @string
-
 (number) @constant.numeric.integer
 (comment) @comment
+(string) @string
+(cstring) @string
 (label) @label
 (_ inst_name: "ret" @keyword.control.return)
 (float) @constant.numeric.float
@@ -156,3 +154,5 @@
   "none"
   "zeroinitializer"
 ] @constant.builtin
+
+(ERROR) @error

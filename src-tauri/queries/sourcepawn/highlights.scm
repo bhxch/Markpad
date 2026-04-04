@@ -12,14 +12,14 @@
 
 ; Methods / Properties
 (field_access
-  field: (identifier) @variable.other.member)
+  field: (identifier) @field)
 
 ; Function calls
 (call_expression
   function: (identifier) @function)
 (call_expression
   function: (field_access
-    field: (identifier) @function))
+    field: (identifier) @method.call)) ; Must be after field_access
 
 ; Types
 (builtin_type) @type.builtin
@@ -27,44 +27,44 @@
 (any_type) @type
 
 ; Variables
-(variable_storage_class) @keyword.storage
-(variable_declaration
+(variable_storage_class) @storageclass
+(variable_declaration 
   name: (identifier) @variable)
 (old_variable_declaration
   name: (identifier) @variable)
 
 ; Preprocessor
-(preproc_include) @keyword.control.import
-(preproc_tryinclude) @keyword.control.import
+(preproc_include) @include
+(preproc_tryinclude) @include
 (system_lib_string) @string
 (string_literal) @string
 
-(preproc_assert) @keyword.directive
-(preproc_pragma) @keyword.directive
+(preproc_assert) @preproc
+(preproc_pragma) @preproc
 (preproc_arg) @constant
 (preproc_macro) @function.macro
-(macro_param) @variable.parameter
-(preproc_if) @keyword.directive
-(preproc_else) @keyword.directive
-(preproc_elseif) @keyword.directive
-(preproc_endif) @keyword.directive
-(preproc_endinput) @keyword.directive
-(preproc_define) @keyword.directive
+(macro_param) @parameter
+(preproc_if) @preproc
+(preproc_else) @preproc
+(preproc_elseif) @preproc
+(preproc_endif) @preproc
+(preproc_endinput) @preproc
+(preproc_define) @define
 (preproc_define
   name: (identifier) @constant)
-(preproc_undefine) @keyword.directive
+(preproc_undefine) @define
 (preproc_undefine
   name: (identifier) @constant)
 (preproc_error) @function.macro ; Wrong color?
 (preproc_warning) @function.macro ; Wrong color?
 
 ; Statements
-(for_statement) @keyword.control.repeat
-(condition_statement) @keyword.control.conditional
-(while_statement) @keyword.control.repeat
-(do_while_statement) @keyword.control.repeat
-(switch_statement) @keyword.control.conditional
-(switch_case) @keyword.control.conditional
+(for_statement) @repeat
+(condition_statement) @conditional
+(while_statement) @repeat
+(do_while_statement) @repeat
+(switch_statement) @conditional
+(switch_case) @conditional
 (ternary_expression) @conditional.ternary
 
 ; Expressions
@@ -84,7 +84,7 @@
 (fixed_dimension) @punctuation.bracket ; the [3] in var[3]
 (dimension) @punctuation.bracket
 (array_indexed_access) @punctuation.bracket
-(escape_sequence) @constant.character.escape
+(escape_sequence) @string.escape
 
 ; Constructors
 (new_expression
@@ -100,27 +100,27 @@
 (methodmap_method_constructor
   name: (identifier) @constructor)
 (methodmap_method
-  name: (identifier) @function.method)
+  name: (identifier) @method)
 (methodmap_native
-  name: (identifier) @function.method)
+  name: (identifier) @method)
 (methodmap_property
-  name: (identifier) @variable.other.member)
-(methodmap_property_getter) @function.method
-(methodmap_property_setter) @function.method
+  name: (identifier) @property)
+(methodmap_property_getter) @method
+(methodmap_property_setter) @method
 
 ; Enum structs
-(enum_struct) @type.enum.variant
+(enum_struct) @type.definition
 (enum_struct
   name: (identifier) @type)
 (enum_struct_field
-  name: (identifier) @variable.other.member)
+  name: (identifier) @field)
 (enum_struct_method
-  name: (identifier) @function.method)
+  name: (identifier) @method)
 
 ; Non-type Keywords
-(variable_storage_class) @keyword.storage
-(visibility) @keyword.storage
-(visibility) @keyword.storage
+(variable_storage_class) @storageclass
+(visibility) @storageclass
+(visibility) @storageclass
 (assertion) @function.builtin
 (function_declaration_kind) @keyword.function
 [
@@ -179,14 +179,14 @@
   name: (identifier) @variable.builtin)
 
 ; Typedef/Typedef
-(typeset) @type.builtin
-(typedef) @type.builtin
-(functag) @type.builtin
-(funcenum) @type.builtin
+(typeset) @type.definition
+(typedef) @type.definition
+(functag) @type.definition
+(funcenum) @type.definition
 (typedef_expression) @keyword.function ; function void(int x)
 
 ; Enums
-(enum) @type.enum
+(enum) @type.definition
 (enum
   name: (identifier) @type)
 (enum_entry
@@ -195,9 +195,9 @@
   value: (_) @constant)
 
 ; Literals
-(int_literal) @constant.numeric.integer
-(char_literal) @constant.character
-(float_literal) @constant.numeric.float
+(int_literal) @number
+(char_literal) @character
+(float_literal) @float
 (string_literal) @string
 (array_literal) @punctuation.bracket
 [
@@ -210,12 +210,12 @@
 ; Comment specialisations (must be after comment)
 ; These might be unnecessary and/or used incorrectly, since they're intended
 ; for markup languages
-((comment) @diff.plus
-  (#match? @diff.plus "^\/[\/\*][\t ]TODO"))
-((comment) @diff.plus
-  (#match? @diff.plus "^\/[\/\*][\t ]NOTE"))
-((comment) @diff.minus
-  (#match? @diff.minus "^\/[\/\*][\t ]WARNING"))
+((comment) @text.todo
+  (#match? @text.todo "^\/[\/\*][\t ]TODO"))
+((comment) @text.note
+  (#match? @text.note "^\/[\/\*][\t ]NOTE"))
+((comment) @text.warning
+  (#match? @text.warning "^\/[\/\*][\t ]WARNING"))
 
 ; Keywords
 [

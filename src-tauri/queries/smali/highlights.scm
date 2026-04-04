@@ -8,61 +8,55 @@
 ((class_identifier
    . (identifier) @_first @type.builtin
    (identifier) @type.builtin)
-  (#match? @_first "^(android|dalvik|java|kotlinx)$"))
+  (#any-of? @_first "android" "dalvik" "java" "kotlinx"))
 
 ((class_identifier
    . (identifier) @_first @type.builtin
-   . (identifier) @_second @type.builtin
+   .  (identifier) @_second @type.builtin
    (identifier) @type.builtin)
   (#eq? @_first "com")
-  (#match? @_second "^(android|google)$"))
+  (#any-of? @_second "android" "google"))
 
 ; Methods
 
 (method_definition
-  (method_signature (method_identifier) @function.method))
+  (method_signature (method_identifier) @method))
 
 (expression
   (opcode) @_invoke
 	(body
 	  (full_method_signature
-      (method_signature (method_identifier) @function.method)))
-  (#match? @_invoke "^invoke"))
-
-(expression
-  (opcode) @_field_access
-	(body
-	  (field_identifier) @variable.other.member)
-  (#match? @_field_access "^[is](get|put)-"))
+      (method_signature (method_identifier) @method.call)))
+  (#lua-match? @_invoke "^invoke"))
 
 (method_handle
   (full_method_signature
-	(method_signature (method_identifier) @function.method)))
+	(method_signature (method_identifier) @method.call)))
 
 (custom_invoke
-  . (identifier) @function.method
-  (method_signature (method_identifier) @function.method))
+  . (identifier) @method.call
+  (method_signature (method_identifier) @method.call))
 
 (annotation_value
   (body
-    (method_signature (method_identifier) @function.method)))
+    (method_signature (method_identifier) @method.call)))
 
 (annotation_value
   (body
     (full_method_signature
-      (method_signature (method_identifier) @function.method))))
+      (method_signature (method_identifier) @method.call))))
 
 (field_definition
 	(body
-		(method_signature (method_identifier) @function.method)))
+		(method_signature (method_identifier) @method.call)))
 
 (field_definition
 	(body
 	  (full_method_signature
-		  (method_signature (method_identifier) @function.method))))
+		  (method_signature (method_identifier) @method.call))))
 
 ((method_identifier) @constructor
-  (#match? @constructor "^(<init>|<clinit>)$"))
+  (#any-of? @constructor "<init>" "<clinit>"))
 
 "constructor" @constructor
 
@@ -71,10 +65,10 @@
 [
   (field_identifier)
   (annotation_key)
-] @variable.other.member
+] @field
 
 ((field_identifier) @constant
-  (#match? @constant "^[%u_]*$"))
+  (#lua-match? @constant "^[%u_]*$"))
 
 ; Variables
 
@@ -85,8 +79,8 @@
 
 ; Parameters
 
-(parameter) @variable.parameter
-(param_identifier) @variable.parameter
+(parameter) @parameter.builtin
+(param_identifier) @parameter
 
 ; Labels
 
@@ -97,19 +91,22 @@
 
 ; Operators
 
-; (opcode) @keyword.operator
+(opcode) @keyword.operator
 
-((opcode) @keyword.control.return
-  (#match? @keyword.control.return "^return"))
+((opcode) @keyword.return
+  (#lua-match? @keyword.return "^return"))
 
-((opcode) @keyword.control.conditional
-  (#match? @keyword.control.conditional "^if"))
+((opcode) @conditional
+  (#lua-match? @conditional "^if"))
 
-((opcode) @keyword.control.conditional
-  (#match? @keyword.control.conditional "^cmp"))
+((opcode) @conditional
+  (#lua-match? @conditional "^cmp"))
 
-((opcode) @keyword.control.exception
-  (#match? @keyword.control.exception "^throw"))
+((opcode) @exception
+  (#lua-match? @exception "^throw"))
+
+((opcode) @comment
+  (#eq? @comment "nop")) ; haha, anyone get it? ;)
 
 [
   "="
@@ -132,6 +129,8 @@
   ".end param"
   ".parameter"
   ".end parameter"
+  ".line"
+  ".locals"
   ".local"
   ".end local"
   ".restart local"
@@ -149,7 +148,7 @@
 
 [
   ".source"
-] @keyword.directive
+] @include
 
 [
   ".method"
@@ -159,38 +158,35 @@
 [
   ".catch"
   ".catchall"
-] @keyword.control.exception
+] @exception
 
 ; Literals
 
 (string) @string
-(source_directive (string "\"" _ @string.special.url "\""))
-(escape_sequence) @constant.character.escape
+(source_directive (string "\"" _ @text.uri "\""))
+(escape_sequence) @string.escape
 
-(character) @constant.character
+(character) @character
 
-"L" @punctuation
+"L" @character.special
 
-(line_directive (number) @comment) @comment
-(".locals" (number) @comment) @comment
-
-(number) @constant.numeric.integer
+(number) @number
 
 [
  (float)
  (NaN)
  (Infinity)
-] @constant.numeric.float
+] @float
 
-(boolean) @constant.builtin.boolean
+(boolean) @boolean
 
 (null) @constant.builtin
 
 ; Misc
 
-(annotation_visibility) @keyword.storage.modifier
+(annotation_visibility) @storageclass
 
-(access_modifier) @keyword.storage.type
+(access_modifier) @type.qualifier
 
 (array_type
   "[" @punctuation.special)
@@ -208,9 +204,15 @@
   "/"
 ] @punctuation.delimiter
 
+(line_directive (number) @text.underline @text.literal)
+
 ; Comments
 
-(comment) @comment
+(comment) @comment @spell
 
 (class_definition
-  (comment) @comment.block.documentation)
+  (comment) @comment.documentation)
+
+; Errors
+
+(ERROR) @error

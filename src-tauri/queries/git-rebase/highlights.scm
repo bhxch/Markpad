@@ -15,7 +15,7 @@
 (((command) @function
   (label) @constant
   (message)? @comment)
- (#match? @function "^(l|label|t|reset|u|update-ref)$"))
+ (#match? @function "^(l|label|t|reset)$"))
 
 ((command) @keyword
  (#match? @keyword "^(x|exec|b|break)$"))

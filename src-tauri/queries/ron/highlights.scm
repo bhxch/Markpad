@@ -1,42 +1,53 @@
 ; Structs
 ;------------
 
-(enum_variant) @type.enum.variant
-(struct_entry (_) @variable.other.member ":")
+(enum_variant) @constant
+(struct_entry (identifier) @property)
+(struct_entry (enum_variant (identifier) @constant))
 (struct_name (identifier)) @type
+
 (unit_struct) @type.builtin
+
 
 ; Literals
 ;------------
 
 (string) @string
-(boolean) @constant.builtin.boolean
-(integer) @constant.numeric.integer
-(float) @constant.numeric.float
-(char) @constant.character
+(boolean) @boolean
+(integer) @number
+(float) @float
+(char) @character
+
 
 ; Comments
 ;------------
 
-(line_comment) @comment.line
-(block_comment) @comment.block
+[
+  (line_comment)
+  (block_comment)
+] @comment @spell
 
 
 ; Punctuation
 ;------------
 
-"," @punctuation.delimiter
-":" @punctuation.delimiter
+["{" "}"] @punctuation.bracket
 
-"(" @punctuation.bracket
-")" @punctuation.bracket
-"[" @punctuation.bracket
-"]" @punctuation.bracket
-"{" @punctuation.bracket
-"}" @punctuation.bracket
+["(" ")"] @punctuation.bracket
 
-"-" @operator
+["[" "]"] @punctuation.bracket
+
+[
+  ","
+  ":"
+] @punctuation.delimiter
+
+[
+  "-"
+] @operator
 
 ; Special
 ;------------
-(escape_sequence) @constant.character.escape
+
+(escape_sequence) @string.escape
+(ERROR) @error

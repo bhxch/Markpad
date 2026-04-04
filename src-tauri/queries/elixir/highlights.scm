@@ -1,20 +1,3 @@
-; The following code originates mostly from
-; https://github.com/elixir-lang/tree-sitter-elixir, with minor edits to
-; align the captures with helix. The following should be considered
-; Copyright 2021 The Elixir Team
-;
-; Licensed under the Apache License, Version 2.0 (the "License");
-; you may not use this file except in compliance with the License.
-; You may obtain a copy of the License at
-;
-;    https://www.apache.org/licenses/LICENSE-2.0
-;
-; Unless required by applicable law or agreed to in writing, software
-; distributed under the License is distributed on an "AS IS" BASIS,
-; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-; See the License for the specific language governing permissions and
-; limitations under the License.
-
 ; Punctuation
 
 [
@@ -39,11 +22,17 @@
 
 ; Literals
 
-(boolean) @constant.builtin.boolean
-(nil) @constant.builtin
-(integer) @constant.numeric.integer
-(float) @constant.numeric.float
-(char) @constant.character
+[
+  (boolean)
+  (nil)
+] @constant
+
+[
+  (integer)
+  (float)
+] @number
+
+(char) @constant
 
 ; Identifiers
 
@@ -59,7 +48,7 @@
 ; * special
 (
   (identifier) @constant.builtin
-  (#any-of? @constant.builtin "__MODULE__" "__DIR__" "__ENV__" "__CALLER__" "__STACKTRACE__")
+  (#match? @constant.builtin "^(__MODULE__|__DIR__|__ENV__|__CALLER__|__STACKTRACE__)$")
 )
 
 ; Comment
@@ -70,7 +59,7 @@
 
 (interpolation "#{" @punctuation.special "}" @punctuation.special) @embedded
 
-(escape_sequence) @constant.character.escape
+(escape_sequence) @string.escape
 
 [
   (string)
@@ -117,7 +106,7 @@
 ; * field without parentheses or block
 (call
   target: (dot
-    right: (identifier) @variable.other.member)
+    right: (identifier) @property)
   .)
 
 ; * remote call without parentheses or block (overrides above)
@@ -133,12 +122,12 @@
 ; * definition keyword
 (call
   target: (identifier) @keyword
-  (#any-of? @keyword "def" "defdelegate" "defexception" "defguard" "defguardp" "defimpl" "defmacro" "defmacrop" "defmodule" "defn" "defnp" "defoverridable" "defp" "defprotocol" "defstruct"))
+  (#match? @keyword "^(def|defdelegate|defexception|defguard|defguardp|defimpl|defmacro|defmacrop|defmodule|defn|defnp|defoverridable|defp|defprotocol|defstruct)$"))
 
 ; * kernel or special forms keyword
 (call
   target: (identifier) @keyword
-  (#any-of? @keyword "alias" "case" "cond" "for" "if" "import" "quote" "raise" "receive" "require" "reraise" "super" "throw" "try" "unless" "unquote" "unquote_splicing" "use" "with"))
+  (#match? @keyword "^(alias|case|cond|for|if|import|quote|raise|receive|require|reraise|super|throw|try|unless|unquote|unquote_splicing|use|with)$"))
 
 ; * just identifier in function definition
 (call
@@ -150,7 +139,7 @@
         left: (identifier) @function
         operator: "when")
     ])
-  (#any-of? @keyword "def" "defdelegate" "defguard" "defguardp" "defmacro" "defmacrop" "defn" "defnp" "defp"))
+  (#match? @keyword "^(def|defdelegate|defguard|defguardp|defmacro|defmacrop|defn|defnp|defp)$"))
 
 ; * pipe into identifier (function call)
 (binary_operator
@@ -164,7 +153,7 @@
     (binary_operator
       operator: "|>"
       right: (identifier) @variable))
-  (#any-of? @keyword "def" "defdelegate" "defguard" "defguardp" "defmacro" "defmacrop" "defn" "defnp" "defp"))
+  (#match? @keyword "^(def|defdelegate|defguard|defguardp|defmacro|defmacrop|defn|defnp|defp)$"))
 
 ; * pipe into field without parentheses (function call)
 (binary_operator
@@ -178,14 +167,7 @@
 ; * capture operand
 (unary_operator
   operator: "&"
-  operand: [
-    (integer) @operator
-    (binary_operator
-      left: [
-        (call target: (dot left: (_) right: (identifier) @function))
-        (identifier) @function
-      ] operator: "/" right: (integer) @operator)
-  ])
+  operand: (integer) @operator)
 
 (operator_identifier) @operator
 
@@ -203,38 +185,38 @@
 
 ; * module attribute
 (unary_operator
-  operator: "@" @variable.other.member
+  operator: "@" @attribute
   operand: [
-    (identifier) @variable.other.member
+    (identifier) @attribute
     (call
-      target: (identifier) @variable.other.member)
-    (boolean) @variable.other.member
-    (nil) @variable.other.member
+      target: (identifier) @attribute)
+    (boolean) @attribute
+    (nil) @attribute
   ])
 
 ; * doc string
 (unary_operator
-  operator: "@" @comment.block.documentation
+  operator: "@" @comment.doc
   operand: (call
-    target: (identifier) @comment.block.documentation.__attribute__
+    target: (identifier) @comment.doc.__attribute__
     (arguments
       [
-        (string) @comment.block.documentation
-        (charlist) @comment.block.documentation
+        (string) @comment.doc
+        (charlist) @comment.doc
         (sigil
-          quoted_start: _ @comment.block.documentation
-          quoted_end: _ @comment.block.documentation) @comment.block.documentation
-        (boolean) @comment.block.documentation
+          quoted_start: _ @comment.doc
+          quoted_end: _ @comment.doc) @comment.doc
+        (boolean) @comment.doc
       ]))
-  (#any-of? @comment.block.documentation.__attribute__ "moduledoc" "typedoc" "doc"))
+  (#match? @comment.doc.__attribute__ "^(moduledoc|typedoc|doc)$"))
 
 ; Module
 
-(alias) @namespace
+(alias) @module
 
 (call
   target: (dot
-    left: (atom) @namespace))
+    left: (atom) @module))
 
 ; Reserved keywords
 

@@ -23,7 +23,7 @@
 [
   "true"
   "false"
-] @constant.builtin.boolean
+] @boolean
 
 "null" @constant.builtin
 
@@ -37,24 +37,24 @@
 ; 1) Member
 (field_expr
   field: (access_ident
-    (ident) @variable.other.member))
+    (ident) @variable.member))
 
 (struct_member_declaration
-  (ident) @variable.other.member)
+  (ident) @variable.member)
 
 (struct_member_declaration
   (identifier_list
-    (ident) @variable.other.member))
+    (ident) @variable.member))
 
 (bitstruct_member_declaration
-  (ident) @variable.other.member)
+  (ident) @variable.member)
 
 (initializer_list
   (initializer_element
     (param_path
       (param_path_element
         (access_ident
-          (ident) @variable.other.member)))))
+          (ident) @variable.member)))))
 
 ; 2) Parameter
 (param
@@ -129,12 +129,12 @@
 
 "macro" @keyword.function
 
-"return" @keyword.control.return
+"return" @keyword.return
 
 [
   "import"
   "module"
-] @keyword.control.import
+] @keyword.import
 
 [
   "bitstruct"
@@ -144,7 +144,7 @@
   "struct"
   "typedef"
   "union"
-] @keyword.storage.type
+] @keyword.type
 
 [
   "case"
@@ -153,7 +153,7 @@
   "if"
   "nextcase"
   "switch"
-] @keyword.control.conditional
+] @keyword.conditional
 
 [
   "break"
@@ -163,7 +163,7 @@
   "foreach"
   "foreach_r"
   "while"
-] @keyword.control.repeat
+] @keyword.repeat
 
 [
   "const"
@@ -171,7 +171,7 @@
   "inline"
   "static"
   "tlocal"
-] @keyword.storage.modifier
+] @keyword.modifier
 
 ; Operator (from `c3c --list-operators`)
 [
@@ -237,22 +237,22 @@
     "?"
     "???"
     ":"
-  ] @keyword.control.conditional.ternary)
+  ] @keyword.conditional.ternary)
 
 (elvis_orelse_expr
   [
     "?:"
     "??"
-  ] @keyword.control.conditional.ternary)
+  ] @keyword.conditional.ternary)
 
 ; Literal
-(integer_literal) @constant.numeric.integer
+(integer_literal) @number
 
-(real_literal) @constant.numeric.float
+(real_literal) @number.float
 
-(char_literal) @constant.character
+(char_literal) @character
 
-(bytes_literal) @constant.numeric
+(bytes_literal) @number
 
 ; String
 (string_literal) @string
@@ -260,7 +260,7 @@
 (raw_string_literal) @string
 
 ; Escape Sequence
-(escape_sequence) @constant.character.escape
+(escape_sequence) @string.escape
 
 ; Builtin (constants)
 (builtin_const) @constant.builtin
@@ -276,23 +276,22 @@
       "tagof" "has_tagof" "values" "typeid")))
 
 ; Label
-(label
-  (const_ident) @label)
-
-(label_target
-  (const_ident) @label)
+[
+  (label)
+  (label_target)
+] @label
 
 ; Module
 (module_resolution
-  (ident) @namespace)
+  (ident) @module)
 
 (module_declaration
   (path_ident
-    (ident) @namespace))
+    (ident) @module))
 
 (import_path
   (path_ident
-    (ident) @namespace))
+    (ident) @module))
 
 ; Attribute
 (attribute
@@ -338,7 +337,7 @@
     [
       (ident)
       (at_ident)
-    ] @function))
+    ] @function.call))
 
 (call_expr
   function: (trailing_generic_expr
@@ -346,7 +345,7 @@
       [
         (ident)
         (at_ident)
-      ] @function)))
+      ] @function.call)))
 
 ; Method call
 (call_expr
@@ -355,7 +354,7 @@
       [
         (ident)
         (at_ident)
-      ] @function)))
+      ] @function.method.call)))
 
 ; Method on type
 (call_expr
@@ -364,7 +363,7 @@
       [
         (ident)
         (at_ident)
-      ] @function)))
+      ] @function.method.call)))
 
 ; Builtin call
 (call_expr
@@ -384,9 +383,14 @@
   ] @variable.builtin)
 
 ; Comment
-(line_comment) @comment.line
-(block_comment) @comment.block
-(doc_comment) @comment.block.documentation
+[
+  (line_comment)
+  (block_comment)
+] @comment @spell
+
+(doc_comment) @comment.documentation
+
+(doc_comment_text) @spell
 
 (doc_comment_contract
   name: (_) @attribute)
@@ -396,17 +400,16 @@
     (ident)
     (ct_ident)
     (hash_ident)
-  ] @variable.parameter)
+  ] @variable.parameter
+  (#set! priority 110))
 
 (doc_comment_contract
   [
     ":"
     "?"
-  ] @comment.block.documentation)
+  ] @comment.documentation
+  (#set! priority 110))
 
 (doc_comment_contract
-  description: (string_expr
-    [
-      (string_literal)
-      (raw_string_literal)
-    ] @comment.block.documentation))
+  description: (_) @comment.documentation
+  (#set! priority 110))

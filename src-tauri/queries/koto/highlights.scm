@@ -37,7 +37,7 @@
 [
   "return"
   "yield"
-] @keyword.control.return
+] @keyword.return
 
 [
   "if"
@@ -46,7 +46,7 @@
   "else if"
   "match"
   "switch"
-] @keyword.control.conditional
+] @keyword.conditional
 
 [
   (break)
@@ -56,21 +56,21 @@
   "loop"
   "until"
   "while"
-] @keyword.control.repeat
+] @keyword.repeat
 
 [
   "throw"
   "try"
   "catch"
   "finally"
-] @keyword.control.exception
+] @keyword.exception
 
 [
   "export"
   "from"
   "import"
   "as"
-] @keyword.control.import
+] @keyword.import
 
 [
   "("
@@ -93,34 +93,34 @@
 (identifier) @variable
 
 (import_module
-  (identifier) @namespace)
+  (identifier) @module)
 
 (import_item
-  (identifier) @namespace)
+  (identifier) @module)
 
 (export
-  (identifier) @namespace)
+  (identifier) @module)
 
 (chain
   start: (identifier) @function)
 
 (chain
-  (lookup (identifier)) @variable.other.member)
+  (lookup (identifier)) @variable.member)
 
 (call
   function: (identifier)) @function
 
 (call_arg
-  (identifier) @variable.other.member)
+  (identifier) @function.method)
 
 [
   (true)
   (false)
-] @constant.builtin.boolean
+] @boolean
 
-(comment) @comment
+(comment) @comment @spell
 
-(debug) @keyword
+(debug) @keyword.debug
 
 (string) @string
 
@@ -128,22 +128,22 @@
 
 (alignment) @operator
 
-(escape) @constant.character.escape
+(escape) @string.escape
 
 (null) @constant.builtin
 
-(number) @constant.numeric
+(number) @number
 
 (meta) @keyword.directive
 
 (meta
-  name: (identifier) @variable.other.member)
+  name: (identifier) @variable.member)
 
 (entry_inline
-  key: (identifier) @variable.other.member)
+  key: (identifier) @variable.member)
 
 (entry_block
-  key: (identifier) @variable.other.member)
+  key: (identifier) @variable.member)
 
 (self) @variable.builtin
 

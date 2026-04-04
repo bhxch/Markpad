@@ -44,14 +44,6 @@
 	(heredoc_line)
 ] @string
 
-[
-  (heredoc_marker)
-  (heredoc_end)
-] @label
-
-((heredoc_block
-  (heredoc_line) @string))
-
 (expansion
   [
 	"$"
@@ -63,10 +55,4 @@
 ((variable) @constant
  (#match? @constant "^[A-Z][A-Z_0-9]*$"))
 
-[
-	(param)
-	(mount_param)
-] @constant
 
-(expose_instruction
-  (expose_port) @constant.numeric.integer)

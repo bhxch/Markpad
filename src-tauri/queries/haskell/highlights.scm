@@ -1,4 +1,4 @@
-;----------------------------------------------------------------------------
+; ----------------------------------------------------------------------------
 ; Parameters and variables
 ; NOTE: These are at the top, so that they have low priority,
 ; and don't override destructured parameters
@@ -20,14 +20,14 @@
 
 ; ----------------------------------------------------------------------------
 ; Literals and comments
-(integer) @constant.numeric.integer
+(integer) @number
 
-(negation) @constant.numeric
+(negation) @number
 
 (expression/literal
-  (float)) @constant.numeric.float
+  (float)) @number.float
 
-(char) @constant.character
+(char) @character
 
 (string) @string
 
@@ -101,7 +101,7 @@
 ;   (module))
 
 (module
-  (module_id) @namespace)
+  (module_id) @module)
 
 [
   "where"
@@ -146,31 +146,31 @@
   type: (type))
 
 ((decl/signature
-  name: (variable) @variable.name
+  name: (variable) @_name
   type: (type))
   .
   (decl
     name: (variable) @variable)
     match: (_)
-  (#eq? @variable.name @variable))
+  (#eq? @_name @variable))
 
 ; but consider a type that involves 'IO' a decl/function
 (decl/signature
   name: (variable) @function
   type: (type/apply
-    constructor: (name) @type)
-  (#eq? @type "IO"))
+    constructor: (name) @_type)
+  (#eq? @_type "IO"))
 
 ((decl/signature
-  name: (variable) @function.name
+  name: (variable) @_name
   type: (type/apply
-    constructor: (name) @type)
-  (#eq? @type "IO"))
+    constructor: (name) @_type)
+  (#eq? @_type "IO"))
   .
   (decl
     name: (variable) @function)
     match: (_)
-  (#eq? @function.name @function))
+  (#eq? @_name @function))
 
 ((decl/signature) @function
   .
@@ -204,7 +204,7 @@
   [
     (variable) @function.call
     (qualified
-      ((module) @namespace
+      ((module) @module
         (variable) @function.call))
   ]
   .
@@ -230,8 +230,8 @@
       (variable) @function.call)
   ]
   .
-  (operator) @operator
-  (#any-of? @operator "$" "<$>" ">>=" "=<<"))
+  (operator) @_op
+  (#any-of? @_op "$" "<$>" ">>=" "=<<"))
 
 ; right hand side of infix operator
 ((infix
@@ -246,8 +246,8 @@
       (variable) @function.call)
   ])
   .
-  (operator) @operator
-  (#any-of? @operator "$" "<$>" "=<<"))
+  (operator) @_op
+  (#any-of? @_op "$" "<$>" "=<<"))
 
 ; decl/function composition, arrows, monadic composition (lhs)
 (
@@ -257,8 +257,8 @@
       (variable) @function)
   ]
   .
-  (operator) @operator
-  (#any-of? @operator "." ">>>" "***" ">=>" "<=<"))
+  (operator) @_op
+  (#any-of? @_op "." ">>>" "***" ">=>" "<=<"))
 
 ; right hand side of infix operator
 ((infix
@@ -273,26 +273,26 @@
       (variable) @function)
   ])
   .
-  (operator) @operator
-  (#any-of? @operator "." ">>>" "***" ">=>" "<=<"))
+  (operator) @_op
+  (#any-of? @_op "." ">>>" "***" ">=>" "<=<"))
 
 ; function composition, arrows, monadic composition (rhs)
-((operator) @operator
+((operator) @_op
   .
   [
     (expression/variable) @function
     (expression/qualified
       (variable) @function)
   ]
-  (#any-of? @operator "." ">>>" "***" ">=>" "<=<"))
+  (#any-of? @_op "." ">>>" "***" ">=>" "<=<"))
 
 ; function defined in terms of a function composition
 (decl/function
   name: (variable) @function
   (match
     expression: (infix
-      operator: (operator) @operator
-      (#any-of? @operator "." ">>>" "***" ">=>" "<=<"))))
+      operator: (operator) @_op
+      (#any-of? @_op "." ">>>" "***" ">=>" "<=<"))))
 
 (apply
   [
@@ -356,12 +356,12 @@
   type: (quantified_type))
 
 ((decl/signature
-  name: (variable) @function.name
+  name: (variable) @_name
   type: (quantified_type))
   .
   (decl/bind
     (variable) @function)
-  (#eq? @function @function.name))
+  (#eq? @function @_name))
 
 ; ----------------------------------------------------------------------------
 ; Types
@@ -369,17 +369,17 @@
 
 (type/star) @type
 
-; (variable) @type
+(variable) @type
 
 (constructor) @constructor
 
 ; True or False
-((constructor) @constant.builtin.boolean
-  (#any-of? @constant.builtin.boolean "True" "False"))
+((constructor) @boolean
+  (#any-of? @boolean "True" "False"))
 
 ; otherwise (= True)
-((variable) @constant.builtin.boolean
-  (#eq? @constant.builtin.boolean "otherwise"))
+((variable) @boolean
+  (#eq? @boolean "otherwise"))
 
 ; ----------------------------------------------------------------------------
 ; Quasi-quotes
@@ -403,7 +403,7 @@
 ; namespaced quasi-quoter
 (quasiquote
   (_
-    (module) @namespace
+    (module) @module
     .
     (variable) @function.call))
 
@@ -436,3 +436,8 @@
   .
   (children
     (variable) @variable.member))
+
+
+; ----------------------------------------------------------------------------
+; Spell checking
+(comment) @spell

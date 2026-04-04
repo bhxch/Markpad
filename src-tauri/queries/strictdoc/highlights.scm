@@ -69,7 +69,7 @@
 ]
 
 ;; Boolean literals
-(boolean_choice) @constant.builtin.boolean
+(boolean_choice) @boolean
 
 ;; Requirement types and file formats
 
@@ -96,17 +96,20 @@
 
 ;; Strings
 (single_line_string) @string
+(multi_line_string) @string
+(single_line_text_part) @string
 [ (uid_string) (req_reference_value_id) ] @string.special.symbol
 (date) @string.special
 
 ;; Fields
-(document_custom_metadata_key) @type.parameter
-[ "RELATIONS" (field_name) ] @variable.other.member
+(document_custom_metadata_key) @property
+[ "RELATIONS" (field_name) ] @variable.member
 (choice_option) @variable.parameter
 
 ;; Anchors and links
-(anchor) @label
+(anchor) @string.special.url
 (inline_link) @string.special.url
+(file_path) @string.special.path
 
 [
  (role_id)

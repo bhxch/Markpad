@@ -45,9 +45,7 @@
  (raw_text)
 ] @string
 
-(variable_assignment (word) @variable)
-(shell_text
-  [(variable_reference (word) @variable.parameter)])
+(variable_assignment (word) @string)
 
 [
  "ifeq"
@@ -59,9 +57,9 @@
  "if"
  "or"  ; boolean functions are conditional in make grammar
  "and"
-] @keyword.control.conditional
+] @conditional
 
-"foreach" @keyword.control.repeat
+"foreach" @repeat
 
 [
  "define"
@@ -79,7 +77,7 @@
  "include"
  "sinclude"
  "-include"
-] @keyword.control.import
+] @include
 
 [
  "subst"
@@ -115,32 +113,31 @@
  "error"
  "warning"
  "info"
-] @keyword.control.exception
+] @exception
 
 ;; Variable
 (variable_assignment
-  name: (word) @variable)
+  name: (word) @constant)
 
 (variable_reference
-  (word) @variable)
+  (word) @constant)
 
 (comment) @comment
 
-((word) @clean @string.regexp
+((word) @clean @string.regex
  (#match? @clean "[%\*\?]"))
 
 (function_call
   function: "error"
-  (arguments (text) @error))
+  (arguments (text) @text.danger))
 
 (function_call
   function: "warning"
-  (arguments (text) @warning))
+  (arguments (text) @text.warning))
 
 (function_call
   function: "info"
-  (arguments (text) @info))
-
+  (arguments (text) @text.note))
 
 ;; Install Command Categories
 ;; Others special variables
@@ -158,7 +155,7 @@
   (word) @clean @constant.builtin
   (#match? @clean "^(AR|AS|CC|CXX|CPP|FC|M2C|PC|CO|GET|LEX|YACC|LINT|MAKEINFO|TEX|TEXI2DVI|WEAVE|CWEAVE|TANGLE|CTANGLE|RM|ARFLAGS|ASFLAGS|CFLAGS|CXXFLAGS|COFLAGS|CPPFLAGS|FFLAGS|GFLAGS|LDFLAGS|LDLIBS|LFLAGS|YFLAGS|PFLAGS|RFLAGS|LINTFLAGS|PRE_INSTALL|POST_INSTALL|NORMAL_INSTALL|PRE_UNINSTALL|POST_UNINSTALL|NORMAL_UNINSTALL|MAKEFILE_LIST|MAKE_RESTARTS|MAKE_TERMOUT|MAKE_TERMERR|\.DEFAULT_GOAL|\.RECIPEPREFIX|\.EXTRA_PREREQS\.VARIABLES|\.FEATURES|\.INCLUDE_DIRS|\.LOADED)$"))
 
-;; Standard targets
+;; Standart targets
 (targets
   (word) @constant.macro
   (#match? @constant.macro "^(all|install|install-html|install-dvi|install-pdf|install-ps|uninstall|install-strip|clean|distclean|mostlyclean|maintainer-clean|TAGS|info|dvi|html|pdf|ps|dist|check|installcheck|installdirs)$"))
@@ -172,4 +169,3 @@
   (word) @constant.macro
   (#match? @constant.macro "^\.(PHONY|SUFFIXES|DEFAULT|PRECIOUS|INTERMEDIATE|SECONDARY|SECONDEXPANSION|DELETE_ON_ERROR|IGNORE|LOW_RESOLUTION_TIME|SILENT|EXPORT_ALL_VARIABLES|NOTPARALLEL|ONESHELL|POSIX)$"))
 
-(targets (word) @constant)

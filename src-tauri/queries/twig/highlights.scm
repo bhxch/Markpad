@@ -1,22 +1,22 @@
 (comment) @comment
 
-(filter_identifier) @function.method
-(function_identifier) @function.method
+(filter_identifier) @function.call
+(function_identifier) @function.call
 (test) @function.builtin
 (variable) @variable
 (string) @string
 (interpolated_string) @string
 (operator) @operator
-(number) @constant.numeric.integer
-(boolean) @constant.builtin.boolean
+(number) @number
+(boolean) @constant.builtin
 (null) @constant.builtin
 (keyword) @keyword
 (attribute) @attribute
 (tag) @tag
-(conditional) @keyword.control.conditional
-(repeat) @keyword.control.repeat
-(method) @function.method
-(parameter) @variable.parameter
+(conditional) @conditional
+(repeat) @repeat
+(method) @method
+(parameter) @parameter
 
 [
     "{{"
@@ -31,7 +31,7 @@
     "-%}"
     "{%~"
     "~%}"
-] @keyword
+] @tag.delimiter
 
 [
     ","
@@ -40,6 +40,11 @@
     ":"
     "="
 ] @punctuation.delimiter
+
+(interpolated_string [
+    "#{" 
+    "}"
+] @punctuation.delimiter)
 
 [
     "("
@@ -52,9 +57,3 @@
 (hash [
     "}"
 ] @punctuation.bracket)
-
-(interpolated_string [
-    "#{"
-    "}"
-] @punctuation.delimiter)
-

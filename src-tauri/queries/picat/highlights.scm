@@ -100,8 +100,8 @@
 (actor_definition (action_rule name: (atom) @function))
 (actor_definition (nonbacktrackable_predicate_rule name: (atom) @function))
 
-(integer) @constant.numeric.integer
-(real) @constant.numeric.float
+(integer) @number
+(real) @number
 (string) @string
 (comment) @comment
 

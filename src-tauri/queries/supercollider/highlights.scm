@@ -1,26 +1,44 @@
-(line_comment) @comment.line
-(block_comment) @comment.block
+; highlights.scm
+; See this for full list: https://github.com/nvim-treesitter/nvim-treesitter/blob/master/CONTRIBUTING.md
 
-(argument name: (identifier) @variable.parameter)
+; comments
+(line_comment) @comment
+(block_comment) @comment
 
+; Argument definition
+(argument name: (identifier) @parameter)
+
+; Variables
 (local_var name: (identifier) @variable)
 (environment_var name:(identifier) @variable.builtin)
 (builtin_var) @constant.builtin
 
-(function_definition name: (variable) @function)
+; (variable) @variable
 
-(named_argument name: (identifier) @variable.other.member)
+; Functions
+(function_definition
+  name: (variable) @function)
 
-(method_call name: (method_name) @function.method)
+; For function calls
+(named_argument
+  name: (identifier) @property)
 
-(class) @keyword.storage.type
+; Methods
+(method_call
+        name: (method_name) @method)
 
-(number) @constant.numeric
-(float) @constant.numeric.float
+; Classes
+(class) @type
+
+; Literals
+(number) @number
+;(pi_statement) @constant.builtin
+(float) @float
 
 (string) @string
-(symbol) @string.special.symbol
+(symbol) @string.special
 
+; Operators
 [
 "&&"
 "||"
@@ -46,13 +64,17 @@
 "@|@"
 ] @operator
 
+; Keywords
 [
 "arg"
 "classvar"
 "const"
+; "super"
+; "this"
 "var"
 ] @keyword
 
+; Brackets
 [
   "("
   ")"
@@ -63,14 +85,17 @@
   "|"
 ] @punctuation.bracket
 
+; Delimeters
 [
   ";"
   "."
   ","
 ] @punctuation.delimiter
 
-(control_structure) @keyword.control.conditional
+; control structure
+(control_structure) @conditional
 
 (escape_sequence) @string.special
 
-(duplicated_statement) @keyword.control.repeat
+; SinOsc.ar()!2
+(duplicated_statement) @repeat

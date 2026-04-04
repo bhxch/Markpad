@@ -1,32 +1,36 @@
+;; Highlighting rules for Wikitext
+;; Refer https://neovim.io/doc/user/treesitter.html
+;; Highlight headings
 (heading1
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
   (text) @markup.heading.1
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
 )
 (heading2
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
   (text) @markup.heading.2
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
 )
 (heading3
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
   (text) @markup.heading.3
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
 )
 (heading4
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
   (text) @markup.heading.4
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
 )
 (heading5
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
   (text) @markup.heading.5
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
 )
+
 (heading6
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
   (text) @markup.heading.6
-  (heading_marker) @markup.heading.marker
+  (heading_marker) @punctuation.special
 )
 
 (wikilink
@@ -39,9 +43,9 @@
 )
 
 (template
-  (template_name) @function
+  (template_name) @module
   (template_argument
-  (template_param_name)? @attribute
+  (template_param_name)? @tag.attribute
   (template_param_value)? @string
   )
 )
@@ -71,22 +75,29 @@
   "||"
 ] @punctuation.delimiter
 
+(table_cell_block
+  (content) @text
+)
+(table_cell_inline
+  (content) @text
+)
 (table_header_block
-  (content) @markup.bold
+  (content) @text.special
 )
 (table_header_inline
-  (content) @markup.bold
+  (content) @text.special
+)
+(table_cell_inline
+  (content) @text
 )
 
-(html_tag_name) @tag
-(html_attribute
-  (html_attribute_name) @attribute
-)
 (html_attribute
   (html_attribute_name) @attribute
   (html_attribute_value) @string
 )
 
-(italic) @markup.italic
-(bold) @markup.bold
+(paragraph
+  (italic) @markup.italic
+  (bold) @markup.strong
+)
 

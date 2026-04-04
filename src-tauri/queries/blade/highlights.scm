@@ -1,11 +1,11 @@
 ; inherits: html
 
-(directive) @keyword.directive
-(directive_start) @keyword.directive
-(directive_end) @keyword.directive
-(comment) @comment
+[
+  (directive)
+  (directive_start)
+  (directive_end)
+] @tag
 
-; merged with blade punctuation
 [
   "{{"
   "}}"

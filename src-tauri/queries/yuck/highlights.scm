@@ -1,5 +1,6 @@
-(ident) @variable
-(index) @variable
+; Errors
+
+(ERROR) @error
 
 ; Comments
 
@@ -42,11 +43,11 @@
 
 (number (integer)) @constant.numeric.integer
 
-(boolean) @constant.builtin.boolean
+(boolean) @boolean
 
 ; Strings
 
-(escape_sequence) @constant.character.escape
+(escape_sequence) @string.escape
 
 (string_interpolation
   "${" @punctuation.special
@@ -61,13 +62,7 @@
 ; Functions
 
 (function_call
-  name: (ident) @function)
-
-; Tags
-
-; TODO apply to every symbol in list? I think it should probably only be applied to the first child of the list
-(list
-  (symbol) @tag)
+  name: (ident) @function.call)
 
 ; Variables
 
@@ -99,3 +94,14 @@
 (loop_widget . "for" @keyword.control.repeat . (symbol) @variable . "in" @keyword.operator . (symbol) @variable)
 
 (loop_widget . "for" @keyword.control.repeat . (symbol) @variable . "in" @keyword.operator)
+
+; Tags
+
+; TODO apply to every symbol in list? I think it should probably only be applied to the first child of the list
+(list
+  (symbol) @tag)
+
+; Other stuff that has not been catched by the previous queries yet
+
+(ident) @variable
+(index) @variable

@@ -1,10 +1,8 @@
+; highlights.scm
 [
-  (import)
-] @keyword.control.import
-
-[
+  (import) 
   (package)
-] @namespace
+] @module
 
 [
   (with)
@@ -12,20 +10,18 @@
   (every)
   (some)
   (in)
-  (default)
-  "null"
-] @keyword.control
-
-[
   (not)
   (if)
   (contains)
   (else)
-] @keyword.control.conditional
+  (default)
+  "null"
+] @keyword
 
 [
-  (boolean)
-] @constant.builtin.boolean
+  "true"
+  "false"
+] @boolean
 
 [
   (assignment_operator)
@@ -41,9 +37,9 @@
 
 (term (ref (var))) @variable
 
-(comment) @comment.line
+(comment) @comment
 
-(number) @constant.numeric.integer
+(number) @number
 
 (expr_call func_name: (fn_name (var) @function .))
 
@@ -60,9 +56,9 @@
   (close_curly)
 ] @punctuation.bracket
 
-(rule (rule_head (var) @function.method))
+(rule (rule_head (var) @attribute))
 
-(rule
-  (rule_head (term (ref (var) @namespace)))
-  (rule_body (query (literal (expr (expr_infix (expr (term (ref (var)) @_output)))))) (#eq? @_output @namespace))
+(rule 
+  (rule_head (term (ref (var) @head-var)))
+  (rule_body (query (literal (expr (expr_infix (expr (term (ref (var)) @output-var)))))) (#eq? @output-var @head-var))
 )

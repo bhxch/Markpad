@@ -1,150 +1,139 @@
-[
-  "[QueryStringParams]"
-  "[Query]"
-  "[FormParams]"
-  "[Form]"
-  "[MultipartFormData]"
-  "[Multipart]"
-  "[Cookies]"
-  "[Captures]"
-  "[Asserts]"
-  "[Options]"
-  "[BasicAuth]"
-] @attribute
+; highlights.scm
 
-(comment) @comment
+"[Query]" @property
+"[QueryStringParams]" @property
+"[Form]" @property
+"[FormParams]" @property
+"[Multipart]" @property
+"[MultipartFormData]" @property
+"[Cookies]" @property
+"[Captures]" @property
+"[Asserts]" @property
+"[Options]" @property
+"[BasicAuth]" @property
 
-[
-  (key_string)
-  (json_key_string)
-] @variable.other.member
- 
+(comment) @comment @spell
+
+(key_string) @property
+(json_key_string) @property
+
 (value_string) @string
 (quoted_string) @string
 (json_string) @string
-(file_value) @string.special.path
+(file_value) @string.special
 (regex) @string.regex
 
-[
-  "\\"
-  (regex_escaped_char)
-  (quoted_string_escaped_char)
-  (key_string_escaped_char)
-  (value_string_escaped_char)
-  (oneline_string_escaped_char)
-  (multiline_string_escaped_char)
-  (filename_escaped_char)
-  (json_string_escaped_char)
-] @constant.character.escape
+"\\" @string.escape
+(regex_escaped_char) @string.escape
+(quoted_string_escaped_char) @string.escape
+(key_string_escaped_char) @string.escape
+(value_string_escaped_char) @string.escape
+(oneline_string_escaped_char) @string.escape
+(multiline_string_escaped_char) @string.escape
+(filename_escaped_char) @string.escape
+(json_string_escaped_char) @string.escape
 
 (method) @type.builtin
 (multiline_string_type) @type
 
-[
-  "status"
-  "url"
-  "header"
-  "cookie"
-  "body"
-  "xpath"
-  "jsonpath"
-  "regex"
-  "variable"
-  "duration"
-  "sha256"
-  "md5"
-  "bytes"
-  "daysAfterNow"
-  "daysBeforeNow"
-  "htmlEscape"
-  "htmlUnescape"
-  "decode"
-  "format"
-  "nth"
-  "replace"
-  "split"
-  "toDate"
-  "toInt"
-  "urlEncode"
-  "urlDecode"
-  "count"
-] @function.builtin
+"status" @function.builtin
+"url" @function.builtin
+"header" @function.builtin
+"cookie" @function.builtin
+"body" @function.builtin
+"xpath" @function.builtin
+"jsonpath" @function.builtin
+"regex" @function.builtin
+"variable" @function.builtin
+"duration" @function.builtin
+"sha256" @function.builtin
+"md5" @function.builtin
+"bytes" @function.builtin
+"daysAfterNow" @function.builtin
+"daysBeforeNow" @function.builtin
+"htmlEscape" @function.builtin
+"htmlUnescape" @function.builtin
+"decode" @function.builtin
+"format" @function.builtin
+"nth" @function.builtin
+"replace" @function.builtin
+"split" @function.builtin
+"toDate" @function.builtin
+"toInt" @function.builtin
+"urlEncode" @function.builtin
+"urlDecode" @function.builtin
+"count" @function.builtin
 
 (filter) @attribute
 
 (version) @string.special
-[
-  "null"
-  "cacert"
-  "compressed"
-  "location"
-  "insecure"
-  "path-as-is"
-  "proxy"
-  "max-redirs"
-  "retry"
-  "retry-interval"
-  "retry-max-count"
-  (variable_option "variable")
-  "verbose"
-  "very-verbose"
-] @constant.builtin
 
-(boolean) @constant.builtin.boolean
+"null" @constant.builtin
+"cacert" @constant.builtin
+"compressed" @constant.builtin
+"location" @constant.builtin
+"insecure" @constant.builtin
+"path-as-is" @constant.builtin
+"proxy" @constant.builtin
+"max-redirs" @constant.builtin
+"retry" @constant.builtin
+"retry-interval" @constant.builtin
+"retry-max-count" @constant.builtin
+(variable_option "variable") @constant.builtin
+"verbose" @constant.builtin
+"very-verbose" @constant.builtin
+
+(boolean) @boolean
 
 (variable_name) @variable
 
-[
-  "not"
-  "equals"
-  "=="
-  "notEquals"
-  "!="
-  "greaterThan"
-  ">"
-  "greaterThanOrEquals"
-  ">="
-  "lessThan"
-  "<"
-  "lessThanOrEquals"
-  "<="
-  "startsWith"
-  "endsWith"
-  "contains"
-  "matches"
-  "exists"
-  "includes"
-  "isInteger"
-  "isFloat"
-  "isBoolean"
-  "isString"
-  "isCollection"
-  "isNumber"
-  "isIsoDate"
-  "isEmpty"
-] @keyword.operator
+"not" @keyword.operator
+"equals" @keyword.operator
+"==" @operator
+"notEquals" @keyword.operator
+"!=" @operator
+"greaterThan" @keyword.operator
+">" @operator
+"greaterThanOrEquals" @keyword.operator
+">=" @operator
+"lessThan" @keyword.operator
+"<" @operator
+"lessThanOrEquals" @keyword.operator
+"<=" @operator
+"startsWith" @keyword.operator
+"endsWith" @keyword.operator
+"contains" @keyword.operator
+"matches" @keyword.operator
+"exists" @keyword.operator
+"includes" @keyword.operator
+"isInteger" @keyword.operator
+"isFloat" @keyword.operator
+"isBoolean" @keyword.operator
+"isString" @keyword.operator
+"isCollection" @keyword.operator
+"isNumber" @keyword.operator
+"isIsoDate" @keyword.operator
+"isEmpty" @keyword.operator
+"isIpv4" @keyword.operator
+"isIpv6" @keyword.operator
+"isUuid" @keyword.operator
 
-(integer) @constant.numeric.integer
-(float) @constant.numeric.float
-(status) @constant.numeric
-(json_number) @constant.numeric.float
 
-[
-  ":"
-  ","
-] @punctuation.delimiter
+(integer) @number
+(float) @float
+(status) @number
+(json_number) @float
 
-[
-  "["
-  "]"
-  "{"
-  "}"
-  "{{"
-  "}}"
-] @punctuation.special
+":" @punctuation.delimiter
+"," @punctuation.delimiter
 
-[
-  "base64,"
-  "file,"
-  "hex,"
-] @string.special
+"[" @punctuation.bracket
+"]" @punctuation.bracket
+"{" @punctuation.bracket
+"}" @punctuation.bracket
+"{{" @punctuation.special
+"}}" @punctuation.special
+
+"base64," @string.special
+"file," @string.special
+"hex," @string.special

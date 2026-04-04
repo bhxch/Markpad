@@ -1,133 +1,78 @@
-; Variables
+; adapted from Zed's Python Config
+; https://github.com/zed-industries/zed/blob/6657e301cd0ee9e7b7b5352957ef30728ae2a874/crates/languages/src/python/highlights.scm
+(attribute attribute: (identifier) @property)
+(type (identifier) @type)
 
-(identifier) @variable
-
-(attribute attribute: (identifier) @variable.other.member)
-
-((identifier) @constant
-  (#match? @constant "^_*[A-Z][A-Z\\d_]*$"))
-
-((identifier) @type
-  (#match? @type "^[A-Z]"))
-
-; Literals
-(none) @constant.builtin
-[
-  (true)
-  (false)
-] @constant.builtin.boolean
-
-(integer) @constant.numeric.integer
-(float) @constant.numeric.float
-(comment) @comment
-(string) @string
-(escape_sequence) @constant.character.escape
-
-; Docstrings
-
-(expression_statement (string) @comment.block.documentation)
-
-; Imports
-
-(dotted_name
-  (identifier)* @namespace)
-
-(aliased_import
-  (identifier) @namespace)
-
-; Builtin functions
-
-((call
-  function: (identifier) @function.builtin)
-  (#match?
-    @function.builtin
-    "^(abs|all|always_inline|any|ascii|bin|bool|breakpoint|bytearray|bytes|callable|chr|classmethod|compile|complex|constrained|delattr|dict|dir|divmod|enumerate|eval|exec|filter|float|format|frozenset|getattr|globals|hasattr|hash|help|hex|id|input|int|isinstance|issubclass|iter|len|list|locals|map|max|memoryview|min|next|object|oct|open|ord|pow|print|property|range|repr|reversed|round|set|setattr|slice|sorted|staticmethod|str|sum|super|tuple|type|unroll|vars|zip|__mlir_attr|__mlir_op|__mlir_type|__import__)$"))
 
 ; Function calls
 
-[
-  "def"
-  "lambda"
-  "fn"
-] @keyword.function
-
-(call
-  function: (attribute attribute: (identifier) @constructor)
-  (#match? @constructor "^[A-Z]"))
-
-(call
-  function: (identifier) @constructor
-  (#match? @constructor "^[A-Z]"))
+(decorator) @function
+(decorator
+  (identifier) @function)
 
 (call
   function: (attribute attribute: (identifier) @function.method))
-
 (call
   function: (identifier) @function)
 
 ; Function definitions
 
 (function_definition
-  name: (identifier) @constructor
-  (#match? @constructor "^(__new__|__init__|__moveinit__|__copyinit__)$"))
-
-(function_definition
   name: (identifier) @function)
 
-; Decorators
+; Identifier naming conventions
 
-(decorator) @function
-(decorator (identifier) @function)
-(decorator (attribute attribute: (identifier) @function))
-(decorator (call
-  function: (attribute attribute: (identifier) @function)))
+((identifier) @type
+ (#match? @type "^[A-Z]"))
 
-; Parameters
+((identifier) @constant
+ (#match? @constant "^_*[A-Z][A-Z\\d_]*$"))
 
-((identifier) @variable.builtin
-  (#match? @variable.builtin "^(self|cls)$"))
+; Builtin functions
 
-(parameters (identifier) @variable.parameter)
-(parameters (typed_parameter (identifier) @variable.parameter))
-(parameters (default_parameter name: (identifier) @variable.parameter))
-(parameters (typed_default_parameter name: (identifier) @variable.parameter))
+((call
+  function: (identifier) @function.builtin)
+ (#match?
+   @function.builtin
+   "^(abs|all|always_inline|any|ascii|bin|bool|breakpoint|bytearray|bytes|callable|chr|classmethod|compile|complex|constrained|delattr|dict|dir|divmod|enumerate|eval|exec|filter|float|format|frozenset|getattr|globals|hasattr|hash|help|hex|id|input|int|isinstance|issubclass|iter|len|list|locals|map|max|memoryview|min|next|object|oct|open|ord|pow|print|property|range|repr|reversed|round|set|setattr|slice|sorted|staticmethod|str|sum|super|tuple|type|unroll|vars|zip|__mlir_attr|__mlir_op|__mlir_type|__import__)$"))
 
-(parameters
-  (list_splat_pattern ; *args
-    (identifier) @variable.parameter))
+; Literals
 
-(parameters
-  (dictionary_splat_pattern ; **kwargs
-    (identifier) @variable.parameter))
+[
+  (none)
+  (true)
+  (false)
+] @constant.builtin
 
-(lambda_parameters
-  (identifier) @variable.parameter)
+[
+  (integer)
+  (float)
+] @number
 
-; Types
+(comment) @comment
+(string) @string
+(escape_sequence) @escape
 
-((identifier) @type.builtin
-  (#match?
-    @type.builtin
-    "^(bool|bytes|dict|float|frozenset|int|list|set|str|tuple)$"))
+[
+  "("
+  ")"
+  "["
+  "]"
+  "{"
+  "}"
+] @punctuation.bracket
 
-; In type hints make everything types to catch non-conforming identifiers
-; (e.g., datetime.datetime) and None
-(type [(identifier) (none)] @type)
-; Handle [] . and | nesting 4 levels deep
-(type
-  (_ [(identifier) (none)]? @type
-    (_ [(identifier) (none)]? @type
-      (_ [(identifier) (none)]? @type
-        (_ [(identifier) (none)]? @type)))))
-
-(class_definition name: (identifier) @type)
-(class_definition superclasses: (argument_list (identifier) @type))
-
-["," "." ":" ";" (ellipsis)] @punctuation.delimiter
 (interpolation
   "{" @punctuation.special
   "}" @punctuation.special) @embedded
-["(" ")" "[" "]" "{" "}"] @punctuation.bracket
+
+; Docstrings.
+(function_definition
+  "async"?
+  "def"
+  name: (_)
+  (parameters)?
+  body: (block (expression_statement (string) @string.doc)))
 
 [
   "-"
@@ -142,17 +87,14 @@
   "//="
   "/="
   "&"
-  "&="
   "%"
   "%="
   "^"
-  "^="
   "+"
   "->"
   "+="
   "<"
   "<<"
-  "<<="
   "<="
   "<>"
   "="
@@ -161,88 +103,78 @@
   ">"
   ">="
   ">>"
-  ">>="
   "|"
-  "|="
   "~"
-  "@="
+  "and"
+  "in"
+  "is"
+  "not"
+  "or"
+  "is not"
+  "not in"
+  "!"
 ] @operator
 
 [
   "as"
+  "comptime"
   "assert"
+  "async"
   "await"
-  "from"
-  "pass"
-  "with"
-] @keyword.control
-
-[
-  "if"
+  "borrowed"
+  "break"
+  "capturing"
+  "class"
+  "continue"
+  "def"
+  "del"
+  "deinit"
   "elif"
   "else"
-  "match"
-  "case"
-] @keyword.control.conditional
-
-[
-  "while"
+  "escaping"
+  "except"
+  "exec"
+  "finally"
+  "fn"
   "for"
-  "break"
-  "continue"
-] @keyword.control.repeat
-
-[
-  "return"
-  "yield"
-] @keyword.control.return
-
-(yield "from" @keyword.control.return)
-
-[
+  "from"
+  "global"
+  "if"
+  "import"
+  "inout"
+  "lambda"
+  "nonlocal"
+  "owned"
+  "out"
+  "pass"
+  "print"
   "raise"
   "raises"
-  "try"
-  "except"
-  "finally"
-] @keyword.control.exception
-
-(raise_statement "from" @keyword.control.exception)
-"import" @keyword.control.import
-
-(for_statement "in" @keyword.control)
-(for_in_clause "in" @keyword.control)
-
-[
-  "async"
-  "class"
-  "exec"
-  "global"
-  "nonlocal"
-  "print"
+  "ref"
+  "return"
   "struct"
-  ; "trait"
+  "trait"
+  "try"
+  "var"
+  "while"
+  "with"
+  "yield"
+  "match"
+  "case"
+  "where"
 ] @keyword
 
-[
-  "and"
-  "or"
-  "not in"
-  "in"
-  "not"
-  "del"
-  "is not"
-  "is"
-] @keyword.operator
-
-"var" @keyword.storage
-
-[
-  "borrowed"
-  "inout"
-  "owned"
-] @keyword.storage.modifier
-
-((identifier) @type.builtin
-  (#match? @type.builtin
-    "^(BaseException|Exception|ArithmeticError|BufferError|LookupError|AssertionError|AttributeError|EOFError|FloatingPointError|GeneratorExit|ImportError|ModuleNotFoundError|IndexError|KeyError|KeyboardInterrupt|MemoryError|NameError|NotImplementedError|OSError|OverflowError|RecursionError|ReferenceError|RuntimeError|StopIteration|StopAsyncIteration|SyntaxError|IndentationError|TabError|SystemError|SystemExit|TypeError|UnboundLocalError|UnicodeError|UnicodeEncodeError|UnicodeDecodeError|UnicodeTranslateError|ValueError|ZeroDivisionError|EnvironmentError|IOError|WindowsError|BlockingIOError|ChildProcessError|ConnectionError|BrokenPipeError|ConnectionAbortedError|ConnectionRefusedError|ConnectionResetError|FileExistsError|FileNotFoundError|InterruptedError|IsADirectoryError|NotADirectoryError|PermissionError|ProcessLookupError|TimeoutError|Warning|UserWarning|DeprecationWarning|PendingDeprecationWarning|SyntaxWarning|RuntimeWarning|FutureWarning|ImportWarning|UnicodeWarning|BytesWarning|ResourceWarning)$"))
+(mlir_type "!" @punctuation.special (#set! "priority" 110))
+(mlir_type ">" @punctuation.special (#set! "priority" 110))
+(mlir_type "<" @punctuation.special (#set! "priority" 110))
+(mlir_type "->" @punctuation.special (#set! "priority" 110))
+(mlir_type "(" @punctuation.special (#set! "priority" 110))
+(mlir_type ")" @punctuation.special (#set! "priority" 110))
+(mlir_type "." @punctuation.special (#set! "priority" 110))
+(mlir_type ":" @punctuation.special (#set! "priority" 110))
+(mlir_type "+" @punctuation.special (#set! "priority" 110))
+(mlir_type "-" @punctuation.special (#set! "priority" 110))
+(mlir_type "*" @punctuation.special (#set! "priority" 110))
+(mlir_type "," @punctuation (#set! "priority" 110))
+(mlir_type) @type
+; (argument_convention) @keyword

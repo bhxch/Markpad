@@ -1,1 +1,12 @@
-; No highlights available
+(comment_directive) @comment
+
+[
+  "<%#"
+  "<%"
+  "<%="
+  "<%_"
+  "<%-"
+  "%>"
+  "-%>"
+  "_%>"
+] @keyword

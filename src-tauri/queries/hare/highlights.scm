@@ -115,16 +115,14 @@
   "false"
   "null"
   "true"
-] @constant.builtin
-(literal "void") @constant.builtin
-
-(identifier) @variable
+] @literal.builtin
+(literal "void") @literal.builtin
 
 (string_literal) @string
-(escape_sequence) @constant.character.escape
+(escape_sequence) @literal.character.escape
 (rune_literal) @string
-(integer_literal) @constant.numeric.integer
-(floating_literal) @constant.numeric.float
+(integer_literal) @literal.numeric.integer 
+(floating_literal) @literal.numeric.float
 
 (call_expression
   (postfix_expression) @function)
@@ -140,4 +138,5 @@
 (decl_attr) @special
 (fndec_attrs) @special
 
+(identifier) @variable
 (struct_union_field (name)) @variable

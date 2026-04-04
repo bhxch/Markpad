@@ -9,185 +9,117 @@
 ] @punctuation.bracket
 
 [
-  ","
-  "."
-  ":"
-] @punctuation.delimiter
-
-[
-  "!="
-  "%"
-  "%="
-  "&"
-  "&="
+  "+"
+  "-"
+  "/"
   "*"
   "**"
-  "**="
-  "*="
-  "+"
-  "+="
-  "-"
-  "-="
-  "/"
-  "/="
+  "%"
   "<"
-  "<<"
-  "<<="
-  "<="
-  "<="
-  "=="
   ">"
+  "<="
   ">="
-  ">="
+  "<<"
   ">>"
-  ">>="
   ">>>"
-  ">>>="
-  "^"
-  "^="
+  "&"
   "|"
-  "|="
+  "^"
+  "=="
+  "!="
 ] @operator
-
-; Identifiers/variable references
-(identifier) @variable
-
-((identifier) @function
-  (#is-not? local))
 
 ; Keywords
 [
-  "as"
-  "for"
-  "impl"
-  "let"
-  "mut"
-  "ref"
-  "uni"
-  "move"
-  "recover"
-] @keyword
-
-"fn" @keyword.function
-
-"import" @keyword.control.import
-
-[
   "and"
-  "or"
-] @keyword.operator
-
-[
-  "type"
-  "trait"
-] @keyword.storage.type
-
-[
-  "extern"
-  (modifier)
-  (visibility)
-] @keyword.storage.modifier
-
-[
-  "loop"
-  "while"
-  (break)
-  (next)
-] @keyword.control.repeat
-
-"return" @keyword.control.return
-
-[
-  "throw"
-  "try"
-] @keyword.control.exception
-
-[
+  "as"
   "case"
   "else"
+  "enum"
+  "extern"
+  "fn"
+  "for"
   "if"
+  "impl"
+  "import"
+  "in"
+  "let"
+  "loop"
   "match"
-] @keyword.control.conditional
+  "move"
+  "mut"
+  "or"
+  "recover"
+  "ref"
+  "return"
+  "throw"
+  "trait"
+  "try"
+  "type"
+  "uni"
+  "while"
+  (modifier)
+  (visibility)
+] @keyword
 
 ; Comments
-(line_comment) @comment.line
+(line_comment) @comment
 
 ; Literals
-(self) @variable.builtin
-
-(nil) @constant.builtin
+[
+  (nil)
+  (self)
+  (break)
+  (next)
+] @keyword
 
 [
   (true)
   (false)
-] @constant.builtin.boolean
+] @boolean
 
-(integer) @constant.numeric.integer
-
-(float) @constant.numeric.float
-
+(integer) @number
+(float) @number
 (string) @string
-
-(escape_sequence) @constant.character.escape
-
+(escape_sequence) @escape
 (interpolation
   "${" @punctuation.special
-  "}" @punctuation.special)
+  "}" @punctuation.special) @embedded
 
 (constant) @constant
 
 ; Patterns
-(integer_pattern) @constant.numeric.integer
-
+(integer_pattern) @number
 (string_pattern) @string
-
 (constant_pattern) @constant
 
 ; Types
-(generic_type
-  name: _ @type)
-
+(generic_type name: _ @type)
 (type) @type
 
 ; Imports
-(extern_import
-  path: _ @string)
+(extern_import path: _ @string)
 
 ; Classes
-(class
-  name: _ @type)
-
-(define_field
-  name: _ @variable.other.member)
+(class name: _ @type)
+(define_field name: _ @property)
 
 ; Traits
-(trait
-  name: _ @type)
+(trait name: _ @type)
 
 ; Implementations
-(implement_trait
-  class: _ @type)
-
-(reopen_class
-  name: _ @type)
-
-(bound
-  name: _ @type)
+(implement_trait class: _ @type)
+(reopen_class name: _ @type)
+(bound name: _ @type)
 
 ; Methods
-(method
-  name: _ @function)
+(method name: _ @function)
+(external_function name: _ @function)
+(argument name: _ @variable)
+(named_argument name: _ @variable)
 
-(external_function
-  name: _ @function)
-
-(argument
-  name: _ @variable.parameter)
-
-(named_argument
-  name: _ @variable.parameter)
-
-(call
-  name: _ @function)
-
-(field) @variable.other.member
+(call name: _ @function)
+(field) @property
+(identifier) @variable
+((identifier) @function
+ (#is-not? local))

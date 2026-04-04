@@ -1,4 +1,5 @@
 [
+    "include"
     "namespace"
     "attribute"
     "table"
@@ -10,8 +11,6 @@
     "file_extension"
     "file_identifier"
 ] @keyword
-
-"include" @keyword.control.import
 
 [
   ";"
@@ -25,26 +24,19 @@
 [
     (true)
     (false)
-] @constant.builtin.boolean
-
-[
     (inf_token)
     (nan_token)
 ] @constant.builtin
 
 [
-    (int_lit)
+    (float_constant)
     (int_constant)
-] @constant.numeric.integer
+] @number
 
 [
-    (float_lit)
-    (float_constant)
-] @constant.numeric.float
-
-
-(comment) @comment
-(documentation) @comment.line.documentation
+    (comment)
+    (documentation)
+] @comment
 
 [
   "("
@@ -59,11 +51,8 @@
     (metadata)
 ] @attribute
 
-(attribute_decl
-  attribute_name: (identifier) @string)
-
 (namespace_decl
-    namespace_ident: (full_ident) @namespace)
+    namespace_ident: (full_ident) @module)
 
 (type_decl
     table_or_struct_name: (identifier) @type)
@@ -71,7 +60,7 @@
 (enum_decl
     enum_name: (identifier) @type)
 
-(enum_val_decl
+(enumval_decl
     enum_key: (identifier) @type)
 
 (union_decl

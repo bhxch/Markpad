@@ -1,58 +1,27 @@
-(string) @string
-
-(enumeral) @constant
-(number) @constant.numeric
-
-(variable) @variable
-(column_type) @type
-
-(arguments) @variable.other.member
-(model_declaration (identifier) @type)
-(view_declaration (identifier) @type)
-
 [
  "datasource"
  "enum"
  "generator"
  "model"
- "type"
- "view"
 ] @keyword
 
-[
- (comment)
- (developer_comment)
-] @comment
+(comment) @comment
+(developer_comment) @comment
 
-[
- (attribute)
- (block_attribute_declaration)
- (call_expression)
-] @function.builtin
+(arguments) @property
+(attribute) @function
+(call_expression) @function
+(column_type) @type
+(enumeral) @constant
+(identifier) @variable
+(string) @string
 
-[
- (true)
- (false)
-] @constant.builtin.boolean
-(null) @constant.builtin
+"(" @punctuation.bracket
+")" @punctuation.bracket
+"[" @punctuation.bracket
+"]" @punctuation.bracket
+"{" @punctuation.bracket
+"}" @punctuation.bracket
+"=" @operator
+"@" @operator
 
-[
- "("
- ")"
- "["
- "]"
- "{"
- "}"
-] @punctuation.bracket
-
-[
- ":" 
- ","
-] @punctuation.delimiter
-
-[
- "="
- "@"
- "@@"
- (binary_expression)
-] @operator

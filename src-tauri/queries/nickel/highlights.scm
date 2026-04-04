@@ -1,70 +1,84 @@
+(comment) @comment @spell
+(annot_atom doc: (static_string) @spell)
+
+[
+  "forall"
+  "in"
+  "let"
+  "default"
+  "doc"
+  "rec"
+  "optional"
+  "priority"
+  "force"
+  "not_exported"
+] @keyword
+
+"fun" @keyword.function
+
+"import" @include
+
+[ "if" "then" "else" ] @conditional
+"match" @conditional
+
 (types) @type
-(type_builtin) @type.builtin
 "Array" @type.builtin
 
-(enum_tag) @constructor
-
+; BUILTIN Constants
+(bool) @boolean
 "null" @constant.builtin
-(bool) @constant.builtin.boolean
-(str_esc_char) @constant.character.escape
-(num_literal) @constant.numeric
+(enum_tag) @constant
 
-(str_chunks) @string
+(num_literal) @number
 
-; NOTE: Nickel has no block comments
-(comment) @comment.line
-; Nickel doesn't use comments for documentation, ideally this would be
-; `@documentation` or something similar
-(annot_atom
-  doc: (static_string) @comment.block.documentation
-)
+(infix_op) @operator
 
-(record_operand (atom (ident) @variable))
-(let_in_block
-  "let" @keyword
-  "rec"? @keyword
-  "in" @keyword
-)
+(type_atom) @type
 
-(let_binding
-  pat: (pattern
-    (ident) @variable
-  )
-)
+(chunk_literal_single) @string
+(chunk_literal_multi) @string
 
-(fun_expr
-  "fun" @keyword.function
-  pats:
-    (pattern_fun (ident) @variable.parameter)+
-  "=>" @operator
-)
-(record_field) @variable.other.member
+(str_esc_char) @string.escape
 
 [
-  "."
-] @punctuation.delimiter
-[
-  "{" "}"
-  "(" ")"
-  "[|" "|]"
-  "[" "]"
+ "{" "}"
+ "(" ")"
+ "[|" "|]"
 ] @punctuation.bracket
+
+[
+ ","
+ "."
+ ":"
+ "="
+ "|"
+ "->"
+ "+"
+ "-"
+ "*"
+] @punctuation.delimiter
+
 (multstr_start) @punctuation.bracket
 (multstr_end) @punctuation.bracket
 (interpolation_start) @punctuation.bracket
 (interpolation_end) @punctuation.bracket
 
-["forall" "default" "doc"] @keyword
-["if" "then" "else" "match"] @keyword.control.conditional
-"import" @keyword.control.import
+(record_field) @field
 
-(infix_expr
-  op: (_) @operator
-)
+(builtin) @function.builtin
 
-(applicative
-  t1: (applicative
-    (record_operand) @function
+(fun_expr pats:
+  (pattern_fun
+    (ident) @parameter
   )
 )
-(builtin) @function.builtin
+
+; application where the head terms is an identifier: function arg1 arg2 arg3
+(applicative t1:
+  (applicative (record_operand (atom (ident))) @function)
+)
+
+; application where the head terms is a record field path: foo.bar.function arg1 arg2 arg3
+(applicative t1:
+  (applicative (record_operand (record_operation_chain)) @function)
+)

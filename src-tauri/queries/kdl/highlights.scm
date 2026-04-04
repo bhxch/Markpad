@@ -1,32 +1,58 @@
+; Types
+
+(node (identifier) @type)
+
+(type) @type
+
+(annotation_type) @type.builtin
+
+; Properties
+
+(prop (identifier) @property)
+
+; Variables
+
+(identifier) @variable
+
+; Operators
 [
-    (single_line_comment)
-    (multi_line_comment)
+ "="
+ "+"
+ "-"
+] @operator
 
-    (node_comment)
-    (node_field_comment)
-
-    ; these do not show up as comments in Helix as they are also highlighted as
-    ; normal nodes
-    (node . (node_comment))
-    (node_field . (node_field_comment))
-] @comment
-
-(node
-    (identifier) @variable)
-
-(prop (identifier) @attribute)
-
-(type (_) @type) @punctuation.bracket
-
-(keyword) @keyword
+; Literals
 
 (string) @string
-(number) @constant.numeric
-(boolean) @constant.builtin.boolean
 
-"." @punctuation.delimiter
+(escape) @string.escape
 
-"=" @operator
+(number) @number
 
-"{" @punctuation.bracket
-"}" @punctuation.bracket
+(number (decimal) @float)
+(number (exponent) @float)
+
+(boolean) @boolean
+
+"null" @constant.builtin
+
+; Punctuation
+
+["{" "}"] @punctuation.bracket
+
+["(" ")"] @punctuation.bracket
+
+[
+  ";"
+] @punctuation.delimiter
+
+; Comments
+
+[
+  (single_line_comment)
+  (multi_line_comment)
+] @comment @spell
+
+(node (node_comment) (#set! "priority" 105)) @comment
+(node (node_field (node_field_comment) (#set! "priority" 105)) @comment)
+(node_children (node_children_comment) (#set! "priority" 105)) @comment

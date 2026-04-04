@@ -1,6 +1,17 @@
+; highlights.scm
+;
+; Copyright 2022 Staysail Systems, Inc.
+;
+; Distributed under the MIT License.
+; (See accompanying file LICENSE.txt or https://opensource.org/licenses/MIT)
+; SPDX-License-Identifier: MIT
+;
+; These highlights are quite generic for the default Tree-sitter theme.
+;
 (comment) @comment
 
-(identifier) @variable
+; these are listed first, because they override keyword queries
+(function_expression (identifier) @function)
 
 [
     (assignment_operator)
@@ -31,21 +42,17 @@
     (elif)
     (else)
     (endif)
-] @keyword.control.conditional
-
-[
     (foreach)
     (endforeach)
     (break)
     (continue)
-] @keyword.control.repeat
+] @keyword
 
-(boolean_literal) @constant.builtin.boolean
-(int_literal) @constant.numeric.integer
+(boolean_literal) @constant.builtin
+(int_literal) @number
 
 (keyword_argument keyword: (identifier) @variable.parameter)
-(escape_sequence) @constant.character.escape
-(bad_escape) @warning
+(escape_sequence) @string.special
 
 [
 "."
@@ -58,5 +65,5 @@
     (fstring_literal)
 ] @string
 
-; these are listed last, because they override keyword queries
-(function_expression (identifier) @function)
+(identifier) @variable.other
+

@@ -57,10 +57,6 @@
  (comment)
  ] @comment
 
-(flow_vertex_id) @type
-(flow_arrow_text) @label
-(flow_text_literal) @string
- 
 [
  ":"
  (sequence_signal_plus_sign)
@@ -103,18 +99,12 @@
  "&"
  ] @operator
 
-(sequence_actor) @variable
-(sequence_text) @string
+(sequence_actor) @field
+(class_name) @field
 
-(class_name) @type
-(class_label) @string
-(class_method_line) @function.method
+(state_name) @field
 
-(state_name) @variable
-
-(gantt_section) @markup.heading
-(gantt_task_text) @variable.builtin
-(gantt_task_data) @string
+(gantt_task_text) @field
 
 [
  (class_annotation_line)
@@ -126,10 +116,10 @@
  (state_annotation_choice)
  ] @type
 
-(directive) @keyword.directive
+(directive) @include
 
 (pie_label) @string
-(pie_value) @constant.numeric
+(pie_value) @float
 
 [
 (flowchart_direction_lr)
@@ -138,7 +128,7 @@
 (flowchart_direction_bt)
  ] @constant
 
-(flow_vertex_id) @variable
+(flow_vertex_id) @field
 
 [
  (flow_link_arrow)
@@ -174,10 +164,10 @@
  (er_reltype_identifying)
  ] @operator
 
-(er_entity_name) @variable
+(er_entity_name) @field
 
 (er_attribute_type) @type
-(er_attribute_name) @variable
+(er_attribute_name) @field
 
 [
  (er_attribute_key_type_pk)

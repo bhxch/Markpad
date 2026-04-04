@@ -1,17 +1,15 @@
+; adapted from https://github.com/vhyrro/tree-sitter-luap
+
+(".") @character
+
 [
   (anchor_begin)
   (anchor_end)
-] @punctuation.delimiter
-
-(pattern
-  (character
-    "." @variable.builtin))
+] @string.escape
 
 [
-  "["
-  "]"
-  "("
-  ")"
+  "[" "]"
+  "(" ")"
 ] @punctuation.bracket
 
 [
@@ -23,23 +21,17 @@
 
 (range
   from: (character) @constant
-  "-" @operator
+  "-" @punctuation.delimiter
   to: (character) @constant)
 
 (set
   (character) @constant)
 
+(class) @keyword
+
 (negated_set
+  "^" @string.regex
   (character) @constant)
 
-(class) @constant.character.escape
-
-(class
-  "%" @string.regexp
-  (escape_char) @string.regexp)
-
-(negated_set
-  "^" @operator)
-
 (balanced_match
-  (character) @variable.parameter)
+  (character) @parameter)

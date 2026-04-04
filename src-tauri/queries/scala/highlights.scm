@@ -1,30 +1,15 @@
 ; CREDITS @stumash (stuart.mashaal@gmail.com)
 
-;; variables
-
-(identifier) @variable
-
-(operator_identifier) @operator
-
-((identifier) @variable.builtin
- (#match? @variable.builtin "^this$"))
-
-(interpolation) @none
-
-; Assume other uppercase names constants.
-; NOTE: In order to distinguish constants we highlight
-; all the identifiers that are uppercased. But this solution
-; is not suitable for all occurrences e.g. it will highlight
-; an uppercased method as a constant if used with no params.
-; Introducing highlighting for those specific cases, is probably
-; best way to resolve the issue.
-((identifier) @constant (#match? @constant "^[A-Z]"))
-
-;; types
+(field_expression field: (identifier) @property)
+(field_expression value: (identifier) @type
+ (#match? @type "^[A-Z]"))
 
 (type_identifier) @type
 
 (class_definition
+  name: (identifier) @type)
+
+(enum_definition
   name: (identifier) @type)
 
 (object_definition
@@ -33,14 +18,26 @@
 (trait_definition
   name: (identifier) @type)
 
-(type_definition
-  name: (type_identifier) @type)
-
 (full_enum_case
   name: (identifier) @type)
 
 (simple_enum_case
   name: (identifier) @type)
+
+;; variables
+
+(class_parameter
+  name: (identifier) @parameter)
+
+(self_type (identifier) @parameter)
+
+(interpolation (identifier) @none)
+(interpolation (block) @none)
+
+;; types
+
+(type_definition
+  name: (type_identifier) @type.definition)
 
 ;; val/var definitions/declarations
 
@@ -55,14 +52,6 @@
 
 (var_declaration
   name: (identifier) @variable)
-
-; function definitions/declarations
-
-(function_declaration
-    name: (identifier) @function.method)
-
-(function_definition
-      name: (identifier) @function.method)
 
 ; imports/exports
 
@@ -86,56 +75,46 @@
 
 ; method invocation
 
+(call_expression
+  function: (identifier) @function.call)
 
 (call_expression
-  function: (identifier) @function)
-
-(call_expression
-  function: (operator_identifier) @function)
-
-(call_expression
-  function: (field_expression
-    field: (identifier) @function.method))
+  function: (operator_identifier) @function.call)
 
 (call_expression
   function: (field_expression
-    field: (operator_identifier) @function.method))
+    field: (identifier) @method.call))
 
 ((call_expression
-   function: (identifier) @variable.other.member)
- (#match? @variable.other.member "^[A-Z]"))
+   function: (identifier) @constructor)
+ (#match? @constructor "^[A-Z]"))
 
 (generic_function
-  function: (identifier) @function)
+  function: (identifier) @function.call)
 
 (interpolated_string_expression
-  interpolator: (identifier) @function)
-
-(
-  (identifier) @function.builtin
-  (#match? @function.builtin "^super$")
-)
+  interpolator: (identifier) @function.call)
 
 ; function definitions
 
 (function_definition
   name: (identifier) @function)
 
-(function_definition
-  name: (operator_identifier) @function)
-
 (parameter
-  name: (identifier) @variable.parameter)
+  name: (identifier) @parameter)
 
 (binding
-  name: (identifier) @variable.parameter)
+  name: (identifier) @parameter)
+
+; method definition
+
+(function_declaration
+      name: (identifier) @method)
+
+(function_definition
+      name: (identifier) @method)
 
 ; expressions
-
-
-(field_expression field: (identifier) @variable.other.member)
-(field_expression value: (identifier) @type
- (#match? @type "^[A-Z]"))
 
 (infix_expression operator: (identifier) @operator)
 (infix_expression operator: (operator_identifier) @operator)
@@ -143,96 +122,91 @@
 (infix_type operator: (operator_identifier) @operator)
 
 ; literals
-(boolean_literal) @constant.builtin.boolean
-(integer_literal) @constant.numeric.integer
-(floating_point_literal) @constant.numeric.float
+
+(boolean_literal) @boolean
+(integer_literal) @number
+(floating_point_literal) @float
 
 [
-(string)
-(character_literal)
-(interpolated_string_expression)
+  (string)
+  (character_literal)
+  (interpolated_string_expression)
 ] @string
 
 (interpolation "$" @punctuation.special)
 
-; annotations
-
-(annotation) @attribute
-
 ;; keywords
 
-;; storage in TextMate scope lingo means field or type
-[
-  (opaque_modifier)
-  (infix_modifier)
-  (transparent_modifier)
-  (open_modifier)
-  "abstract"
-  "final"
-  "implicit"
-  "lazy"
-  "override"
-  "private"
-  "protected"
-  "sealed"
-] @keyword.storage.modifier
+(opaque_modifier) @type.qualifier
+(infix_modifier) @keyword
+(transparent_modifier) @type.qualifier
+(open_modifier) @type.qualifier
 
 [
+  "case"
   "class"
   "enum"
-  "extension"
-  "given"
+  "extends"
+  "derives"
+  "finally"
+;; `forSome` existential types not implemented yet
+;; `macro` not implemented yet
   "object"
+  "override"
   "package"
   "trait"
   "type"
   "val"
   "var"
-] @keyword.storage.type
-
-[
-  "as"
-  "derives"
-  "end"
-  "extends"
-;; `forSome` existential types not implemented yet
-;; `macro` not implemented yet
-;; `throws`
+  "with"
+  "given"
   "using"
+  "end"
+  "implicit"
+  "extension"
   "with"
 ] @keyword
 
+[
+  "abstract"
+  "final"
+  "lazy"
+  "sealed"
+  "private"
+  "protected"
+] @type.qualifier
+
+(inline_modifier) @storageclass
+
 (null_literal) @constant.builtin
-(wildcard) @keyword
+
+(wildcard) @parameter
+
+(annotation) @attribute
 
 ;; special keywords
 
 "new" @keyword.operator
 
 [
-  "case"
-  "catch"
   "else"
-  "finally"
   "if"
   "match"
   "then"
-  "throw"
-  "try"
-] @keyword.control.conditional
+] @conditional
 
 [
-  "("
-  ")"
-  "["
-  "]"
-  "{"
-  "}"
-] @punctuation.bracket
+ "("
+ ")"
+ "["
+ "]"
+ "{"
+ "}"
+]  @punctuation.bracket
 
 [
-  "."
-  ","
+ "."
+ ","
 ] @punctuation.delimiter
 
 [
@@ -240,25 +214,47 @@
   "for"
   "while"
   "yield"
-] @keyword.control.repeat
+] @repeat
 
 "def" @keyword.function
 
 [
-  "=>"
-  "<-"
-  "@"
-] @keyword.operator
+ "=>"
+ "<-"
+ "@"
+] @operator
 
-"import" @keyword.control.import
+["import" "export"] @include
 
-"export" @keyword.control.import
+[
+  "try"
+  "catch"
+  "throw"
+] @exception
 
-"return" @keyword.control.return
+"return" @keyword.return
 
-[(comment) (block_comment)] @comment
+(comment) @spell @comment
+(block_comment) @spell @comment
 
 ;; `case` is a conditional keyword in case_block
 
 (case_block
-  (case_clause ("case") @keyword.control.conditional))
+  (case_clause ("case") @conditional))
+(indented_cases
+  (case_clause ("case") @conditional))
+
+(operator_identifier) @operator
+
+((identifier) @type (#match? @type "^[A-Z]"))
+((identifier) @variable.builtin
+ (#match? @variable.builtin "^this$"))
+
+(
+  (identifier) @function.builtin
+  (#match? @function.builtin "^super$")
+)
+
+;; Scala CLI using directives
+(using_directive_key) @parameter
+(using_directive_value) @string

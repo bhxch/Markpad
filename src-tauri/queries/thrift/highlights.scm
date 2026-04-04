@@ -1,13 +1,14 @@
 ; Variables
 
-((identifier) @variable)
+((identifier) @variable
+  (#set! "priority" 95))
 
 ; Includes
 
 [
   "include"
   "cpp_include"
-] @keyword
+] @include
 
 ; Function
 
@@ -16,17 +17,17 @@
 
 ; Fields
 
-(field (identifier) @variable.other.member)
+(field (identifier) @field)
 
 ; Parameters
 
 (function_definition
   (parameters
-    (parameter (identifier) @variable.parameter)))
+    (parameter (identifier) @parameter)))
 
 (throws
   (parameters
-    (parameter (identifier) @keyword.control.exception)))
+    (parameter (identifier) @parameter.exception)))
 
 ; Types
 
@@ -52,10 +53,14 @@
 (definition_type
   type: (identifier) @type)
 
+((identifier) @type
+  (#lua-match? @type "^[_]*[A-Z]"))
+
 ; Constants
 
 (const_definition (identifier) @constant)
-
+((identifier) @constant
+  (#lua-match? @constant "^[_A-Z][A-Z0-9_]*$"))
 (enum_definition "enum"
   . (identifier) @type
   "{" (identifier) @constant "}")
@@ -99,7 +104,7 @@
 
 [
   "throws"
-] @keyword.control.exception
+] @exception
 
 ; Keywords
 
@@ -138,7 +143,7 @@
   "xsd_optional"
 ] @keyword
 
-; Extended Keywords
+; Extended Kewords
 [
   "package"
   "performs"
@@ -147,7 +152,7 @@
 [
   "async"
   "oneway"
-] @keyword
+] @keyword.coroutine
 
 ; Qualifiers
 
@@ -163,22 +168,22 @@
   "server"
   "stateful"
   "transient"
-] @type.directive
+] @type.qualifier
 
 ; Literals
 
 (string) @string
 
-(escape_sequence) @constant.character.escape
+(escape_sequence) @string.escape
 
 (namespace_uri
-  (string) @string.special)
+  (string) @text.uri @string.special)
 
-(number) @constant.numeric.integer
+(number) @number
 
-(double) @constant.numeric.float
+(double) @float
 
-(boolean) @constant.builtin.boolean
+(boolean) @boolean
 
 ; Typedefs
 
@@ -207,5 +212,19 @@
 
 ; Comments
 
-(comment) @comment
+(comment) @comment @spell
 
+((comment) @comment.documentation
+  (#lua-match? @comment.documentation "^/[*][*][^*].*[*]/$"))
+
+((comment) @comment.documentation
+  (#lua-match? @comment.documentation "^///[^/]"))
+((comment) @comment.documentation
+  (#lua-match? @comment.documentation "^///$"))
+
+((comment) @preproc
+  (#lua-match? @preproc "#!.*"))
+
+; Errors
+
+(ERROR) @error

@@ -14,7 +14,7 @@
 (keyword_definition (name) @function)
 (test_case_definition (name) @function)
 
-(keyword_invocation (keyword) @function)
+(keyword_invocation (keyword) @function.call)
 (ellipses) @punctuation.delimiter
 
 (text_chunk) @string
@@ -27,8 +27,6 @@
 
 ; Control structures
 
-"RETURN" @keyword.control.return
-
 [
   "FOR"
   "IN"
@@ -37,23 +35,23 @@
   "IN ZIP"
   (break_statement)
   (continue_statement)
-] @keyword.control.repeat
-(for_statement "END" @keyword.control.repeat)
+] @repeat
+(for_statement "END" @repeat)
 
-"WHILE" @keyword.control.repeat
-(while_statement "END" @keyword.control.repeat)
+"WHILE" @repeat
+(while_statement "END" @repeat)
 
 [
   "IF"
   "ELSE IF"
-] @keyword.control.conditional
-(if_statement "END" @keyword.control.conditional)
-(if_statement (else_statement "ELSE" @keyword.control.conditional))
+] @conditional
+(if_statement "END" @conditional)
+(if_statement (else_statement "ELSE" @conditional))
 
 [
   "TRY"
   "EXCEPT"
   "FINALLY"
-] @keyword.control.exception
-(try_statement "END" @keyword.control.exception)
-(try_statement (else_statement "ELSE" @keyword.control.exception))
+] @exception
+(try_statement "END" @exception)
+(try_statement (else_statement "ELSE" @exception))

@@ -1,63 +1,75 @@
 [
-  "/dts-v1/"
-  "/memreserve/"
-  "/delete-node/"
-  "/delete-property/"
+    "/delete-node/"
+    "/delete-property/"
+    "/dts-v1/"
+    "/incbin/"
+    "/include/"
+    "/memreserve/"
+    "/omit-if-no-ref/"
+    "#define"
+    "#undef"
+    "#include"
+    "#if"
+    "#elif"
+    "#else"
+    "#endif"
+    "#ifdef"
+    "#ifndef"
 ] @keyword
 
 [
-  "#define"
-  "#include"
-] @keyword.directive
-
-[
-  "!"
-  "~"
-  "-"
-  "+"
-  "*"
-  "/"
-  "%"
-  "||"
-  "&&"
-  "|"
-  "^"
-  "&"
-  "=="
-  "!="
-  ">"
-  ">="
-  "<="
-  ">"
-  "<<"
-  ">>"
+    "!"
+    "~"
+    "-"
+    "+"
+    "*"
+    "/"
+    "%"
+    "||"
+    "&&"
+    "|"
+    "^"
+    "&"
+    "=="
+    "!="
+    ">"
+    ">="
+    "<="
+    ">"
+    "<<"
+    ">>"
 ] @operator
 
 [
-  ","
-  ";"
+    ","
+    ";"
 ] @punctuation.delimiter
 
 [
-  "("
-  ")"
-  "{"
-  "}"
-  "<"
-  ">"
+    "("
+    ")"
+    "{"
+    "}"
+    "<"
+    ">"
 ] @punctuation.bracket
 
-(string_literal) @string
+(call_expression
+    function: (identifier) @function)
 
-(integer_literal) @constant.numeric.integer
+(node
+    label: (identifier) @label)
+
+(property
+    label: (identifier) @label)
+
+(memory_reservation
+    label: (identifier) @label)
+
+(property
+    name: (identifier) @property)
 
 (identifier) @variable
-
-(call_expression
-  function: (identifier) @function)
-
-(labeled_item
-  label: (identifier) @label)
 
 (unit_address) @tag
 

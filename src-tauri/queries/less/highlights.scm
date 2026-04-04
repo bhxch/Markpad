@@ -1,12 +1,10 @@
-; inherits: css
-
 [
   "@import"
   "@namespace"
   "@charset"
 ] @keyword
 
-(js_comment) @comment
+(js_comment) @comment @spell
 
 (function_name) @function
 

@@ -1,22 +1,20 @@
-; See: https://docs.helix-editor.com/master/themes.html#syntax-highlighting
+; NOTE: Order of highlight queries matters, as Tree-sitter uses the first it finds.
+; NOTE: Therefore, narrow highlight queries should be placed before broad captures.
+; ---------------------------------------------------------------------------------
 
 ; attribute
 ; ---------
 
 (case_name) @attribute
 
-; comment.line
-; ------------
+; comment
+; -------
 
 [
   (singleline_comment)
+  (multiline_comment)
   (rule_descr)
-] @comment.line
-
-; comment.block
-; -------------
-
-(multiline_comment) @comment.block
+] @comment
 
 ; function.method
 ; ---------------
@@ -29,21 +27,12 @@
 
 ; Lexical
 ((identifier) @function.builtin
-  (#any-of? @function.builtin
-    "any"
-    "alnum"
-    "end"
-    "digit" "hexDigit"
-    "letter"
-    "space"
-    "lower" "upper" "caseInsensitive"
-    "listOf" "nonemptyListOf" "emptyListOf"
-    "applySyntactic")
+  (#match? @function.builtin "^(any|alnum|end|digit|hexDigit|letter|space|lower|upper|caseInsensitive|listOf|nonemptyListOf|emptyListOf|applySyntactic)$")
   (#is-not? local))
 
 ; Syntactic
 ((identifier) @function.builtin
-  (#any-of? @function.builtin "ListOf" "NonemptyListOf" "EmptyListOf")
+  (#match? @function.builtin "^(ListOf|NonemptyListOf|EmptyListOf)$")
   (#is-not? local))
 
 ; function.method (continuing)
@@ -55,7 +44,7 @@
 ; string.special
 ; --------------
 
-(escape_char) @constant.character.escape
+(escape_char) @string.special
 
 ; string
 ; ------
@@ -120,3 +109,18 @@
 
 (formals
   (identifier) @variable.parameter)
+
+; N/A or unused:
+; --------------
+; tag
+; type.builtin
+; constructor
+; embedded
+; function
+; variable.builtin
+; keyword
+; number
+; property
+; constant.builtin
+; constant
+; variable

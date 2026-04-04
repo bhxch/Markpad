@@ -1,4 +1,4 @@
-(number) @constant.numeric
+(number) @number
 
 (string) @string
 

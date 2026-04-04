@@ -1,6 +1,9 @@
+(object_reference
+  name: (identifier) @type)
+
 (invocation
   (object_reference
-    name: (identifier) @function.method))
+    name: (identifier) @function.call))
 
 [
   (keyword_gist)
@@ -10,41 +13,39 @@
   (keyword_gin)
   (keyword_brin)
   (keyword_array)
-] @function.builtin
-
-(object_reference
-  name: (identifier) @variable.other.member)
+  (keyword_object_id)
+] @function.call
 
 (relation
-  alias: (identifier) @variable.parameter)
+  alias: (identifier) @variable)
 
 (field
-  name: (identifier) @variable.other.member)
+  name: (identifier) @field)
 
 (term
-  alias: (identifier) @variable.parameter)
+  alias: (identifier) @variable)
 
 ((term
    value: (cast
-    name: (keyword_cast) @function.builtin
+    name: (keyword_cast) @function.call
     parameter: [(literal)]?)))
 
 (literal) @string
-(comment) @comment.line
-(marginalia) @comment.block
+(comment) @comment @spell
+(marginalia) @comment
 
-((literal) @constant.numeric.integer
-   (#match? @constant.numeric.integer "^[-+]?\\d+$"))
+((literal) @number
+   (#match? @number "^[-+]?%d+$"))
 
-((literal) @constant.numeric.float
-  (#match? @constant.numeric.float "^[-+]?\\d*\\.\\d*$"))
+((literal) @float
+  (#match? @float "^[-+]?%d*\.%d*$"))
 
-(parameter) @variable.parameter
+(parameter) @parameter
 
 [
  (keyword_true)
  (keyword_false)
-] @constant.builtin.boolean
+] @boolean
 
 [
  (keyword_asc)
@@ -92,14 +93,14 @@
  (keyword_jsonfile)
  (keyword_sequencefile)
  (keyword_volatile)
-] @keyword.storage.type
+] @storageclass
 
 [
  (keyword_case)
  (keyword_when)
  (keyword_then)
  (keyword_else)
-] @keyword.control.conditional
+] @conditional
 
 [
   (keyword_select)
@@ -146,6 +147,7 @@
   (keyword_constraint)
   (keyword_force)
   (keyword_use)
+  (keyword_include)
   (keyword_for)
   (keyword_if)
   (keyword_exists)
@@ -167,6 +169,7 @@
   (keyword_data)
   (keyword_type)
   (keyword_rename)
+  (keyword_refresh)
   (keyword_to)
   (keyword_schema)
   (keyword_owner)
@@ -181,6 +184,7 @@
   (keyword_transaction)
   (keyword_only)
   (keyword_like)
+  (keyword_rlike)
   (keyword_similar)
   (keyword_over)
   (keyword_change)
@@ -253,17 +257,28 @@
   (keyword_password)
   (keyword_reset)
   (keyword_role)
+  (keyword_current_role)
   (keyword_sequence)
   (keyword_start)
   (keyword_restart)
   (keyword_tablespace)
+  (keyword_split)
+  (keyword_tablets)
   (keyword_until)
   (keyword_user)
+  (keyword_current_user)
+  (keyword_session_user)
   (keyword_valid)
   (keyword_action)
   (keyword_definer)
   (keyword_invoker)
+  (keyword_enable)
+  (keyword_disable)
   (keyword_security)
+  (keyword_policy)
+  (keyword_permissive)
+  (keyword_restrictive)
+  (keyword_public)
   (keyword_extension)
   (keyword_version)
   (keyword_out)
@@ -319,6 +334,7 @@
   (keyword_storage)
   (keyword_compression)
   (keyword_duplicate)
+  (keyword_while)
 ] @keyword
 
 [
@@ -345,7 +361,7 @@
  (keyword_statistics)
  (keyword_maxvalue)
  (keyword_minvalue)
-] @keyword
+] @type.qualifier
 
 [
   (keyword_int)

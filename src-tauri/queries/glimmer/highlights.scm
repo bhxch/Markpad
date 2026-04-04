@@ -8,43 +8,42 @@
 ((tag_name) @constructor
   (#match? @constructor "^[A-Z]"))
 
-(attribute_name) @attribute
+(attribute_name) @property
 
 (string_literal) @string
-(number_literal) @constant.numeric.integer
-(boolean_literal) @constant.builtin.boolean
+(number_literal) @number
+(boolean_literal) @boolean
 
 (concat_statement) @string
 
 ; === Block Statements ===
 
 ; Highlight the brackets
-(block_statement_start) @punctuation.delimiter
-(block_statement_end) @punctuation.delimiter
+(block_statement_start) @tag.delimiter
+(block_statement_end) @tag.delimiter
 
 ; Highlight `if`/`each`/`let`
-(block_statement_start path: (identifier) @keyword.control.conditional)
-(block_statement_end path: (identifier) @keyword.control.conditional)
-((mustache_statement (identifier) @keyword.control.conditional)
- (#eq? @keyword.control.conditional "else"))
+(block_statement_start path: (identifier) @conditional)
+(block_statement_end path: (identifier) @conditional)
+((mustache_statement (identifier) @conditional)
+ (#match? @conditional "else"))
 
 ; == Mustache Statements ===
 
-; Highlight the whole statement, to color brackets and separators
-(mustache_statement) @punctuation.delimiter
+; Hightlight the whole statement, to color brackets and separators
+(mustache_statement) @tag.delimiter
 
 ; An identifier in a mustache expression is a variable
 ((mustache_statement [
   (path_expression (identifier) @variable)
   (identifier) @variable
   ])
-  (#not-any-of? @variable "yield" "outlet" "this" "else"))
+  (#not-match? @variable "yield|outlet|this|else"))
 ; As are arguments in a block statement
-((block_statement_start argument: [
+(block_statement_start argument: [
   (path_expression (identifier) @variable)
   (identifier) @variable
   ])
- (#not-eq? @variable "this"))
 ; As is an identifier in a block param
 (block_params (identifier) @variable)
 ; As are helper arguments
@@ -52,37 +51,33 @@
   (path_expression (identifier) @variable)
   (identifier) @variable
   ])
-  (#not-eq? @variable "this"))
+  (#not-match? @variable "this"))
 ; `this` should be highlighted as a built-in variable
 ((identifier) @variable.builtin
-  (#eq? @variable.builtin "this"))
+  (#match? @variable.builtin "this"))
 
 ; If the identifier is just "yield" or "outlet", it's a keyword
-((mustache_statement (identifier) @keyword.control.return)
-  (#any-of? @keyword.control.return "yield" "outlet"))
+((mustache_statement (identifier) @keyword)
+  (#match? @keyword "yield|outlet"))
 
 ; Helpers are functions
 ((helper_invocation helper: [
   (path_expression (identifier) @function)
   (identifier) @function
   ])
-  (#not-any-of? @function "if" "yield"))
+  (#not-match? @function "if|yield"))
+((helper_invocation helper: (identifier) @conditional)
+  (#match? @conditional "if"))
+((helper_invocation helper: (identifier) @keyword)
+  (#match? @keyword "yield"))
 
-((helper_invocation helper: (identifier) @keyword.control.conditional)
-  (#any-of? @keyword.control.conditional "if" "yield"))
-
-(hash_pair key: (identifier) @variable)
-(hash_pair value: (identifier) @variable)
-(hash_pair [
-  (path_expression (identifier) @variable)
-  (identifier) @variable
-  ])
+(hash_pair key: (identifier) @property)
 
 (comment_statement) @comment
 
 (attribute_node "=" @operator)
 
-(block_params "as" @keyword.control)
+(block_params "as" @keyword)
 (block_params "|" @operator)
 
 [
@@ -90,5 +85,4 @@
   ">"
   "</"
   "/>"
-] @punctuation.delimiter
-
+] @tag.delimiter

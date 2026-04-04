@@ -153,15 +153,15 @@
 ;; Instances
 ;; Module names
 (module_instantiation
- instance_type: (simple_identifier) @namespace)
+ instance_type: (simple_identifier) @module)
 (interface_instantiation
- instance_type: (simple_identifier) @namespace)
+ instance_type: (simple_identifier) @module)
 (program_instantiation
- instance_type: (simple_identifier) @namespace)
+ instance_type: (simple_identifier) @module)
 (checker_instantiation
- instance_type: (simple_identifier) @namespace)
+ instance_type: (simple_identifier) @module)
 (udp_instantiation
- instance_type: (simple_identifier) @namespace)
+ instance_type: (simple_identifier) @module)
 (gate_instantiation
  [(cmos_switchtype)
   (mos_switchtype)
@@ -171,7 +171,7 @@
   (pass_en_switchtype)
   (pass_switchtype)
   "pulldown" "pullup"]
- @namespace)
+ @module)
 ;; Instance names
 (name_of_instance
  instance_name: (simple_identifier) @constant)
@@ -203,16 +203,16 @@
 
 ;; Numbers
 (hex_number
- size: (unsigned_number) @constant.numeric
+ size: (unsigned_number) @number
  base: (hex_base) @punctuation.delimiter)
 (decimal_number
- size: (unsigned_number) @constant.numeric
+ size: (unsigned_number) @number
  base: (decimal_base) @punctuation.delimiter)
 (octal_number
- size: (unsigned_number) @constant.numeric
+ size: (unsigned_number) @number
  base: (octal_base) @punctuation.delimiter)
 (binary_number
- size: (unsigned_number) @constant.numeric
+ size: (unsigned_number) @number
  base: (binary_base) @punctuation.delimiter)
 ;; Same as before but without the width (width extension)
 (hex_number
@@ -227,23 +227,23 @@
 
 ;; Arrays
 (unpacked_dimension
- [(constant_expression) (constant_range)] @constant.numeric)
+ [(constant_expression) (constant_range)] @number)
 (packed_dimension
- (constant_range) @constant.numeric)
+ (constant_range) @number)
 (select
- (constant_range) @constant.numeric)
+ (constant_range) @number)
 (constant_select
  (constant_range
-  (constant_expression) @constant.numeric))
+  (constant_expression) @number))
 (constant_bit_select
- (constant_expression) @constant.numeric)
+ (constant_expression) @number)
 (bit_select
- (expression) @constant.numeric)
+ (expression) @number)
 (indexed_range
- (expression) @constant.numeric
- (constant_expression) @constant.numeric)
+ (expression) @number
+ (constant_expression) @number)
 (constant_indexed_range
- (constant_expression) @constant.numeric)
+ (constant_expression) @number)
 (value_range ; inside {[min_range:max_range]}, place here to apply override
  (expression) @constant)
 (dynamic_array_new
@@ -319,3 +319,7 @@
   "$fatal" "$error" "$warning" "$info" ; (severity_system_task)
   "$stop" "$finish" "$exit"])          ; (simulation_control_task)
 @function.builtin
+
+
+;; Errors
+(ERROR) @error

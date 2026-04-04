@@ -1,7 +1,7 @@
 (identifier) @variable
 (string_literal) @string
-(number_literal) @constant.numeric
-(boolean_literal) @constant.builtin.boolean
+(number_literal) @number
+(boolean_literal) @boolean
 (comment) @comment
 
 [
@@ -23,13 +23,13 @@
  "pointer"
  "type"
  "value"
- ] @keyword.storage.modifier
+ ] @type
 
 [
  "contains"
  "private"
  "public"
- ] @keyword.directive
+ ] @include
 
 [
  (none)
@@ -54,7 +54,6 @@
  "class"
  "continue"
  "cycle"
- "end"
  "endenum"
  "endinterface"
  "endmodule"
@@ -86,7 +85,7 @@
  "write"
  ] @keyword
 
-"return" @keyword.control.return
+"return" @keyword.return
 
 [
  "else"
@@ -97,14 +96,14 @@
  "if"
  "then"
  "where"
- ] @keyword.control.conditional
+ ] @conditional
 
 [
  "do"
  "enddo"
  "forall"
  "while"
- ] @keyword.control.repeat
+ ] @repeat
 
 [
  "*"
@@ -149,21 +148,8 @@
  "%"
  ] @punctuation.delimiter
 
-[
-  "defined"
-  "#define"
-  "#elif"
-  "#else"
-  "#endif"
-  "#if"
-  "#ifdef"
-  "#ifndef"
-  "#include"
- (preproc_directive)
-] @keyword.directive
-
 (parameters
-  (identifier) @variable.parameter)
+  (identifier) @parameter)
 
 (program_statement
   (name) @namespace)
@@ -208,7 +194,7 @@
   name: (identifier) @keyword)
 
 (derived_type_member_expression
-  (type_member) @variable.other.member)
+  (type_member) @property)
 
 (call_expression
-  (identifier) @function)
+  (identifier) @function.call)

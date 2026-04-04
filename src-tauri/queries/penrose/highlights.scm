@@ -2,10 +2,10 @@
 (comment) @comment
 
 ; Literals
-(number) @constant.numeric
+(number) @number
 (string) @string
 (latex) @string.special
-(boolean) @constant.builtin.boolean
+(boolean) @boolean
 
 ; Identifiers
 ((identifier) @keyword
@@ -184,8 +184,8 @@
 (block "}" @punctuation.bracket)
 
 ; Paths and properties
-(path (identifier) @variable.other.member)
-(path (escaped_identifier) @variable.other.member)
+(path (identifier) @variable.member)
+(path (escaped_identifier) @variable.member)
 
 ; Functions and calls
 (call_expression (identifier) @function)
