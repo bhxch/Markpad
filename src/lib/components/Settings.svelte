@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { getVersion } from '@tauri-apps/api/app';
-	import { settings, DEFAULT_FONTS, type OSType } from '../stores/settings.svelte.js';
+	import { settings, DEFAULT_FONTS, type OSType, type LanguageCode } from '../stores/settings.svelte.js';
 	import { DIAGRAM_TYPES, type DiagramRenderMode } from '../diagrams';
-	import { fade, scale } from 'svelte/transition';
+	import { fade, scale, fly } from 'svelte/transition';
 	import { i18n, type Locale } from '../i18n';
 
 	// Reactive translations
@@ -24,6 +24,18 @@
 	} = $props<{ show?: boolean; theme?: 'system' | 'dark' | 'light'; onSetTheme?: (t: 'system' | 'dark' | 'light') => void; onclose: () => void }>();
 
 	let activeCategory = $state<'editor' | 'preview' | 'appearance' | 'diagrams'>('editor');
+	let highlightMenuOpen = $state(false);
+	const highlightColors = [
+		{ value: 'default', color: 'var(--color-accent-fg)' },
+		{ value: 'yellow', color: '#ffd000' },
+		{ value: 'orange', color: '#ff8c00' },
+		{ value: 'red', color: '#ff3c3c' },
+		{ value: 'pink', color: '#ff69b4' },
+		{ value: 'purple', color: '#a46cf4' },
+		{ value: 'blue', color: '#438af3' },
+		{ value: 'cyan', color: '#2bb9b2' },
+		{ value: 'green', color: '#4db158' }
+	];
 	let systemFonts = $state<string[]>([]);
 	let loaded = $state(false);
 	let settingsModal = $state<HTMLDivElement>();
@@ -31,6 +43,17 @@
 	let appVersion = $state<string>('');
 	let osType = $state<OSType>('unknown');
 	let defaultFonts = $derived(DEFAULT_FONTS[osType] || DEFAULT_FONTS.unknown);
+	let savedVscodeThemes = $state<string[]>([]);
+	let themeImportUrl = $state('');
+	let importingTheme = $state(false);
+
+	async function loadVscodeThemes() {
+		try {
+			savedVscodeThemes = await invoke('get_saved_vscode_themes');
+		} catch (e) {
+			console.error('Failed to load vscode themes:', e);
+		}
+	}
 
 	async function loadFonts() {
 		if (loaded) return;
@@ -58,11 +81,12 @@
 		if (show) {
 			loadFonts();
 			if (!appVersion) {
-				getVersion()
-					.then((v) => (appVersion = v))
-					.catch(console.error);
+			getVersion()
+			.then((v) => (appVersion = v))
+			.catch(console.error);
 			}
-			previousActiveElement = document.activeElement as HTMLElement;
+			loadVscodeThemes();
+				previousActiveElement = document.activeElement as HTMLElement;
 			setTimeout(() => {
 				const firstFocusable = settingsModal?.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') as HTMLElement | null;
 				if (firstFocusable) {
@@ -75,6 +99,32 @@
 			previousActiveElement.focus();
 		}
 	});
+
+	async function importVscodeTheme() {
+		if (!themeImportUrl) return;
+		importingTheme = true;
+		try {
+			const name = await invoke('fetch_vscode_theme', { url: themeImportUrl });
+			themeImportUrl = '';
+			await loadVscodeThemes();
+			onSetTheme?.(`vscode:${name}` as any);
+		} catch (e) {
+			console.error('Failed to import theme:', e);
+			alert(`Failed to import theme: ${e}`);
+		} finally {
+			importingTheme = false;
+		}
+	}
+
+	async function deleteTheme(name: string) {
+		try {
+			await invoke('delete_vscode_theme', { name });
+			if (theme === `vscode:${name}`) onSetTheme?.('system');
+			await loadVscodeThemes();
+		} catch (e) {
+			console.error('Failed to delete theme:', e);
+		}
+	}
 
 	function handleBackdropClick(e: MouseEvent) {
 		if (e.target === e.currentTarget) {
@@ -322,14 +372,54 @@
 							</div>
 
 							<div class="setting-item">
-								<label for="editor-word-count">Word Count</label>
+							<label for="editor-word-count">Word Count</label>
+							<label class="toggle">
+							<input id="editor-word-count" type="checkbox" checked={settings.wordCount} onchange={() => settings.toggleWordCount()} />
+							<span class="toggle-slider"></span>
+							</label>
+							</div>
+
+							  <div class="setting-item">
+							<label for="editor-show-whitespace">Show Whitespace</label>
+							<label class="toggle">
+								<input id="editor-show-whitespace" type="checkbox" checked={settings.showWhitespace} onchange={() => settings.toggleShowWhitespace()} />
+								<span class="toggle-slider"></span>
+							</label>
+						</div>
+
+						<div class="setting-item">
+							<label for="editor-line-highlight">Line Highlight</label>
+							<label class="toggle">
+								<input id="editor-line-highlight" type="checkbox" checked={settings.renderLineHighlight === 'line'} onchange={() => settings.toggleLineHighlight()} />
+								<span class="toggle-slider"></span>
+							</label>
+						</div>
+
+						<div class="setting-item">
+							<label for="image-directory">Image Directory</label>
+							<input
+								type="text"
+								id="image-directory"
+								class="text-input"
+								style="width: 120px;"
+								bind:value={settings.imageDirectory}
+								placeholder="img"
+							/>
+							<span class="slider-value" style="margin-left: 8px;">Default: img</span>
+						</div>
+
+						{#if settings.osType === 'macos'}
+							<div class="setting-item">
+								<label for="macos-image-scaling">Scale macOS Screenshots</label>
 								<label class="toggle">
-									<input id="editor-word-count" type="checkbox" checked={settings.wordCount} onchange={() => settings.toggleWordCount()} />
+									<input id="macos-image-scaling" type="checkbox" checked={settings.macosImageScaling} onchange={() => settings.toggleMacosImageScaling()} />
 									<span class="toggle-slider"></span>
 								</label>
+								<span class="slider-value" style="margin-left: 8px;">Reduce size by 50%</span>
 							</div>
-						</div>
-					{:else if activeCategory === 'preview'}
+						{/if}
+					</div>
+				{:else if activeCategory === 'preview'}
 						<div class="settings-group">
 							<div class="settings-group-header">
 								<h2>Preview Settings</h2>
@@ -424,70 +514,137 @@
 							<h2>Appearance Settings</h2>
 
 							<div class="setting-item">
-								<label for="appearance-language">Language / 语言</label>
-								<div class="select-wrapper">
-									<select id="appearance-language" value={locale} onchange={(e) => setLocale(e.currentTarget.value as Locale)}>
-										<option value="zh">中文</option>
-										<option value="en">English</option>
-									</select>
-									<svg
-										class="select-arrow"
-										width="12"
+							<label for="appearance-language">Language / 语言</label>
+							<div class="select-wrapper">
+							<select id="appearance-language" value={settings.language} onchange={(e) => settings.setLanguage(e.currentTarget.value as LanguageCode)}>
+							{#each settings.getSupportedLanguages() as lang}
+							 <option value={lang.code}>{lang.nativeName}</option>
+							 {/each}
+							</select>
+							<svg
+							class="select-arrow"
+							width="12"
+							height="12"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							  stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+							 </div>
+						</div>
+
+							<div class="setting-item" style="align-items: flex-start; padding-top: 16px;">
+							<label for="appearance-theme" style="margin-top: 6px;">Theme</label>
+							<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+							<div class="select-wrapper">
+							<select id="appearance-theme" value={theme} onchange={(e) => onSetTheme?.(e.currentTarget.value as any)}>
+							 <option value="system">System</option>
+							  <option value="light">Light</option>
+							  <option value="dark">Dark</option>
+							 {#if savedVscodeThemes.length > 0}
+							  <optgroup label="VSCode Themes">
+							   {#each savedVscodeThemes as themeOption}
+							    <option value={`vscode:${themeOption}`}>{themeOption}</option>
+							   {/each}
+							  </optgroup>
+							 {/if}
+							</select>
+							<svg
+							   class="select-arrow"
+							    width="12"
 										height="12"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-								</div>
+							    viewBox="0 0 24 24"
+							   fill="none"
+							   stroke="currentColor"
+							  stroke-width="2"
+							  stroke-linecap="round"
+							   stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+							  </div>
+								{#if theme?.startsWith('vscode:')}
+							   <button class="reset-text-btn" style="color: var(--color-danger-fg); font-size: 12px; padding: 0;" onclick={() => deleteTheme(theme.replace('vscode:', ''))}>
+							   Delete theme
+							  </button>
+							{/if}
+							</div>
 							</div>
 
-							<div class="setting-item">
-								<label for="appearance-theme">Theme</label>
-								<div class="select-wrapper">
-									<select id="appearance-theme" value={theme} onchange={(e) => onSetTheme?.(e.currentTarget.value as any)}>
-										<option value="system">System</option>
-										<option value="light">Light</option>
-										<option value="dark">Dark</option>
-									</select>
-									<svg
-										class="select-arrow"
-										width="12"
-										height="12"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-								</div>
+						<div class="setting-item" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+							 <div style="display: flex; justify-content: space-between; width: 100%;">
+							 <label for="theme-import">Import VSCode Theme</label>
+							 <button
+							 class="reset-text-btn"
+							 onclick={() =>
+							   import('@tauri-apps/plugin-opener')
+							     .then((m) => m.openUrl('https://vscodethemes.com/'))
+							     .catch(() => window.open('https://vscodethemes.com/', '_blank'))}
+								>
+									Browse themes
+								</button>
 							</div>
-
-							<div class="setting-item">
-								<label for="appearance-tabs">Show Tabs</label>
-								<label class="toggle">
-									<input id="appearance-tabs" type="checkbox" checked={settings.showTabs} onchange={() => settings.toggleTabs()} />
-									<span class="toggle-slider"></span>
-								</label>
-							</div>
-
-							<div class="setting-item">
-								<label for="appearance-line-highlight">Line Highlight</label>
-								<label class="toggle">
-									<input id="appearance-line-highlight" type="checkbox" checked={settings.renderLineHighlight === 'line'} onchange={() => settings.toggleLineHighlight()} />
-									<span class="toggle-slider"></span>
-								</label>
-							</div>
-
-							<div class="setting-item">
-								<label for="appearance-zen-mode">Zen Mode</label>
-								<label class="toggle">
-									<input id="appearance-zen-mode" type="checkbox" checked={settings.zenMode} onchange={() => settings.toggleZenMode()} />
-									<span class="toggle-slider"></span>
-								</label>
+							<div style="display: flex; gap: 8px; width: 100%;">
+								<input
+									type="text"
+									id="theme-import"
+									class="text-input"
+									style="flex: 1;"
+									placeholder="https://vscodethemes.com/e/..."
+									bind:value={themeImportUrl}
+									onkeydown={e => e.key === 'Enter' && importVscodeTheme()}
+								/>
+								<button class="import-btn" onclick={importVscodeTheme} disabled={importingTheme || !themeImportUrl}>
+									{importingTheme ? 'Importing...' : 'Import'}
+								</button>
 							</div>
 						</div>
+
+						<div class="setting-item">
+							<label for="appearance-tabs">Show Tabs</label>
+							<label class="toggle">
+								<input id="appearance-tabs" type="checkbox" checked={settings.showTabs} onchange={() => settings.toggleTabs()} />
+								<span class="toggle-slider"></span>
+							</label>
+						</div>
+
+						<div class="setting-item">
+							<label for="appearance-restore-state">Restore State on Reopen</label>
+							<label class="toggle">
+								<input id="appearance-restore-state" type="checkbox" checked={settings.restoreStateOnReopen} onchange={() => settings.toggleRestoreStateOnReopen()} />
+								<span class="toggle-slider"></span>
+							</label>
+						</div>
+
+						<div class="setting-item">
+							<label for="appearance-start-editor">Start in Editor Mode</label>
+							<label class="toggle">
+								<input id="appearance-start-editor" type="checkbox" checked={settings.startInEditor} onchange={() => settings.toggleStartInEditor()} />
+								<span class="toggle-slider"></span>
+							</label>
+						</div>
+						<div class="setting-item">
+							<label for="appearance-toc">Show Table of Contents</label>
+							<label class="toggle">
+								<input id="appearance-toc" type="checkbox" checked={settings.showToc} onchange={() => settings.toggleToc()} />
+								<span class="toggle-slider"></span>
+							</label>
+						</div>
+
+						<div class="setting-item">
+							<label for="appearance-line-highlight">Line Highlight</label>
+							<label class="toggle">
+								<input id="appearance-line-highlight" type="checkbox" checked={settings.renderLineHighlight === 'line'} onchange={() => settings.toggleLineHighlight()} />
+								<span class="toggle-slider"></span>
+							</label>
+						</div>
+
+						<div class="setting-item">
+							<label for="appearance-zen-mode">Zen Mode</label>
+							<label class="toggle">
+								<input id="appearance-zen-mode" type="checkbox" checked={settings.zenMode} onchange={() => settings.toggleZenMode()} />
+								<span class="toggle-slider"></span>
+							</label>
+						</div>
+					</div>
 					{:else if activeCategory === 'diagrams'}
 						<div class="settings-group">
 							<h2>Diagram Render Settings</h2>
@@ -934,10 +1091,31 @@
 	}
 
 	.spin-btn:active {
-		background: var(--color-border-muted);
+	background: var(--color-border-muted);
 	}
 
-	.spin-btn.minus {
+	.import-btn {
+			background: var(--color-canvas-subtle);
+			border: 1px solid var(--color-border-default);
+			border-radius: 6px;
+			color: var(--color-fg-default);
+			padding: 6px 12px;
+			font-size: 13px;
+			cursor: pointer;
+			outline: none;
+			transition: all 0.1s;
+		}
+
+		.import-btn:hover:not(:disabled) {
+			background: var(--color-border-default);
+		}
+
+		.import-btn:disabled {
+			opacity: 0.5;
+			cursor: not-allowed;
+		}
+
+		.spin-btn.minus {
 		border-right: 1px solid var(--color-border-default);
 	}
 

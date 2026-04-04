@@ -345,7 +345,12 @@ body {
 
 /* Floating Scrollbar */
 ::-webkit-scrollbar {
-	width: 12px;
+	width: 8px;
+	height: 8px;
+}
+
+::-webkit-scrollbar-corner {
+	background: transparent;
 }
 
 ::-webkit-scrollbar-track {
@@ -353,14 +358,14 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-	background-color: rgba(120, 120, 120, 0.4);
+	background-color: rgba(120, 120, 120, 0.2);
 	border-radius: 10px;
-	border: 3px solid transparent;
+	border: 2px solid transparent;
 	background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-	background-color: rgba(120, 120, 120, 0.6);
+	background-color: rgba(120, 120, 120, 0.4);
 }
 
 .markdown-body {
@@ -511,6 +516,7 @@ body {
 .markdown-body [type="reset"],
 .markdown-body [type="submit"] {
 	-webkit-appearance: button;
+	appearance: button;
 }
 
 .markdown-body [type="button"]::-moz-focus-inner,
@@ -539,6 +545,7 @@ body {
 
 .markdown-body [type="search"] {
 	-webkit-appearance: textfield;
+	appearance: textfield;
 	outline-offset: -2px;
 }
 
@@ -644,12 +651,87 @@ body {
 .markdown-body h3,
 .markdown-body h4,
 .markdown-body h5,
-.markdown-body h6 {
+.markdown-body h6,
+.foldable-header {
 	margin-top: 24px;
 	margin-bottom: 16px;
 	font-weight: 600;
 	line-height: 1.25;
+	display: flex;
+	align-items: flex-start;
+	position: relative;
 }
+
+.markdown-body .header-fold-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.2em;
+	height: 1.2em;
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.2s ease, transform 0.2s ease;
+	border-radius: 4px;
+	flex-shrink: 0;
+	position: absolute;
+	right: 100%;
+	margin-right: 8px;
+	top: 0.1em;
+	user-select: none;
+	-webkit-user-select: none;
+	z-index: 10;
+}
+.foldable-header {
+	position: relative;
+	overflow: visible !important;
+}
+.markdown-body .foldable-header:hover .header-fold-icon,
+.markdown-body .is-collapsed .header-fold-icon {
+	opacity: 0.5; /* show on hover or when collapsed */
+}
+.markdown-body .header-fold-icon:hover {
+	opacity: 1 !important;
+}
+.markdown-body .is-collapsed .header-fold-icon {
+	transform: rotate(-90deg);
+}
+.is-collapsed + .folded-hidden,
+.folded-hidden {
+	display: none !important;
+}
+
+.foldable-content-wrapper, .markdown-alert-content {
+	display: grid;
+	grid-template-rows: 1fr;
+	transition: grid-template-rows 0.25s ease, opacity 0.25s ease;
+	opacity: 1;
+	overflow: visible; /* show carets in the gutter when expanded */
+}
+.foldable-content-wrapper.is-collapsed, .markdown-alert-content.is-collapsed {
+	grid-template-rows: 0fr;
+	opacity: 0;
+	overflow: hidden; /* must hide when collapsed */
+}
+.content-inner {
+	min-height: 0;
+	overflow: visible; /* show carets in the gutter when expanded */
+}
+.is-collapsed .content-inner {
+	overflow: hidden;
+}
+
+.callout-toggle {
+	cursor: pointer;
+}
+.callout-fold-icon {
+	transition: transform 0.2s ease;
+	margin-left: auto;
+	flex-shrink: 0;
+}
+.callout-foldable.is-collapsed .callout-fold-icon {
+	transform: rotate(-90deg);
+}
+
 
 .markdown-body h2 {
 	font-weight: 600;
@@ -796,7 +878,26 @@ body {
 
 .markdown-body .highlight pre::-webkit-scrollbar,
 .markdown-body pre::-webkit-scrollbar {
-	height: 6px;
+	height: 8px;
+	width: 8px;
+}
+
+.markdown-body .highlight pre::-webkit-scrollbar-track,
+.markdown-body pre::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.markdown-body .highlight pre::-webkit-scrollbar-thumb,
+.markdown-body pre::-webkit-scrollbar-thumb {
+	background-color: rgba(120, 120, 120, 0.2);
+	border-radius: 10px;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+
+.markdown-body .highlight pre::-webkit-scrollbar-thumb:hover,
+.markdown-body pre::-webkit-scrollbar-thumb:hover {
+	background-color: rgba(120, 120, 120, 0.4);
 }
 
 .markdown-body pre code,
@@ -892,8 +993,9 @@ body {
 }
 
 .markdown-body .markdown-alert {
-	padding: 0.5rem 1rem;
-	margin-bottom: 1rem;
+	padding: 0;
+	margin-bottom: 0.5rem;
+	
 	color: inherit;
 	border-left: 0.25rem solid var(--color-border-default);
 	border-radius: 8px;
@@ -904,22 +1006,65 @@ body {
 	display: flex;
 	align-items: center;
 	font-weight: 600;
-	line-height: 1;
-	margin: 0.3rem 0 0.8rem 0;
+	line-height: inherit;
+	margin: 0;
+	padding: 8px 16px 2px 16px;
 }
 
-.markdown-body .markdown-alert-title svg {
+.markdown-body .markdown-alert.callout-title-only {
+	display: flex;
+	align-items: center;
+}
+.markdown-body .markdown-alert.callout-title-only > .markdown-alert-title {
+	padding-bottom: 8px !important;
+}
+
+.markdown-body details.markdown-alert summary.markdown-alert-title {
+	list-style: none;
+	cursor: pointer;
+}
+
+.markdown-body details.markdown-alert summary.markdown-alert-title::-webkit-details-marker {
+	display: none;
+}
+
+.markdown-body .markdown-alert-title svg:not(.callout-fold-icon) {
 	margin-right: 0.5rem;
 	display: inline-block;
 	flex-shrink: 0;
 	vertical-align: middle;
 }
 
+.markdown-body .callout-fold-icon {
+	margin-left: auto;
+	transition: transform 0.2s ease;
+	opacity: 0.5;
+}
+
+.markdown-body details.markdown-alert[open] .callout-fold-icon {
+	transform: rotate(90deg);
+}
+
+.markdown-body .callout-title-inner {
+	flex: 1;
+}
+
+.markdown-body .markdown-alert-content {
+	padding: 0 16px 0 16px;
+}
+.markdown-body .markdown-alert-content > *:first-child,
+.markdown-body .content-inner > *:first-child {
+	margin-top: 0 !important;
+}
+.markdown-body .markdown-alert-content > *:last-child {
+	margin-bottom: 0 !important;
+}
+
 .markdown-body .markdown-alert-note {
 	border-left-color: var(--color-accent-fg);
 }
 
-.markdown-body .markdown-alert-note .markdown-alert-title {
+.markdown-body .markdown-alert-note > .markdown-alert-title {
 	color: var(--color-accent-fg);
 }
 
@@ -929,7 +1074,7 @@ body {
 	border-left-color: var(--color-success-fg);
 }
 
-.markdown-body .markdown-alert-tip .markdown-alert-title {
+.markdown-body .markdown-alert-tip > .markdown-alert-title {
 	color: var(--color-success-fg);
 }
 
@@ -939,7 +1084,7 @@ body {
 	border-left-color: var(--color-done-fg);
 }
 
-.markdown-body .markdown-alert-important .markdown-alert-title {
+.markdown-body .markdown-alert-important > .markdown-alert-title {
 	color: var(--color-done-fg);
 }
 
@@ -949,7 +1094,7 @@ body {
 	border-left-color: var(--color-attention-fg);
 }
 
-.markdown-body .markdown-alert-warning .markdown-alert-title {
+.markdown-body .markdown-alert-warning > .markdown-alert-title {
 	color: var(--color-attention-fg);
 }
 
@@ -959,7 +1104,7 @@ body {
 	border-left-color: var(--color-danger-fg);
 }
 
-.markdown-body .markdown-alert-caution .markdown-alert-title {
+.markdown-body .markdown-alert-caution > .markdown-alert-title {
 	color: var(--color-danger-fg);
 }
 
@@ -979,7 +1124,9 @@ body {
 
 .code-block-shell {
 	position: relative;
+	margin-bottom: 16px;
 }
+
 
 .lang-label {
 	position: absolute;
@@ -1343,3 +1490,290 @@ body {
 	/* Marker class for tree-sitter highlighted code */
 }
 
+/* print styles for pdf export */
+@media print {
+	@page {
+		margin: 0.75in;
+		size: auto;
+	}
+
+	.custom-title-bar,
+	.tab-area,
+	.window-controls-left,
+	.window-controls-right,
+	.title-actions-container,
+	.tooltip,
+	.custom-tooltip,
+	.drag-overlay,
+	.pane.editor-pane,
+	.split-bar,
+	.home-menu-container,
+	.kebab-btn,
+	.title-action-btn,
+	.theme-dropdown-container,
+	.control-btn,
+	.lang-label {
+		display: none !important;
+	}
+
+	html,
+	body,
+	#app,
+	.markdown-container,
+	.layout-container,
+	.pane.viewer-pane {
+		background: white !important;
+		overflow: visible !important;
+		height: auto !important;
+		min-height: auto !important;
+		position: static !important;
+		margin: 0 !important;
+		padding: 0 !important;
+		width: 100% !important;
+		border-radius: 0 !important;
+	}
+
+	.markdown-body {
+		padding: 0 !important;
+		margin: 0 !important;
+		overflow: visible !important;
+		height: auto !important;
+		min-height: auto !important;
+		max-width: 100% !important;
+		color: #000 !important;
+		background: white !important;
+		position: static !important;
+	}
+
+	.markdown-body pre {
+		white-space: pre-wrap !important;
+		word-break: break-word !important;
+		overflow-x: visible !important;
+	}
+
+	.markdown-container {
+		zoom: 1 !important;
+	}
+}
+
+/* ===== Extended markdown features ===== */
+
+/* ==highlight== */
+.markdown-body mark {
+	background-color: rgba(255, 213, 0, 0.35);
+	color: inherit;
+	border-radius: 2px;
+	padding: 0 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+	.markdown-body mark {
+		background-color: rgba(255, 213, 0, 0.22);
+	}
+}
+
+[data-theme="dark"] .markdown-body mark {
+	background-color: rgba(255, 213, 0, 0.22);
+}
+
+.markdown-body a.block-id-anchor {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	font-size: 10.5px;
+	font-family: var(--win-font, system-ui);
+	font-weight: 500;
+	padding: 1px 6px 1px 4px;
+	border-radius: 10px;
+	border: 1px solid var(--color-border-default);
+	background: var(--color-neutral-muted);
+	color: var(--color-fg-muted);
+	text-decoration: none !important;
+	vertical-align: middle;
+	cursor: default;
+	pointer-events: none;
+	user-select: none;
+	letter-spacing: 0.01em;
+	margin-left: 6px;
+	line-height: 1.6;
+	opacity: 0.7;
+	transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+.markdown-body a.block-id-anchor::before {
+	content: '';
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	flex-shrink: 0;
+	background: currentColor;
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'/%3E%3C/svg%3E");
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'/%3E%3C/svg%3E");
+	-webkit-mask-size: contain;
+	mask-size: contain;
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
+	opacity: 0.8;
+}
+
+.markdown-body a.block-id-anchor::after {
+	content: attr(data-label);
+}
+
+.markdown-body .toc-target-active {
+	background-color: rgba(67, 144, 252, 0.18);
+	transition: background-color 0.2s ease;
+}
+
+.markdown-body a.block-id-anchor.toc-target-active {
+	background-color: var(--color-accent-emphasis);
+	color: var(--color-fg-on-emphasis);
+	opacity: 1;
+	border-color: var(--color-accent-emphasis);
+}
+
+.markdown-body a.block-id-anchor.toc-target-active::before {
+	opacity: 1;
+}
+
+.markdown-body ul.contains-task-list,
+.markdown-body ul li.task-list-item {
+	list-style: none;
+}
+
+.markdown-body ul li.task-list-item,
+.markdown-body .task-list-item {
+	padding-left: 0;
+	margin-left: -1.5em;
+	display: flex;
+	align-items: baseline;
+	gap: 0.5em;
+}
+
+.markdown-body input[data-task-checkbox] {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 15px;
+	height: 15px;
+	min-width: 15px;
+	border: 1.5px solid var(--color-border-default);
+	border-radius: 3px;
+	background: transparent;
+	cursor: pointer;
+	position: relative;
+	top: 2px;
+	flex-shrink: 0;
+	transition: background-color 0.1s ease, border-color 0.1s ease;
+}
+
+.markdown-body input[data-task-checkbox]:hover {
+	border-color: var(--color-accent-fg);
+}
+
+.markdown-body input[data-task-checkbox]:checked {
+	background-color: var(--color-accent-fg);
+	border-color: var(--color-accent-fg);
+}
+
+.markdown-body input[data-task-checkbox]:checked::after {
+	content: '';
+	display: block;
+	position: absolute;
+	top: 1px;
+	left: 4px;
+	width: 4px;
+	height: 7px;
+	border: 2px solid white;
+	border-top: none;
+	border-left: none;
+	transform: rotate(45deg);
+}
+
+/* strike-through completed task text */
+.markdown-body li.task-done {
+	text-decoration: line-through;
+	text-decoration-color: var(--color-fg-muted);
+}
+
+.markdown-body li.task-done .task-text,
+.markdown-body li.task-done p,
+.markdown-body li.task-done > *:not(input):not(ul):not(ol),
+.markdown-body li.task-done * {
+	text-decoration: line-through;
+	opacity: 0.65;
+}
+
+/* custom highlight colors via --highlight-color variable injected from settings */
+.markdown-body mark {
+	background-color: var(--highlight-color, rgba(255, 208, 0, 0.4));
+	color: inherit;
+	border-radius: 2px;
+	padding: 0 3px;
+}
+
+/* :has fallback for reload / initial state */
+.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) {
+	text-decoration: line-through;
+	text-decoration-color: var(--color-fg-muted);
+}
+
+.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) .task-text,
+.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) p,
+.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) > *:not(input):not(ul):not(ol),
+.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) * {
+	text-decoration: line-through;
+	opacity: 0.65;
+}
+
+/* restore opacity/decoration for certain safe elements like ul/ol/checkboxes/links */
+.markdown-body li.task-done input[data-task-checkbox],
+.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) input[data-task-checkbox] {
+	text-decoration: none !important;
+	opacity: 1 !important;
+}
+
+.markdown-body li.task-done ul,
+.markdown-body li.task-done ol,
+.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) ul,
+.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) ol {
+	text-decoration: none;
+	opacity: 1;
+}
+
+.markdown-body .footnote-backref,
+.markdown-body a[href^="#fnref-"],
+.markdown-body a[data-footnote-backref] {
+	font-size: 0;
+	display: inline-flex;
+	align-items: center;
+	vertical-align: middle;
+	margin-left: 4px;
+}
+
+.markdown-body .footnote-backref::before,
+.markdown-body a[href^="#fnref-"]::before,
+.markdown-body a[data-footnote-backref]::before {
+	content: '';
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	background: currentColor;
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 14 4 9 9 4'%3E%3C/polyline%3E%3Cpath d='M20 20v-7a4 4 0 0 0-4-4H4'%3E%3C/path%3E%3C/svg%3E");
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 14 4 9 9 4'%3E%3C/polyline%3E%3Cpath d='M20 20v-7a4 4 0 0 0-4-4H4'%3E%3C/path%3E%3C/svg%3E");
+	-webkit-mask-size: contain;
+	mask-size: contain;
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
+	opacity: 0.5;
+}
+
+.markdown-body [data-footnote-ref] a,
+.markdown-body sup a[href^="#fn-"] {
+	text-decoration: none;
+	font-weight: 500;
+	color: var(--color-accent-fg);
+}
+
+.markdown-body .content-inner > .markdown-alert:first-child {
+	margin-top: 12px !important;
+}

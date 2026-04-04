@@ -1,9 +1,7 @@
 <script lang="ts">
 	import { fade, scale } from 'svelte/transition';
-	import { i18n } from '../i18n';
-
-	// Reactive translations
-	let t = $state(i18n.getAll());
+	import { t } from '../utils/i18n.js';
+	import { settings } from '../stores/settings.svelte.js';
 
 	let {
 		show,
@@ -116,15 +114,15 @@
 				<p>{message}</p>
 			</div>
 			<div class="modal-footer">
-				<button class="modal-btn secondary" onclick={oncancel}>{t.cancel}</button>
-				<div class="footer-spacer"></div>
-				<button class="modal-btn secondary" onclick={onconfirm}>
-					{kind === 'warning' ? t.dontSave : t.confirm}
-				</button>
-				{#if showSave}
-					<button class="modal-btn primary" onclick={onsave}>{t.save}</button>
-				{/if}
-			</div>
+					<button class="modal-btn secondary" onclick={oncancel}>{t('settings.cancel', settings.language)}</button>
+					<div class="footer-spacer"></div>
+					<button class="modal-btn secondary" onclick={onconfirm}>
+						{kind === 'warning' ? t('settings.discard', settings.language) : t('settings.save', settings.language)}
+					</button>
+					{#if showSave}
+						<button class="modal-btn primary" onclick={onsave}>{t('settings.save', settings.language)}</button>
+					{/if}
+				</div>
 		</div>
 	</div>
 {/if}
@@ -137,7 +135,6 @@
 		right: 0;
 		bottom: 0;
 		background: rgba(0, 0, 0, 0.4);
-		/* backdrop-filter: blur(2px); */
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -213,8 +210,8 @@
 	}
 
 	.modal-btn.primary {
-		background: #0078d4;
-		color: white;
+		background: var(--color-accent-fg);
+		color: var(--color-btn-fg);
 	}
 
 	.modal-btn.primary.warning {

@@ -4,6 +4,7 @@
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { onMount, tick, untrack } from 'svelte';
 	import { fly } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 	import { openUrl } from '@tauri-apps/plugin-opener';
 	import { open, save, ask } from '@tauri-apps/plugin-dialog';
 	import Installer from './Installer.svelte';
@@ -13,6 +14,9 @@
 	import Editor from './components/Editor.svelte';
 	import Modal from './components/Modal.svelte';
 	import ExportModal from './components/ExportModal.svelte';
+	import Toc from './components/Toc.svelte';
+	import Toast from './components/Toast.svelte';
+	import ZoomOverlay from './components/ZoomOverlay.svelte';
 	import type { ExportFormat, PdfPageSize } from './export';
 	import { exportAsHtml, exportAsPdf } from './export';
 	import { i18n } from './i18n';
@@ -103,7 +107,7 @@
 	let recentFiles = $state<string[]>([]);
 	let isFocused = $state(true);
 	let markdownBody = $state<HTMLElement | null>(null);
-	let editorPane = $state<{ syncScrollToLine: (line: number, ratio?: number) => void } | null>(null);
+	let editorPane = $state<{ syncScrollToLine: (line: number, ratio?: number) => void; revealHeader: (text: string) => void } | null>(null);
 	let liveMode = $state(false);
 	
 	let metadata = $state('');
@@ -115,6 +119,25 @@
 	let isDragging = $state(false);
 	let isProgrammaticScroll = false;
 	let isRendering = false; // Render lock
+
+	// Upstream: heading fold state
+	let collapsedHeaders = $state(new Set<string>());
+
+	// Upstream: zoom overlay for images/diagrams
+	let zoomData = $state<{ src?: string; html?: string } | null>(null);
+
+	// Upstream: toast notifications
+	let toasts = $state<{ id: string; message: string; type: 'info' | 'error' | 'warning' }[]>([]);
+	function addToast(message: string, type: 'info' | 'error' | 'warning' = 'info') {
+		const id = crypto.randomUUID();
+		toasts.push({ id, message, type });
+	}
+
+	// Upstream: large file progressive loading
+	let loadingTabs = $state<string[]>([]);
+	let isAtBottom = $state(false);
+	let isScrolling = $state(false);
+	let scrollIdleTimer: ReturnType<typeof setTimeout>;
 
 	// derived from tab manager
 	let activeTab = $derived(tabManager.activeTab);
@@ -175,14 +198,14 @@
 
 		try {
 			if (format === 'html') {
-				const success = await exportAsHtml(container, showToc, fileName);
+				const success = await exportAsHtml(container, settings.showToc, fileName);
 				if (success) {
 					exportMessage = { show: true, text: t.exportSuccess };
 					setTimeout(() => { exportMessage = { show: false, text: '' }; }, 3000);
 				}
 			} else {
 				// Use browser print for PDF export
-				const result = await exportAsPdf(container, showToc, pageSize, fileName);
+				const result = await exportAsPdf(container, settings.showToc, pageSize, fileName);
 				exportMessage = { show: true, text: result.message };
 				setTimeout(() => { exportMessage = { show: false, text: '' }; }, 5000);
 			}
@@ -252,6 +275,20 @@
 		showHome = false;
 	});
 
+	// Callout alert icons (upstream: expanded set with more types)
+	const alertIcons: Record<string, string> = {
+		note: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>',
+		info: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
+		todo: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>',
+		tip: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>',
+		important: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>',
+		warning: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+		caution: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>',
+		faq: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
+		question: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
+		example: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>',
+	};
+
 	function processMarkdownHtml(html: string, filePath: string): string {
 		const parser = new DOMParser();
 		const doc = parser.parseFromString(html, 'text/html');
@@ -261,7 +298,12 @@
 			const src = img.getAttribute('src');
 			let finalSrc = src;
 			if (src && !src.startsWith('http') && !src.startsWith('data:')) {
-				finalSrc = convertFileSrc(resolvePath(filePath, src));
+				try {
+					const decodedSrc = decodeURIComponent(src);
+					finalSrc = convertFileSrc(resolvePath(filePath, decodedSrc));
+				} catch (e) {
+					finalSrc = convertFileSrc(resolvePath(filePath, src));
+				}
 				img.setAttribute('src', finalSrc);
 			}
 
@@ -276,7 +318,6 @@
 					media.setAttribute('src', finalSrc || '');
 					media.style.maxWidth = '100%';
 
-					// Copy attributes
 					if (img.hasAttribute('width')) media.setAttribute('width', img.getAttribute('width')!);
 					if (img.hasAttribute('height')) media.setAttribute('height', img.getAttribute('height')!);
 					if (img.hasAttribute('alt')) media.setAttribute('aria-label', img.getAttribute('alt')!);
@@ -305,47 +346,192 @@
 			}
 		}
 
-		// parse gfm alerts
-		for (const bq of doc.querySelectorAll('blockquote')) {
-			const firstP = bq.querySelector('p');
-			if (firstP) {
-				const text = firstP.textContent || '';
-				const match = text.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
-				if (match) {
-					const alertIcons: Record<string, string> = {
-						note: '<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"></path></svg>',
-						tip: '<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 0 1-1.484.21c-.044-.312-.18-.692-.41-1.025-.23-.333-.524-.681-.797-1.004l-.213-.252C2.962 7.325 2.5 6.395 2.5 5.25c0-2.978 2.304-5.25 5.5-5.25S13.5 2.272 13.5 5.25c0 1.145-.462 2.075-1.087 2.819l-.213.252c-.273.323-.567.671-.797 1.004-.23.333-.366.713-.41 1.025a.75.75 0 0 1-1.484-.21c.084-.594.337-1.079.621-1.49.203-.292.45-.584.673-.848l.214-.253c.56-.679.984-1.32.984-2.304 0-2.06-1.637-3.75-4-3.75ZM5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM6.25 14.5h3.5a.75.75 0 0 1 0 1.5h-3.5a.75.75 0 0 1 0-1.5Z"></path></svg>',
-						important:
-							'<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Zm7 2.25v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 9a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path></svg>',
-						warning:
-							'<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.03 11.315a1.75 1.75 0 0 1-1.543 2.573H1.97a1.75 1.75 0 0 1-1.543-2.573ZM9 4.25a.75.75 0 0 0-1.5 0V9a.75.75 0 0 0 1.5 0ZM9 11a1 1 0 1 0-2 0 1 1 0 0 0 2 0Z"></path></svg>',
-						caution:
-							'<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .39.079.53.22l4.25 4.25c.141.14.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.39.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"></path></svg>',
-					};
-
-					const type = match[1].toLowerCase();
-					const alertDiv = doc.createElement('div');
-					alertDiv.className = `markdown-alert markdown-alert-${type}`;
-
-					const titleP = doc.createElement('p');
-					titleP.className = 'markdown-alert-title';
-					titleP.innerHTML = `${alertIcons[type] || ''} <span>${type.charAt(0).toUpperCase() + type.slice(1)}</span>`;
-
-					alertDiv.appendChild(titleP);
-
-					firstP.textContent = text.replace(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i, '').trim() || '';
-					if (firstP.textContent === '' && firstP.nextSibling) firstP.remove();
-
-					while (bq.firstChild) alertDiv.appendChild(bq.firstChild);
-					bq.replaceWith(alertDiv);
+		// Helper to strip leading breaks from callout content
+		const stripLeadingBreaks = (node: Node) => {
+			const brs = (node as Element).querySelectorAll('br');
+			for (const br of Array.from(brs)) {
+				let prev = br.previousSibling;
+				let isLeading = true;
+				while (prev) {
+					if (prev.nodeType === 3 && prev.textContent?.replace(/\xA0|\s|&nbsp;/g, '').trim()) {
+						isLeading = false;
+						break;
+					} else if (prev.nodeType === 1) {
+						isLeading = false;
+						break;
+					}
+					prev = prev.previousSibling;
+				}
+				if (isLeading) br.parentElement?.removeChild(br);
+			}
+			while (node.firstChild) {
+				const child = node.firstChild;
+				if (child.nodeType === 3 && child.textContent?.replace(/\xA0|\s|&nbsp;/g, '').trim() === '') {
+					child.parentElement?.removeChild(child);
+				} else if (child.nodeType === 1 && (child as Element).tagName === 'P' && (child as Element).innerHTML.replace(/\xA0|\s|&nbsp;/g, '').trim() === '') {
+					child.parentElement?.removeChild(child);
+				} else {
+					break;
 				}
 			}
+		};
+
+		// parse callouts (upstream: supports [!TYPE +/-] with custom titles, nesting, and folding)
+		for (const bq of Array.from(doc.querySelectorAll('blockquote'))) {
+			const walker = doc.createTreeWalker(bq, NodeFilter.SHOW_TEXT);
+			let textNode: Text | null = null;
+			let matchResult: RegExpMatchArray | null = null;
+
+			let curr: Node | null;
+			while (curr = walker.nextNode()) {
+				const m = curr.nodeValue?.match(/^\s*\[!([a-zA-Z0-9_\-]+)\]([+-]?)\s*/i);
+				if (m) {
+					textNode = curr as Text;
+					matchResult = m;
+					break;
+				}
+			}
+
+			if (textNode && matchResult) {
+				const type = matchResult[1].toLowerCase();
+				const fold = matchResult[2] || '';
+				const isFoldable = fold === '+' || fold === '-';
+
+				textNode.nodeValue = textNode.nodeValue!.slice(matchResult[0].length);
+
+				// Collect custom title nodes (everything on the first line after [!TYPE])
+				const titleNodes: Node[] = [];
+				let currentLineNode: Node | null = textNode;
+				while (currentLineNode) {
+					if (currentLineNode.nodeType === 1 && (currentLineNode as Element).tagName === 'BR') {
+						const br = currentLineNode;
+						currentLineNode = br.nextSibling;
+						br.parentElement?.removeChild(br);
+						break;
+					}
+					const next: Node | null = currentLineNode.nextSibling;
+					titleNodes.push(currentLineNode);
+					currentLineNode = next;
+				}
+
+				const container = doc.createElement('div');
+				container.className = `markdown-alert markdown-alert-${type}${isFoldable ? ' callout-foldable' : ''}`;
+
+				const titleEl = doc.createElement('p');
+				titleEl.className = 'markdown-alert-title';
+				if (isFoldable) titleEl.classList.add('callout-toggle');
+
+				const titleInner = doc.createElement('span');
+				titleInner.className = 'callout-title-inner';
+				for (const tn of titleNodes) titleInner.appendChild(tn);
+
+				// Restore default title if empty
+				if (titleInner.textContent?.trim() === '') {
+					titleInner.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+				}
+
+				// Omit rendering stray <br> in the title
+				for (const br of Array.from(titleInner.querySelectorAll('br'))) {
+					br.parentElement?.removeChild(br);
+				}
+
+				const svgIconHtml = alertIcons[type] || '';
+				if (svgIconHtml) {
+					const temp = doc.createElement('div');
+					temp.innerHTML = svgIconHtml;
+					if (temp.firstChild) titleEl.appendChild(temp.firstChild);
+				}
+				titleEl.appendChild(titleInner);
+
+				if (isFoldable) {
+					const chevron = doc.createElement('div');
+					chevron.innerHTML = `<svg class="callout-fold-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+					titleEl.appendChild(chevron.firstChild!);
+				}
+				container.appendChild(titleEl);
+
+				const contentWrapper = doc.createElement('div');
+				contentWrapper.className = 'markdown-alert-content';
+				const contentInner = doc.createElement('div');
+				contentInner.className = 'content-inner';
+				contentWrapper.appendChild(contentInner);
+
+				while (bq.firstChild) contentInner.appendChild(bq.firstChild);
+
+				stripLeadingBreaks(contentInner);
+
+				while (contentInner.lastChild) {
+					const child = contentInner.lastChild;
+					if (child.nodeType === 3 && child.textContent?.trim() === '') child.parentElement?.removeChild(child);
+					else if (child.nodeType === 1 && (child as Element).tagName === 'P' && (child as Element).innerHTML.trim() === '') child.parentElement?.removeChild(child);
+					else break;
+				}
+
+				if (contentInner.childNodes.length === 0) {
+					container.classList.add('callout-title-only');
+				} else {
+					if (fold === '-') {
+						contentWrapper.classList.add('is-collapsed');
+						container.classList.add('is-collapsed');
+					}
+					container.appendChild(contentWrapper);
+				}
+				bq.replaceWith(container);
+			}
 		}
+
+		// Heading fold (upstream: wraps content under headings for collapsible sections)
+		const headings = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+		for (const h of headings) {
+			const chevron = doc.createElement('span');
+			chevron.className = 'header-fold-icon';
+			chevron.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+			h.insertBefore(chevron, h.firstChild);
+			h.classList.add('foldable-header');
+
+			const wrapper = doc.createElement('div');
+			wrapper.className = 'foldable-content-wrapper';
+			const inner = doc.createElement('div');
+			inner.className = 'content-inner';
+			wrapper.appendChild(inner);
+
+			let current = h.nextElementSibling;
+			const level = parseInt(h.tagName[1], 10);
+			while (current) {
+				const isHeader = /^H[1-6]$/.test(current.tagName);
+				if (isHeader) {
+					const nextLevel = parseInt(current.tagName[1], 10);
+					if (nextLevel <= level) break;
+				}
+				const next = current.nextElementSibling;
+				inner.appendChild(current);
+				current = next;
+			}
+			if (h.parentNode) h.parentNode.insertBefore(wrapper, h.nextSibling);
+
+			const mappingId = 'wrap-' + Math.random().toString(36).substr(2, 9);
+			h.setAttribute('data-fold-target', mappingId);
+			wrapper.id = mappingId;
+
+			const key = h.id || h.textContent?.trim() || '';
+			if (collapsedHeaders.has(key)) {
+				h.classList.add('is-collapsed');
+				wrapper.classList.add('is-collapsed');
+			}
+		}
+
+		// Clean up empty paragraphs
+		Array.from(doc.querySelectorAll('p')).forEach((p) => {
+			if (p.innerHTML.replace(/&nbsp;|\s/g, '').trim() === '') {
+				p.remove();
+			}
+		});
 
 		return doc.body.innerHTML;
 	}
 
-	async function loadMarkdown(filePath: string, options: { navigate?: boolean; skipTabManagement?: boolean } = {}) {
+
+	async function loadMarkdown(filePath: string, options: { navigate?: boolean; skipTabManagement?: boolean; preserveEditState?: boolean } = {}) {
 		showHome = false;
 		try {
 			if (options.navigate && tabManager.activeTab) {
@@ -368,11 +554,71 @@
 			const tab = tabManager.tabs.find((t) => t.id === activeId);
 
 			if (isMarkdown) {
-				if (tab) tab.isEditing = false;
-				const res = (await invoke('open_markdown', { path: filePath })) as MarkdownResponse;
-				const processedInfo = processMarkdownHtml(res.html, filePath);
+				// Only set default edit mode if it's a brand new tab or we aren't preserving state
+				if (tab && !options.preserveEditState && !existing) {
+					tab.isEditing = settings.startInEditor;
+				}
+
+				// Upstream: progressive loading - first load preview with maxBytes limit
+				const [html, content, isFull] = await invoke('open_markdown_preview', { path: filePath, maxBytes: 50000 }) as [string, string, boolean];
+				const processedInfo = processMarkdownHtml(html, filePath);
 				tabManager.updateTabContent(activeId, processedInfo);
-				metadata = res.metadata;
+				tabManager.setTabRawContent(activeId, content);
+
+				if (!isFull) {
+					loadingTabs = [...loadingTabs, activeId];
+					tick().then(() => {
+						if (markdownBody) isAtBottom = markdownBody.scrollHeight <= markdownBody.clientHeight + 100;
+					});
+					Promise.all([
+						invoke('open_markdown', { path: filePath }) as Promise<string>,
+						invoke('read_file_content', { path: filePath }) as Promise<string>
+					]).then(([fullHtml, fullContent]) => {
+						const applyFull = () => {
+							try {
+								if (isScrolling) {
+									setTimeout(applyFull, 100);
+									return;
+								}
+								if (tabManager.tabs.find((t) => t.id === activeId)?.path === filePath) {
+									const fullProcessed = processMarkdownHtml(fullHtml, filePath);
+									tabManager.updateTabContent(activeId, fullProcessed);
+									tabManager.setTabRawContent(activeId, fullContent);
+									loadingTabs = loadingTabs.filter((id) => id !== activeId);
+									if (tabManager.activeTabId === activeId) {
+										tick().then(() => {
+											setTimeout(renderRichContent, 10);
+										});
+									}
+								} else {
+									loadingTabs = loadingTabs.filter((id) => id !== activeId);
+								}
+							} catch (applyErr) {
+								console.error('applyFull error:', applyErr);
+								addToast('Error processing full markdown: ' + String(applyErr), 'error');
+								loadingTabs = loadingTabs.filter((id) => id !== activeId);
+							}
+						};
+						
+						if ('requestIdleCallback' in window) {
+							(window as any).requestIdleCallback(applyFull, { timeout: 2000 });
+						} else {
+							setTimeout(applyFull, 100);
+						}
+					}).catch((e) => {
+						console.error('Promise.all error:', e);
+						addToast('Backend Error loading full markdown: ' + String(e), 'error');
+						loadingTabs = loadingTabs.filter((id) => id !== activeId);
+					});
+				}
+
+				// Also get metadata
+				try {
+					const res = (await invoke('open_markdown', { path: filePath })) as MarkdownResponse;
+					metadata = res.metadata;
+				} catch (e) {
+					// metadata extraction failure is non-fatal
+				}
 			} else {
 				if (tab) tab.isEditing = true;
 				const content = (await invoke('read_file_content', { path: filePath })) as string;
@@ -726,7 +972,7 @@
 	}
 
 	$effect(() => {
-		if (showToc) {
+		if (settings.showToc) {
 			// 只有在显示 TOC 侧边栏时才解析 DOM
 			untrack(() => refreshToc());
 		}
@@ -893,6 +1139,16 @@
 	function handleScroll(e: Event) {
 		const target = e.target as HTMLElement;
 
+		// Upstream: track isAtBottom for large file loading
+		isAtBottom = Math.abs(target.scrollHeight - target.scrollTop - target.clientHeight) < 100;
+
+		// Upstream: track scrolling state for deferred operations
+		isScrolling = true;
+		clearTimeout(scrollIdleTimer);
+		scrollIdleTimer = setTimeout(() => {
+			isScrolling = false;
+		}, 300);
+
 		if (isProgrammaticScroll) {
 			isProgrammaticScroll = false;
 			if (tabManager.activeTabId) {
@@ -942,6 +1198,40 @@
 		}
 
 		syncEditorToPreviewScroll(target);
+	}
+
+	// Upstream: toggle heading fold
+	function toggleFold(key: string) {
+		const isCurrentlyCollapsed = collapsedHeaders.has(key);
+
+		if (isCurrentlyCollapsed) {
+			const next = new Set(collapsedHeaders);
+			next.delete(key);
+			collapsedHeaders = next;
+		} else {
+			collapsedHeaders = new Set([...collapsedHeaders, key]);
+		}
+
+		if (!markdownBody) return;
+
+		let h = markdownBody.querySelector(`[id="${CSS.escape(key)}"].foldable-header`) as HTMLElement | null;
+		if (!h) {
+			const allHeaders = markdownBody.querySelectorAll('.foldable-header');
+			for (const el of Array.from(allHeaders)) {
+				if ((el.textContent?.trim() || '') === key) {
+					h = el as HTMLElement;
+					break;
+				}
+			}
+		}
+		if (!h) return;
+
+		const wrapId = h.getAttribute('data-fold-target');
+		const wrapper = wrapId ? document.getElementById(wrapId) : null;
+		if (!wrapper) return;
+
+		h.classList.toggle('is-collapsed', !isCurrentlyCollapsed);
+		wrapper.classList.toggle('is-collapsed', !isCurrentlyCollapsed);
 	}
 
 	function saveRecentFile(path: string) {
@@ -1202,6 +1492,84 @@
 		let target = event.target as HTMLElement;
 		while (target && target.tagName !== 'A' && target !== document.body) target = target.parentElement as HTMLElement;
 		if (target?.tagName === 'A') tooltip.show = false;
+	}
+
+	// Upstream: handle link/heading/callout/zoom clicks inside markdown body
+	function handleLinkClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+
+		// header fold toggle
+		const foldIcon = target.closest('.header-fold-icon');
+		const foldableHeader = foldIcon ? foldIcon.closest('.foldable-header') as HTMLElement : null;
+		if (foldableHeader) {
+			if (e.detail > 1) e.preventDefault(); // prevent double-click selection
+			e.stopPropagation();
+			const key = foldableHeader.id || foldableHeader.textContent?.trim() || '';
+			const wrapId = foldableHeader.getAttribute('data-fold-target');
+			const wrapper = wrapId ? document.getElementById(wrapId) : null;
+			if (wrapper) {
+				const isCollapsed = foldableHeader.classList.toggle('is-collapsed');
+				wrapper.classList.toggle('is-collapsed', isCollapsed);
+				if (isCollapsed) {
+					collapsedHeaders = new Set([...collapsedHeaders, key]);
+				} else {
+					const next = new Set(collapsedHeaders);
+					next.delete(key);
+					collapsedHeaders = next;
+				}
+			}
+			return;
+		}
+
+		// callout fold toggle
+		const calloutToggle = target.closest('.callout-toggle');
+		if (calloutToggle) {
+			if (e.detail > 1) e.preventDefault();
+			e.stopPropagation();
+			const alert = calloutToggle.closest('.callout-foldable');
+			const content = alert?.querySelector('.markdown-alert-content');
+			if (alert && content) {
+				alert.classList.toggle('is-collapsed');
+				content.classList.toggle('is-collapsed');
+			}
+			return;
+		}
+
+		// internal link navigation
+		const a = target.closest('a');
+		if (a) {
+			const href = a.getAttribute('href');
+			if (href?.startsWith('#') && href.length > 1) {
+				e.preventDefault();
+				let id = href.substring(1);
+				if (id.startsWith('^')) id = id.substring(1);
+				const el =
+					(markdownBody?.querySelector(`[id="${CSS.escape(id)}"]`) as HTMLElement | null) ||
+					(markdownBody?.querySelector(`[name="${CSS.escape(id)}"]`) as HTMLElement | null);
+				if (el && markdownBody) {
+					const containerRect = markdownBody.getBoundingClientRect();
+					const elRect = el.getBoundingClientRect();
+					const targetScrollTop = elRect.top - containerRect.top + markdownBody.scrollTop - 60;
+					markdownBody.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+				}
+			}
+		}
+
+		// media zoom handling
+		const img = target.closest('img');
+		if (img) {
+			zoomData = { src: img.src };
+			return;
+		}
+
+		const mermaidDiv = target.closest('.mermaid-diagram');
+		if (mermaidDiv) {
+			const svg = mermaidDiv.querySelector('svg');
+			if (svg) {
+				zoomData = { html: svg.outerHTML };
+				return;
+			}
+		}
 	}
 
 	async function handleDocumentClick(event: MouseEvent) {
@@ -1841,33 +2209,15 @@
 		ontoggleMetadata={() => (showMetadata = !showMetadata)}
 		{showMetadata}
 		hasMetadata={!!metadata}
-		ontoggleToc={() => (showToc = !showToc)}
-		{showToc} />
+		ontoggleToc={() => settings.toggleToc()}
+		{showToc: settings.showToc} />
 
 	{#if tabManager.activeTab && (tabManager.activeTab.path !== '' || tabManager.activeTab.title !== 'Recents') && !showHome}
-		{#key tabManager.activeTabId}
-			<div class="markdown-container" style="zoom: {isEditing && !isSplit ? 1 : zoomLevel / 100}" onwheel={handleWheel} role="presentation">
-				<div class="layout-container" class:split={isSplit} class:editing={isEditing} class:has-toc={showToc && toc.length > 0}>
-					<!-- TOC Sidebar -->
-					{#if showToc && toc.length > 0}
-						<div class="pane toc-sidebar" transition:fly={{ x: -20, duration: 250 }}>
-							<div class="toc-title">ON THIS PAGE</div>
-							<div class="toc-list" style="max-height: calc(100vh / ({zoomLevel} / 100) - 100px);">
-								{#each toc as item}
-									<!-- svelte-ignore a11y_click_events_have_key_events -->
-									<!-- svelte-ignore a11y_no_static_element_interactions -->
-									<div
-										class="toc-item level-{item.level}"
-										data-target-id={item.id}
-										onclick={() => scrollToHeader(item.id)}>
-										{item.text}
-									</div>
-								{/each}
-							</div>
-						</div>
-					{/if}
+	{#key tabManager.activeTabId}
+	<div class="markdown-container" style="zoom: {isEditing && !isSplit ? 1 : zoomLevel / 100}" onwheel={handleWheel} role="presentation">
+	<div class="layout-container" class:split={isSplit} class:editing={isEditing} class:has-pinned-toc={settings.pinnedToc && settings.showToc} class:toc-on-left={settings.tocSide === 'left'} class:toc-on-right={settings.tocSide === 'right'}>
 
-					<!-- Editor Pane -->
+	<!-- Editor Pane -->
 					<div class="pane editor-pane" class:active={isEditing || isSplit} style="flex: {isSplit ? tabManager.activeTab.splitRatio : isEditing ? 1 : 0}">
 						{#if isEditing || isSplit}
 							<Editor
@@ -1899,9 +2249,48 @@
 
 					<!-- Viewer Pane -->
 					<div class="pane viewer-pane" class:active={!isEditing || isSplit} style="flex: {isSplit ? 1 - tabManager.activeTab.splitRatio : !isEditing ? 1 : 0}">
-						<article bind:this={markdownBody} contenteditable="false" class="markdown-body" class:full-width={isFullWidth} onscroll={handleScroll}></article>
+					<div class="viewer-content">
+					  <article bind:this={markdownBody} contenteditable="false" class="markdown-body" class:full-width={isFullWidth} onscroll={handleScroll} onclick={handleLinkClick} tabindex="-1" style="outline: none;"></article>
+								{#if tabManager.activeTabId && loadingTabs.includes(tabManager.activeTabId) && isAtBottom}
+									<div class="loading-chip" transition:fly={{ y: 20, duration: 300, easing: cubicOut }}>
+										<div class="loading-spinner"></div>
+										<span>Loading full document...</span>
+									</div>
+								{/if}
+							</div>
+						</div>
+
+						<!-- Upstream: Floating TOC Support -->
+						<button
+							class="toc-toggle-floating {settings.showToc ? 'expanded' : ''}"
+							class:on-right={settings.tocSide === 'right'}
+							class:in-edit-mode={isEditing && !settings.showToc}
+							onclick={() => settings.toggleToc()}
+							aria-label={settings.showToc ? 'Hide table of contents' : 'Show table of contents'}>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+								<polyline points="9 18 15 12 9 6"></polyline>
+							</svg>
+						</button>
+
+						{#if settings.showToc}
+							<div
+								transition:fly={{ x: settings.tocSide === 'left' ? -240 : 240, duration: 300, opacity: 1, easing: cubicOut }}
+								class="toc-overlay-wrapper"
+								class:is-pinned={settings.pinnedToc}
+								class:on-right={settings.tocSide === 'right'}>
+								<Toc
+									{markdownBody}
+									htmlContent={htmlContent}
+									{collapsedHeaders}
+									ontoggleFold={toggleFold}
+									onjump={(id: string, text: string) => {
+										if (isEditing && editorPane) {
+											editorPane.revealHeader(text);
+										}
+									}} />
+							</div>
+						{/if}
 					</div>
-				</div>
 				
 				{#if showMetadata && metadata}
 					<div class="metadata-popup" transition:fly={{ y: -10, duration: 200 }}>
@@ -1972,8 +2361,26 @@
 {/if}
 
 {#if showSettings}
-	<Settings show={showSettings} onclose={() => (showSettings = false)} />
+<Settings show={showSettings} onclose={() => (showSettings = false)} />
 {/if}
+
+	<!-- Upstream: Toast notifications -->
+	<div class="toast-container">
+		{#each toasts as toast (toast.id)}
+			<Toast
+				message={toast.message}
+				type={toast.type}
+				onremove={() => toasts = toasts.filter(t => t.id !== toast.id)} />
+		{/each}
+	</div>
+
+	<!-- Upstream: Zoom overlay for images/diagrams -->
+	{#if zoomData}
+		<ZoomOverlay
+			src={zoomData.src}
+			html={zoomData.html}
+			onclose={() => zoomData = null} />
+	{/if}
 
 <style>
 	:root {
@@ -2386,4 +2793,172 @@
 	.toc-item.level-4 { padding-left: 56px; }
 	.toc-item.level-5 { padding-left: 68px; }
 	.toc-item.level-6 { padding-left: 80px; }
+
+	/* Upstream: Loading chip for large file progressive loading */
+	.loading-chip {
+		position: absolute;
+		bottom: 30px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: var(--color-canvas-overlay);
+		border: 1px solid var(--color-border-default);
+		border-radius: 20px;
+		padding: 8px 16px;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		z-index: 100;
+		color: var(--color-fg-muted);
+		font-size: 13px;
+	}
+
+	.loading-spinner {
+		width: 14px;
+		height: 14px;
+		border: 2px solid var(--color-border-muted);
+		border-top-color: var(--color-accent-fg);
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		to { transform: rotate(360deg); }
+	}
+
+	/* Upstream: Viewer content wrapper */
+	.viewer-content {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+	}
+
+	/* Upstream: Floating TOC overlay */
+	.toc-overlay-wrapper {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 240px;
+		height: 100%;
+		z-index: 50;
+		background: var(--color-canvas-subtle);
+		border-right: 1px solid var(--color-border-default);
+		overflow-y: auto;
+	}
+
+	.toc-overlay-wrapper.is-pinned {
+		position: relative;
+		flex-shrink: 0;
+	}
+
+	.toc-overlay-wrapper.on-right {
+		left: auto;
+		right: 0;
+		border-right: none;
+		border-left: 1px solid var(--color-border-default);
+	}
+
+	.toc-overlay-wrapper.is-pinned.on-right {
+		border-left: 1px solid var(--color-border-default);
+	}
+
+	.toc-overlay-wrapper.is-pinned:not(.on-right) {
+		border-right: 1px solid var(--color-border-default);
+	}
+
+	.toc-toggle-floating {
+		position: absolute;
+		top: 50%;
+		left: 0;
+		transform: translateY(-50%);
+		width: 24px;
+		height: 48px;
+		background: var(--color-canvas-overlay);
+		border: 1px solid var(--color-border-default);
+		border-left: none;
+		border-radius: 0 6px 6px 0;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 51;
+		opacity: 0;
+		transition: opacity 0.2s;
+		color: var(--color-fg-muted);
+	}
+
+	.toc-toggle-floating.expanded {
+		opacity: 1;
+		left: 240px;
+	}
+
+	.toc-toggle-floating.on-right {
+		left: auto;
+		right: 0;
+		border-left: 1px solid var(--color-border-default);
+		border-right: none;
+		border-radius: 6px 0 0 6px;
+	}
+
+	.toc-toggle-floating.on-right.expanded {
+		right: 240px;
+	}
+
+	.layout-container:hover .toc-toggle-floating,
+	.toc-toggle-floating:hover {
+		opacity: 1;
+	}
+
+	.toc-toggle-floating:active {
+		background: var(--color-canvas-default);
+	}
+
+	.toc-toggle-floating svg {
+		transition: transform 0.2s;
+	}
+
+	.toc-toggle-floating.on-right svg {
+		transform: rotate(180deg);
+	}
+
+	.toc-toggle-floating.expanded svg {
+		transform: rotate(180deg);
+	}
+
+	.toc-toggle-floating.on-right.expanded svg {
+		transform: rotate(0deg);
+	}
+
+	.toc-toggle-floating.in-edit-mode:not(.expanded) {
+		opacity: 0.4;
+	}
+
+	/* Upstream: Toast container */
+	.toast-container {
+		position: fixed;
+		bottom: 20px;
+		right: 20px;
+		z-index: 1000;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	/* Upstream: Layout adjustments for pinned TOC */
+	.layout-container.has-pinned-toc {
+		display: flex;
+	}
+
+	.layout-container.toc-on-left .toc-overlay-wrapper.is-pinned {
+		order: -1;
+	}
+
+	.layout-container.editing .toc-overlay-wrapper:not(.on-right) {
+		left: 0;
+	}
+
+	.layout-container.editing .toc-overlay-wrapper.on-right {
+		right: 0;
+	}
 </style>

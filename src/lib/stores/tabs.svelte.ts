@@ -1,3 +1,6 @@
+import { t } from '../utils/i18n.js';
+import { settings } from './settings.svelte.js';
+
 export interface Tab {
 	id: string;
 	path: string;
@@ -42,9 +45,29 @@ class TabManager {
 		return this.tabs.find((t) => t.id === this.activeTabId);
 	}
 
+	serializeState(): string {
+		const stateData = {
+			activeTabId: this.activeTabId,
+			tabs: this.tabs.map(t => ({ ...t, editorViewState: null, content: '' }))
+		};
+		return JSON.stringify(stateData);
+	}
+
+	restoreState(jsonBuffer: string) {
+		try {
+			const data = JSON.parse(jsonBuffer);
+			if (data && Array.isArray(data.tabs)) {
+				this.tabs = data.tabs;
+				this.activeTabId = data.activeTabId;
+			}
+		} catch (e) {
+			console.error('Failed to restore tab state', e);
+		}
+	}
+
 	addTab(path: string, content: string = '') {
 		const id = crypto.randomUUID();
-		const filename = path.split('\\').pop()?.split('/').pop() || 'Untitled';
+		const filename = path.split('\\').pop()?.split('/').pop() || t('tabs.untitled', settings.language);
 
 		this.tabs.push({
 			id,
@@ -76,13 +99,13 @@ class TabManager {
 		this.tabs.push({
 			id,
 			path: '',
-			title: 'Untitled',
+			title: t('tabs.untitled', settings.language),
 			content,
 			rawContent: content,
 			originalContent: content,
 			scrollTop: 0,
 			isDirty: false,
-			isEditing: true, // Start in edit mode
+			isEditing: true,
 			history: [content],
 			historyIndex: 0,
 			editorViewState: null,
@@ -97,7 +120,6 @@ class TabManager {
 	}
 
 	addHomeTab() {
-		// Check if home tab exists
 		const homeTab = this.tabs.find(t => t.path === 'HOME');
 		if (homeTab) {
 			this.activeTabId = homeTab.id;
@@ -108,7 +130,7 @@ class TabManager {
 		this.tabs.push({
 			id,
 			path: 'HOME',
-			title: 'Home',
+			title: t('tabs.home', settings.language),
 			content: '',
 			rawContent: '',
 			originalContent: '',
@@ -138,7 +160,6 @@ class TabManager {
 		}
 
 		const tab = this.tabs[index];
-		// Don't add HOME to history
 		if (tab.path && tab.path !== 'HOME') {
 			this.recentlyClosed.push(tab.path);
 		}
@@ -243,7 +264,6 @@ class TabManager {
 	}
 
 
-
 	reorderTabs(fromIndex: number, toIndex: number) {
 		if (fromIndex === toIndex) return;
 		const [moved] = this.tabs.splice(fromIndex, 1);
@@ -270,7 +290,6 @@ class TabManager {
 			tab.path = path;
 			tab.title = path.split(/[/\\]/).pop() || 'Untitled';
 			tab.isDirty = false;
-			// If we update path (e.g. save untitled), strictly speaking it replaces the current history entry
 			if (tab.history.length > 0) {
 				tab.history[tab.historyIndex] = path;
 			} else {
@@ -291,14 +310,11 @@ class TabManager {
 		}
 	}
 
-	// Navigation History
 	navigate(id: string, path: string) {
 		const tab = this.tabs.find(t => t.id === id);
 		if (tab) {
-			// If we are "navigating" to the same path, do nothing (or reload?)
 			if (tab.path === path) return;
 
-			// Truncate forward history
 			tab.history = tab.history.slice(0, tab.historyIndex + 1);
 			tab.history.push(path);
 			tab.historyIndex++;
@@ -327,8 +343,7 @@ class TabManager {
 			const path = tab.history[tab.historyIndex];
 			tab.path = path;
 			tab.title = path.split(/[/\\]/).pop() || 'Untitled';
-			tab.isDirty = false; // Assuming navigating away discards unsaved changes or we handle it? 
-			// Ideally we should warn before navigation if dirty, but simple history for now.
+			tab.isDirty = false;
 			return path;
 		}
 		return null;

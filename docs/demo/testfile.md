@@ -1,6 +1,8 @@
-# Markpad
+# [Markpad](#Markpad)
 
-Everything you'd want from a simple markdown viewer.
+Everything you'd want from a simple markdown viewer. ^important
+
+
 
 ## 📝 Basic Typography
 

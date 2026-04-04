@@ -94,7 +94,8 @@ jobs:
           libjavascriptcoregtk-4.1-dev=2.44.0-2 \
           gir1.2-javascriptcoregtk-4.1=2.44.0-2 \
           gir1.2-webkit2-4.1=2.44.0-2
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm xdg-utils
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm xdg-utils \
+          libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
           sudo snap install lxd
           sudo lxd waitready
           sudo lxd init --auto
@@ -136,12 +137,12 @@ jobs:
 
       - name: Publish to Chocolatey
         if: matrix.platform == 'windows-latest' && matrix.arch == 'x64'
+        continue-on-error: true
         shell: pwsh
         env:
           CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
         run: |
           choco apikey --key $env:CHOCO_API_KEY --source https://push.chocolatey.org/
-          choco push markpad-app.${{ needs.create-release.outputs.version }}.nupkg --source https://push.chocolatey.org/
           choco push markpad-app.${{ needs.create-release.outputs.version }}.nupkg --source https://push.chocolatey.org/
 
       # --- Windows Build (ARM64) ---
