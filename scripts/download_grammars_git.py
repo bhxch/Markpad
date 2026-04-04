@@ -8,8 +8,9 @@ import os
 import re
 import subprocess
 import shutil
+import urllib.request
+import urllib.error
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Configuration
 LANGUAGES_TOML = Path(__file__).parent.parent / "src-tauri" / "languages.toml"
@@ -122,7 +123,11 @@ def download_grammar_git(name: str, info: dict) -> tuple:
         # Copy src directory
         src_path = src_dir / "src"
         if src_path.exists():
-            target_src = target_dir / "src"
+            # For grammars with subpath, build.rs expects grammars/<name>/<subpath>/src/
+            if subpath:
+                target_src = target_dir / subpath / "src"
+            else:
+                target_src = target_dir / "src"
             shutil.copytree(src_path, target_src)
         
         # Copy queries if available
@@ -145,36 +150,30 @@ def download_grammar_git(name: str, info: dict) -> tuple:
         return (name, False, str(e)[:100], "")
 
 
-def download_highlights_git(name: str) -> tuple:
-    """Download highlights.scm from Helix runtime using git."""
+def download_highlights_helix(name: str) -> tuple:
+    """Download highlights.scm from Helix runtime via HTTP."""
     target_file = QUERIES_DIR / name / "highlights.scm"
-    
+
     if target_file.exists():
         return (name, True)
-    
+
     target_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
+    url = f"{HELIX_RUNTIME_URL}/{name}/highlights.scm"
     try:
-        # Use git to fetch raw file
-        url = f"{HELIX_RUNTIME_URL}/{name}/highlights.scm"
-        result = subprocess.run(
-            ["git", "cat-file", "-p", f"origin/master:runtime/queries/{name}/highlights.scm"],
-            capture_output=True,
-            cwd=GRAMMARS_DIR,
-            timeout=30
-        )
-        
-        if result.returncode == 0:
-            with open(target_file, 'wb') as f:
-                f.write(result.stdout)
-            return (name, True)
-    except:
+        req = urllib.request.Request(url, headers={"User-Agent": "markpad-build/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status == 200:
+                with open(target_file, 'wb') as f:
+                    f.write(resp.read())
+                return (name, True)
+    except (urllib.error.HTTPError, urllib.error.URLError, Exception):
         pass
-    
-    # Create empty file
+
+    # Create empty file if download failed
     with open(target_file, 'w', encoding='utf-8') as f:
         f.write("; No highlights available\n")
-    return (name, True)
+    return (name, False)
 
 
 def main():
@@ -227,7 +226,26 @@ def main():
     
     print(f"\nGrammars: {downloaded} downloaded, {existed} existed, {len(failed)} failed")
     print(f"Valid grammars with parser.c: {len(valid_grammars)}")
-    
+
+    # Download missing highlights from Helix for all valid grammars
+    print("\nDownloading missing highlights from Helix...")
+    highlights_ok = 0
+    highlights_restored = 0
+    highlights_missing = 0
+    for name, _ in valid_grammars:
+        _, success = download_highlights_helix(name)
+        if success:
+            target_file = QUERIES_DIR / name / "highlights.scm"
+            if target_file.exists():
+                content = target_file.read_text().strip()
+                if content == "; No highlights available":
+                    highlights_missing += 1
+                else:
+                    highlights_ok += 1
+        else:
+            highlights_restored += 1
+    print(f"Highlights: {highlights_ok} ok, {highlights_restored} restored, {highlights_missing} unavailable in Helix")
+
     # Save grammar info
     grammar_info = {name: {"subpath": subpath} for name, subpath in valid_grammars}
     with open(GRAMMAR_INFO, 'w') as f:
