@@ -47,9 +47,6 @@
   "blueprint": {
     "subpath": ""
   },
-  "bovex": {
-    "subpath": ""
-  },
   "c": {
     "subpath": ""
   },
@@ -197,6 +194,9 @@
   "forth": {
     "subpath": ""
   },
+  "fortran": {
+    "subpath": ""
+  },
   "freebasic": {
     "subpath": ""
   },
@@ -231,6 +231,15 @@
     "subpath": ""
   },
   "gleam": {
+    "subpath": ""
+  },
+  "glimmer": {
+    "subpath": ""
+  },
+  "glimmer-javascript": {
+    "subpath": ""
+  },
+  "glimmer-typescript": {
     "subpath": ""
   },
   "glsl": {
@@ -392,6 +401,9 @@
   "koto": {
     "subpath": ""
   },
+  "latex": {
+    "subpath": ""
+  },
   "ld": {
     "subpath": ""
   },
@@ -440,6 +452,12 @@
   "markdoc": {
     "subpath": ""
   },
+  "markdown": {
+    "subpath": "tree-sitter-markdown"
+  },
+  "markdown_inline": {
+    "subpath": "tree-sitter-markdown-inline"
+  },
   "matlab": {
     "subpath": ""
   },
@@ -476,6 +494,12 @@
   "nu": {
     "subpath": ""
   },
+  "ocaml": {
+    "subpath": "ocaml"
+  },
+  "ocaml-interface": {
+    "subpath": "interface"
+  },
   "odin": {
     "subpath": ""
   },
@@ -509,6 +533,9 @@
   "pest": {
     "subpath": ""
   },
+  "php-only": {
+    "subpath": "php_only"
+  },
   "picat": {
     "subpath": ""
   },
@@ -529,6 +556,9 @@
   },
   "prisma": {
     "subpath": ""
+  },
+  "prolog": {
+    "subpath": "grammars/prolog"
   },
   "properties": {
     "subpath": ""
@@ -737,6 +767,9 @@
   "uxntal": {
     "subpath": ""
   },
+  "v": {
+    "subpath": "tree_sitter_v"
+  },
   "vala": {
     "subpath": ""
   },
@@ -754,6 +787,15 @@
   },
   "vim": {
     "subpath": ""
+  },
+  "vue": {
+    "subpath": ""
+  },
+  "wast": {
+    "subpath": "wast"
+  },
+  "wat": {
+    "subpath": "wat"
   },
   "werk": {
     "subpath": ""
