@@ -2210,7 +2210,7 @@
 		{showMetadata}
 		hasMetadata={!!metadata}
 		ontoggleToc={() => settings.toggleToc()}
-		{showToc: settings.showToc} />
+		showToc={settings.showToc} />
 
 	{#if tabManager.activeTab && (tabManager.activeTab.path !== '' || tabManager.activeTab.title !== 'Recents') && !showHome}
 	{#key tabManager.activeTabId}
