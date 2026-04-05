@@ -534,11 +534,13 @@
 	async function loadMarkdown(filePath: string, options: { navigate?: boolean; skipTabManagement?: boolean; preserveEditState?: boolean } = {}) {
 		showHome = false;
 		try {
+			let isExistingTab = false;
 			if (options.navigate && tabManager.activeTab) {
 				tabManager.navigate(tabManager.activeTab.id, filePath);
 			} else if (!options.skipTabManagement) {
 				const existing = tabManager.tabs.find((t) => t.path === filePath);
 				if (existing) {
+					isExistingTab = true;
 					tabManager.setActive(existing.id);
 				} else if (tabManager.activeTab && tabManager.activeTab.path === '') {
 					tabManager.updateTabPath(tabManager.activeTab.id, filePath);
@@ -555,7 +557,7 @@
 
 			if (isMarkdown) {
 				// Only set default edit mode if it's a brand new tab or we aren't preserving state
-				if (tab && !options.preserveEditState && !existing) {
+				if (tab && !options.preserveEditState && !isExistingTab) {
 					tab.isEditing = settings.startInEditor;
 				}
 
