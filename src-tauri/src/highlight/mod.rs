@@ -161,8 +161,8 @@ impl TreeSitterHighlighter {
         
         // Merge parent queries first, then current language's queries
         let mut merged = String::new();
-        for parent in inherits {
-            let parent_content = Self::get_query_content(&parent, file_name);
+        for parent in &inherits {
+            let parent_content = Self::get_query_content(parent, file_name);
             if !parent_content.is_empty() {
                 merged.push_str(&parent_content);
                 merged.push('\n');
