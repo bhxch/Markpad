@@ -285,7 +285,10 @@ fn main() {
     }
 
     generate_ffi_module(&grammars);
-    
+
+    // Link C++ runtime for grammars with C++ scanners (ruby, yaml, lean, etc.)
+    println!("cargo:rustc-link-lib=dylib=stdc++");
+
     tauri_build::build();
 }
 
@@ -309,52 +312,105 @@ fn compile_grammar(name: &str, grammar_dir: &Path, subpath: &str, c_symbol: &str
     }
     
     println!("cargo:rerun-if-changed={}", parser_c.display());
-    
+
     // Check for scanner files (C or C++)
     let scanner_c = src_dir.join("scanner.c");
     let scanner_cc = src_dir.join("scanner.cc");
     let schema_cc = src_dir.join("schema.generated.cc");
-    
-    // Build parser with C compiler
-    let mut build = cc::Build::new();
-    build
-        .file(&parser_c)
-        .include(&src_dir)
-        .include(grammar_dir)
-        .warnings(false);
-    
-    if scanner_c.exists() {
-        println!("cargo:rerun-if-changed={}", scanner_c.display());
-        build.file(&scanner_c);
-    }
-    
+
     let lib_name = if c_symbol.is_empty() {
         format!("tree_sitter_{}", name.replace("-", "_"))
     } else {
         c_symbol.to_string()
     };
 
+    // Build C files (parser.c + optional scanner.c) with C compiler
+    let mut build = cc::Build::new();
+    build
+        .file(&parser_c)
+        .include(&src_dir)
+        .include(grammar_dir)
+        .warnings(false);
+
+    let has_c_scanner = scanner_c.exists() && !scanner_cc.exists();
+    if has_c_scanner {
+        println!("cargo:rerun-if-changed={}", scanner_c.display());
+        build.file(&scanner_c);
+    }
+
     build.compile(&lib_name);
 
-    // If there are C++ files, compile them separately with C++ compiler
-    if scanner_cc.exists() || schema_cc.exists() {
-        let mut cpp_build = cc::Build::new();
-        cpp_build
-            .cpp(true)
-            .include(&src_dir)
-            .include(grammar_dir)
-            .warnings(false);
+    // If there are C++ scanner files, compile them manually and merge into main archive
+    let has_cpp_scanner = scanner_cc.exists() || schema_cc.exists();
+    if has_cpp_scanner {
+        let out_dir = env::var("OUT_DIR").unwrap();
+        let target = env::var("TARGET").unwrap_or_default();
 
-        if scanner_cc.exists() {
-            println!("cargo:rerun-if-changed={}", scanner_cc.display());
-            cpp_build.file(&scanner_cc);
-        }
-        if schema_cc.exists() {
-            println!("cargo:rerun-if-changed={}", schema_cc.display());
-            cpp_build.file(&schema_cc);
+        // Get the right C++ compiler for cross-compilation
+        let cpp_files: Vec<std::path::PathBuf> = {
+            let mut files = Vec::new();
+            if scanner_cc.exists() {
+                println!("cargo:rerun-if-changed={}", scanner_cc.display());
+                files.push(scanner_cc);
+            }
+            if schema_cc.exists() {
+                println!("cargo:rerun-if-changed={}", schema_cc.display());
+                files.push(schema_cc);
+            }
+            files
+        };
+
+        // Detect cross-compilation compiler
+        let (compiler, ar_cmd) = if target.contains("windows-gnu") {
+            ("x86_64-w64-mingw32-g++".to_string(), "x86_64-w64-mingw32-ar")
+        } else if target.contains("linux") && target.contains("aarch64") {
+            ("aarch64-linux-gnu-g++".to_string(), "aarch64-linux-gnu-ar")
+        } else {
+            ("g++".to_string(), "ar")
+        };
+
+        let mut obj_files: Vec<String> = Vec::new();
+        for cpp_file in &cpp_files {
+            let obj_name = format!("{}_{}.o",
+                lib_name,
+                cpp_file.file_stem().unwrap().to_str().unwrap());
+            let obj_path = std::path::Path::new(&out_dir).join(&obj_name);
+
+            let status = std::process::Command::new(&compiler)
+                .args(&[
+                    "-Os", "-fPIC", "-ffunction-sections", "-fdata-sections",
+                    "-c", "-w",
+                    &format!("-I{}", src_dir.display()),
+                    &format!("-I{}", grammar_dir.display()),
+                    &format!("-I{}", src_dir.join("..").display()),
+                    "-o", obj_path.to_str().unwrap(),
+                    cpp_file.to_str().unwrap(),
+                ])
+                .status()
+                .expect("failed to compile C++ scanner");
+
+            if !status.success() {
+                panic!("C++ compilation failed for {:?}", cpp_file);
+            }
+
+            obj_files.push(obj_name);
         }
 
-        cpp_build.compile(&format!("{}_cpp", lib_name));
+        // Merge C++ objects into the main static library
+        if !obj_files.is_empty() {
+            let main_lib = format!("{}/lib{}.a", out_dir, lib_name);
+            std::process::Command::new(ar_cmd)
+                .args(&["rs", &main_lib])
+                .args(&obj_files)
+                .current_dir(&out_dir)
+                .status()
+                .expect("failed to merge C++ objects into main archive");
+
+            // Clean up object files
+            for obj in &obj_files {
+                let _ = std::fs::remove_file(std::path::Path::new(&out_dir).join(obj));
+            }
+        }
     }
 
     println!("cargo:rustc-link-lib=static={}", lib_name);
