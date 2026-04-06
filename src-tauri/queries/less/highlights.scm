@@ -1,10 +1,12 @@
+; inherits: css
+
 [
   "@import"
   "@namespace"
   "@charset"
 ] @keyword
 
-(js_comment) @comment @spell
+(js_comment) @comment
 
 (function_name) @function
 
@@ -18,7 +20,6 @@
 (keyword_query) @function
 
 (identifier) @variable
-
 (variable) @variable
 
 (arguments
