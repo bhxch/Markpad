@@ -725,6 +725,8 @@ mod tests {
             ("toml", "key = \"value\""),
             ("bash", "#!/bin/bash\necho hello"),
             ("c-sharp", "public class Program {}"),
+            ("xml", "<?xml version=\"1.0\"?>\n<root attr=\"value\">\n  <child>text</child>\n</root>"),
+            ("less", "@color: red;\n.box { color: @color; }"),
         ].iter().cloned().collect();
         
         println!("[test] === Detailed Language Test ===");
