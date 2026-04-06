@@ -370,10 +370,11 @@ async fn open_markdown_preview(path: String, max_bytes: usize) -> Result<(String
         use std::io::Read;
         let mut f = fs::File::open(&path).map_err(|e| e.to_string())?;
 
-        let metadata = f.metadata().map_err(|e| e.to_string())?;
-        if metadata.len() <= max_bytes as u64 {
+        let file_metadata = f.metadata().map_err(|e| e.to_string())?;
+        if file_metadata.len() <= max_bytes as u64 {
             let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-            let html = convert_markdown(&content);
+            let (body, _metadata) = split_frontmatter(&content);
+            let html = convert_markdown(body);
             return Ok((html, content, true));
         }
 
@@ -382,8 +383,8 @@ async fn open_markdown_preview(path: String, max_bytes: usize) -> Result<(String
         vec_buf.truncate(n);
 
         let preview_content = String::from_utf8_lossy(&vec_buf).into_owned();
-
-        let html = convert_markdown(&preview_content);
+        let (body, _metadata) = split_frontmatter(&preview_content);
+        let html = convert_markdown(body);
         Ok((html, preview_content, false))
     })
     .await
