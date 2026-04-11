@@ -1820,8 +1820,17 @@
 			const codeElement = block.querySelector('code') || block;
 			if (!codeElement.textContent?.trim()) return;
 			
-			// Map math to latex for highlighting
-			const highlightLang = language === 'math' ? 'latex' : language;
+			// Map diagram languages to syntax-compatible highlight languages
+			const diagramHighlightMap: Record<string, string> = {
+				'math': 'latex',
+				'vegalite': 'json',
+				'vega': 'json',
+				'bpmn': 'xml',
+				'excalidraw': 'json',
+				'graphviz': 'dot',
+				'c4plantuml': 'java',
+			};
+			const highlightLang = diagramHighlightMap[language] || language;
 			
 			// Try tree-sitter first
 			const tsSuccess = await highlightCodeWithTreeSitter(codeElement as HTMLElement, highlightLang);
@@ -1898,10 +1907,21 @@
 					
 					// Highlight code when showing source
 					const lang = wrapper.dataset.diagramLang || '';
+					const diagramHighlightMap: Record<string, string> = {
+						'math': 'latex',
+						'vegalite': 'json',
+						'vega': 'json',
+						'bpmn': 'xml',
+						'excalidraw': 'json',
+						'graphviz': 'dot',
+						'c4plantuml': 'java',
+					};
+					const highlightLang = diagramHighlightMap[lang] || lang;
 					const codeEl = codeElement.querySelector('code') || codeElement;
 					if (codeEl.textContent?.trim()) {
-						const tsSuccess = await highlightCodeWithTreeSitter(codeEl as HTMLElement, lang);
+						const tsSuccess = await highlightCodeWithTreeSitter(codeEl as HTMLElement, highlightLang);
 						if (!tsSuccess && hljs) {
+							codeEl.className = `language-${highlightLang}`;
 							hljs.highlightElement(codeEl as HTMLElement);
 						}
 					}
