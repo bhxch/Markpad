@@ -4,9 +4,11 @@
 
 mod dark_modern;
 mod light_modern;
+pub mod vscode;
 
 pub use dark_modern::DARK_MODERN;
 pub use light_modern::LIGHT_MODERN;
+pub use vscode::*;
 
 use std::collections::HashMap;
 
