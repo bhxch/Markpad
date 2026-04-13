@@ -124,11 +124,23 @@
 		toasts.push({ id, message, type });
 	}
 
+	// Scroll history for mouse button 4/5 navigation
+	let scrollHistory: number[] = [];
+	let scrollFuture: number[] = [];
+
 	// Upstream: large file progressive loading
 	let loadingTabs = $state<string[]>([]);
 	let isAtBottom = $state(false);
 	let isScrolling = $state(false);
 	let scrollIdleTimer: ReturnType<typeof setTimeout>;
+
+	function pushScrollHistory() {
+		if (markdownBody) {
+			scrollHistory.push(markdownBody.scrollTop);
+			scrollFuture = [];
+			if (scrollHistory.length > 50) scrollHistory.shift();
+		}
+	}
 
 	// derived from tab manager
 	let activeTab = $derived(tabManager.activeTab);
@@ -1666,16 +1678,24 @@
 
 	function handleMouseUp(e: MouseEvent) {
 		if (e.button === 3) {
-			// Back
+			// Back: try scroll history first, then tab navigation
 			e.preventDefault();
-			if (tabManager.activeTabId) {
+			if (scrollHistory.length > 0 && markdownBody) {
+				scrollFuture.push(markdownBody.scrollTop);
+				const pos = scrollHistory.pop()!;
+				markdownBody.scrollTo({ top: pos, behavior: 'smooth' });
+			} else if (tabManager.activeTabId) {
 				const path = tabManager.goBack(tabManager.activeTabId);
 				if (path) loadMarkdown(path, { skipTabManagement: true });
 			}
 		} else if (e.button === 4) {
-			// Forward
+			// Forward: try scroll future first, then tab navigation
 			e.preventDefault();
-			if (tabManager.activeTabId) {
+			if (scrollFuture.length > 0 && markdownBody) {
+				scrollHistory.push(markdownBody.scrollTop);
+				const pos = scrollFuture.pop()!;
+				markdownBody.scrollTo({ top: pos, behavior: 'smooth' });
+			} else if (tabManager.activeTabId) {
 				const path = tabManager.goForward(tabManager.activeTabId);
 				if (path) loadMarkdown(path, { skipTabManagement: true });
 			}
@@ -2250,10 +2270,18 @@
 									htmlContent={htmlContent}
 									{collapsedHeaders}
 									ontoggleFold={toggleFold}
+									onBeforeJump={pushScrollHistory}
 									onjump={(id: string, text: string) => {
 										if (isEditing && editorPane) {
 											editorPane.revealHeader(text);
 										}
+									}}
+									oncopyref={(text: string) => {
+										invoke('clipboard_write_text', { text: `#${text}` });
+									}}
+									oncontext={(e: MouseEvent, item: { text: string }) => {
+										e.preventDefault();
+										invoke('clipboard_write_text', { text: `#${item.text}` });
 									}} />
 							</div>
 						{/if}
