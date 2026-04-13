@@ -38,12 +38,6 @@
 		metadata: string;
 	};
 
-	type TocItem = {
-		id: string;
-		level: number;
-		text: string;
-	};
-
 	// syntax highlighting & latex
 	let hljs: any = $state(null);
 	let renderMathInElement: any = $state(null);
@@ -112,9 +106,6 @@
 	
 	let metadata = $state('');
 	let showMetadata = $state(false);
-
-	let toc = $state<TocItem[]>([]);
-	let showToc = $state(false);
 
 	let isDragging = $state(false);
 	let isProgrammaticScroll = false;
@@ -933,52 +924,6 @@
 		}
 	}
 
-	function refreshToc() {
-		if (!markdownBody) return;
-		const headers = Array.from(markdownBody.querySelectorAll('h1, h2, h3, h4, h5, h6'));
-		toc = headers.map((h, index) => {
-			if (!h.id) h.id = `header-${index}`;
-			return {
-				id: h.id,
-				level: parseInt(h.tagName.substring(1)),
-				text: h.textContent || '',
-			};
-		});
-	}
-
-	function getRelativeOffsetTop(element: HTMLElement, container: HTMLElement): number {
-		// Calculate element's offset relative to the scroll container
-		// by traversing the offsetParent chain
-		let top = element.offsetTop;
-		let current = element.offsetParent as HTMLElement | null;
-		
-		while (current && current !== container) {
-			top += current.offsetTop;
-			current = current.offsetParent as HTMLElement | null;
-		}
-		
-		return top;
-	}
-
-	function scrollToHeader(id: string) {
-		if (!markdownBody || !id) return;
-		const el = document.getElementById(id);
-		if (el) {
-			// Use offsetTop which is unaffected by CSS zoom
-			const targetTop = getRelativeOffsetTop(el, markdownBody) - 20;
-			markdownBody.scrollTo({
-				top: targetTop,
-				behavior: 'smooth',
-			});
-		}
-	}
-
-	$effect(() => {
-		if (settings.showToc) {
-			// 只有在显示 TOC 侧边栏时才解析 DOM
-			untrack(() => refreshToc());
-		}
-	});
 
 	$effect(() => {
 		const _scheme = settings.themeScheme; // 依赖主题变化
