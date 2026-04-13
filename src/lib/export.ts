@@ -45,7 +45,7 @@ export function paginateContent(
 	const clone = container.cloneNode(true) as HTMLElement;
 	
 	// Remove interactive elements
-	clone.querySelectorAll('.toc-sidebar, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label').forEach(el => el.remove());
+	clone.querySelectorAll('.toc-sidebar, .toc-container, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label').forEach(el => el.remove());
 	clone.querySelectorAll('[onclick], [onmousedown], [onwheel]').forEach(el => {
 		el.removeAttribute('onclick');
 		el.removeAttribute('onmousedown');
@@ -422,53 +422,67 @@ html, body {
 	position: relative;
 }
 
-/* TOC Sidebar - fixed position with independent scrolling */
-.toc-sidebar {
+/* TOC Container */
+.toc-container {
 	width: 240px;
 	flex-shrink: 0;
-	border-right: 1px solid var(--color-border-default);
-	background: var(--color-canvas-subtle);
-	padding: 20px 0;
-	position: sticky;
-	top: 0;
-	height: 100vh;
-	overflow-y: auto;
-	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
 }
 
-.toc-title {
-	font-size: 11px;
-	font-weight: 600;
-	color: var(--color-fg-muted);
-	padding: 0 20px 12px;
-	letter-spacing: 0.05em;
-	text-transform: uppercase;
+.toc-header {
+	display: flex;
+	justify-content: flex-end;
+	gap: 4px;
+	padding: 10px 14px;
 }
 
 .toc-list {
-	padding: 0 12px;
+	margin: 0;
+	padding: 0 0 16px;
+	list-style: none;
+	overflow-y: auto;
 }
 
 .toc-item {
+	padding: 1px 0;
+}
+
+.toc-link-wrapper {
+	display: flex;
+	align-items: center;
+}
+
+.toc-link {
 	display: block;
-	padding: 4px 8px;
-	color: var(--color-fg-muted);
-	text-decoration: none;
+	width: 100%;
+	text-align: left;
+	background: none;
+	border: none;
+	padding: 3px 16px 3px 4px;
+	color: #656d76;
 	font-size: 13px;
-	border-radius: 4px;
-	margin-bottom: 2px;
 	cursor: pointer;
+	text-decoration: none;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font-family: inherit;
 }
 
-.toc-item:hover {
-	background: var(--color-neutral-muted);
-	color: var(--color-fg-default);
+.toc-link:hover {
+	color: #24292f;
 }
 
-.toc-item.level-1 { padding-left: 8px; }
-.toc-item.level-2 { padding-left: 20px; }
-.toc-item.level-3 { padding-left: 32px; }
-.toc-item.level-4 { padding-left: 44px; }
+.toc-link.active {
+	color: #24292f;
+	font-weight: 500;
+}
+
+.level-1 .toc-link { font-weight: 500; font-size: 13px; }
+.level-3 .toc-link { font-size: 12.5px; }
+.level-4 .toc-link { font-size: 12px; opacity: 0.9; }
 
 .viewer-pane {
 	flex: 1;
@@ -858,7 +872,7 @@ export function generateExportHtml(
 	// Remove interactive elements (but keep diagram-toggle-btn for HTML export)
 	if (forPrint) {
 		// For PDF: remove TOC sidebar, diagram toggle buttons, and other interactive elements
-		clone.querySelectorAll('.toc-sidebar, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label').forEach(el => el.remove());
+		clone.querySelectorAll('.toc-sidebar, .toc-container, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label').forEach(el => el.remove());
 	} else {
 		// For HTML: keep diagram toggle buttons, remove other interactive elements
 		clone.querySelectorAll('.editor-pane, .split-bar, .lang-label').forEach(el => el.remove());
@@ -873,16 +887,20 @@ export function generateExportHtml(
 
 	// For HTML export: Fix TOC items to be proper anchor links
 	if (!forPrint && showToc) {
-		clone.querySelectorAll('.toc-item').forEach(item => {
+		// Remove interactive buttons (fold, pin, switch side)
+		clone.querySelectorAll('.toc-fold-btn, .toc-header-btn').forEach(el => el.remove());
+		clone.querySelectorAll('.toc-header').forEach(el => el.remove());
+
+		// Convert TOC links to anchor links
+		clone.querySelectorAll('.toc-link').forEach(item => {
 			const tocItem = item as HTMLElement;
-			const targetId = tocItem.getAttribute('data-target-id');
+			const targetId = tocItem.getAttribute('data-id');
 			if (targetId) {
-				// Convert to anchor link
 				const link = document.createElement('a');
 				link.href = `#${targetId}`;
 				link.className = tocItem.className;
 				link.textContent = tocItem.textContent;
-				link.setAttribute('data-target-id', targetId);
+				link.setAttribute('data-id', targetId);
 				tocItem.replaceWith(link);
 			}
 		});
@@ -922,10 +940,10 @@ export function generateExportHtml(
 	const htmlScripts = forPrint ? '' : `
 <script>
 // TOC smooth scrolling
-document.querySelectorAll('.toc-item, .toc-sidebar a[data-target-id]').forEach(item => {
+document.querySelectorAll('.toc-link, .toc-sidebar a[data-id], .toc-container a[data-id]').forEach(item => {
 	item.addEventListener('click', function(e) {
 		e.preventDefault();
-		const targetId = this.getAttribute('data-target-id') || this.getAttribute('href')?.substring(1);
+		const targetId = this.getAttribute('data-id') || this.getAttribute('href')?.substring(1);
 		if (targetId) {
 			const target = document.getElementById(targetId);
 			if (target) {
