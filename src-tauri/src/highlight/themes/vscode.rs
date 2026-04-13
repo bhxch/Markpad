@@ -201,15 +201,6 @@ pub fn parse_vscode_theme_colors(theme_json: &str) -> HashMap<String, String> {
 pub fn build_vscode_theme_colors(theme_json: &str) -> ThemeColors {
     let dynamic_map = parse_vscode_theme_colors(theme_json);
 
-    // Convert HashMap<String, String> to HashMap<String, &'static str>
-    // We need to leak the strings to get 'static lifetime
-    let mut color_map = HashMap::new();
-    for (key, value) in dynamic_map {
-        let key_static: &'static str = Box::leak(key.into_boxed_str());
-        let value_static: &'static str = Box::leak(value.into_boxed_str());
-        color_map.insert(key_static.to_string(), value_static);
-    }
-
     // Try to extract background/foreground from theme
     let theme: serde_json::Value = serde_json::from_str(theme_json).unwrap_or_default();
     let bg = theme
@@ -224,9 +215,9 @@ pub fn build_vscode_theme_colors(theme_json: &str) -> ThemeColors {
         .unwrap_or("#d4d4d4");
 
     ThemeColors {
-        color_map,
-        background: Box::leak(bg.to_string().into_boxed_str()),
-        foreground: Box::leak(fg.to_string().into_boxed_str()),
+        color_map: dynamic_map,
+        background: bg.to_string(),
+        foreground: fg.to_string(),
     }
 }
 

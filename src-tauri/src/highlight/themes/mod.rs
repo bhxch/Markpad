@@ -10,21 +10,62 @@ pub use dark_modern::DARK_MODERN;
 pub use light_modern::LIGHT_MODERN;
 pub use vscode::*;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::path::Path;
+
+/// Get the VSCode themes directory using the same path as Tauri's app_config_dir.
+fn vscode_themes_dir() -> Option<std::path::PathBuf> {
+    directories::ProjectDirs::from("com", "alecdotdev", "Markpad")
+        .map(|dirs| dirs.config_dir().join("themes"))
+}
 
 /// Supported themes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Theme {
     DarkModern,
     LightModern,
+    /// VSCode dynamic theme, identified by name.
+    VSCode(String),
 }
 
 impl Theme {
     /// Get the theme colors.
-    pub fn colors(&self) -> &'static ThemeColors {
+    ///
+    /// For built-in themes, returns a static reference.
+    /// For VSCode themes, returns an owned `ThemeColors` loaded from disk.
+    /// If the VSCode theme file cannot be found, falls back to DarkModern.
+    pub fn colors(&self) -> Cow<'static, ThemeColors> {
         match self {
-            Theme::DarkModern => &DARK_MODERN,
-            Theme::LightModern => &LIGHT_MODERN,
+            Theme::DarkModern => Cow::Borrowed(&DARK_MODERN),
+            Theme::LightModern => Cow::Borrowed(&LIGHT_MODERN),
+            Theme::VSCode(name) => {
+                // Try loading from the same themes directory used by Tauri commands
+                if let Some(themes_dir) = vscode_themes_dir() {
+                    match load_vscode_theme_colors(&themes_dir, name) {
+                        Ok(colors) => Cow::Owned(colors),
+                        Err(_) => Cow::Borrowed(&DARK_MODERN),
+                    }
+                } else {
+                    Cow::Borrowed(&DARK_MODERN)
+                }
+            }
+        }
+    }
+
+    /// Load VSCode theme colors from a specific themes directory.
+    /// Returns an error if the theme file is not found or cannot be parsed.
+    #[allow(dead_code)]
+    pub fn colors_from_dir(&self, themes_dir: &Path) -> Cow<'static, ThemeColors> {
+        match self {
+            Theme::DarkModern => Cow::Borrowed(&DARK_MODERN),
+            Theme::LightModern => Cow::Borrowed(&LIGHT_MODERN),
+            Theme::VSCode(name) => {
+                match load_vscode_theme_colors(themes_dir, name) {
+                    Ok(colors) => Cow::Owned(colors),
+                    Err(_) => Cow::Borrowed(&DARK_MODERN),
+                }
+            }
         }
     }
     
@@ -81,17 +122,26 @@ impl std::fmt::Display for Theme {
         match self {
             Theme::DarkModern => write!(f, "dark-modern"),
             Theme::LightModern => write!(f, "light-modern"),
+            Theme::VSCode(name) => write!(f, "vscode:{}", name),
         }
     }
 }
 
 impl std::str::FromStr for Theme {
     type Err = String;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "dark-modern" | "dark" => Ok(Theme::DarkModern),
             "light-modern" | "light" => Ok(Theme::LightModern),
+            _ if s.starts_with("vscode:") => {
+                let name = &s["vscode:".len()..];
+                if name.is_empty() {
+                    Err("VSCode theme name cannot be empty".to_string())
+                } else {
+                    Ok(Theme::VSCode(name.to_string()))
+                }
+            }
             _ => Err(format!("Unknown theme: {}", s)),
         }
     }
@@ -101,13 +151,23 @@ impl std::str::FromStr for Theme {
 #[derive(Debug, Clone)]
 pub struct ThemeColors {
     /// Map from capture name to hex color
-    pub color_map: HashMap<String, &'static str>,
+    pub color_map: HashMap<String, String>,
     /// Background color
     #[allow(dead_code)]
-    pub background: &'static str,
+    pub background: String,
     /// Foreground (default text) color
     #[allow(dead_code)]
-    pub foreground: &'static str,
+    pub foreground: String,
+}
+
+/// Load a saved VSCode theme by name from the given themes directory.
+///
+/// The theme file is expected at `<themes_dir>/<name>.json`.
+pub fn load_vscode_theme_colors(themes_dir: &Path, name: &str) -> Result<ThemeColors, String> {
+    let theme_file = themes_dir.join(format!("{}.json", name));
+    let json = std::fs::read_to_string(&theme_file)
+        .map_err(|e| format!("Failed to read theme file {:?}: {}", theme_file, e))?;
+    Ok(build_vscode_theme_colors(&json))
 }
 
 /// Mapping from capture names to CSS class names.
@@ -318,5 +378,43 @@ mod tests {
         // Number is mapped as constant.numeric
         assert_eq!(CAPTURE_TO_CSS.get("constant.numeric").copied(), Some("ts-number"));
         assert_eq!(CAPTURE_TO_CSS.get("operator").copied(), Some("ts-operator"));
+    }
+
+    #[test]
+    fn test_theme_from_str_vscode() {
+        let theme: Theme = "vscode:One Dark Pro".parse().unwrap();
+        assert_eq!(theme, Theme::VSCode("One Dark Pro".to_string()));
+
+        // Empty name should fail
+        assert!("vscode:".parse::<Theme>().is_err());
+
+        // Case sensitive name preserved
+        let theme: Theme = "vscode:My Theme".parse().unwrap();
+        assert_eq!(theme, Theme::VSCode("My Theme".to_string()));
+    }
+
+    #[test]
+    fn test_theme_display_roundtrip() {
+        // Built-in themes
+        let dark: Theme = "dark-modern".parse().unwrap();
+        assert_eq!(dark.to_string(), "dark-modern");
+        let light: Theme = "light-modern".parse().unwrap();
+        assert_eq!(light.to_string(), "light-modern");
+
+        // VSCode theme roundtrip
+        let original = Theme::VSCode("One Dark Pro".to_string());
+        let display = original.to_string();
+        assert_eq!(display, "vscode:One Dark Pro");
+        let parsed: Theme = display.parse().unwrap();
+        assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn test_vscode_theme_fallback() {
+        // VSCode theme with non-existent name should fall back to DarkModern colors
+        let theme = Theme::VSCode("non_existent_theme_xyz".to_string());
+        let colors = theme.colors();
+        // Should still have valid colors (fallback to DarkModern)
+        assert!(colors.color_map.contains_key("keyword"));
     }
 }
