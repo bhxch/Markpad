@@ -59,6 +59,13 @@ export interface Translations {
 	closeOtherTabs: string;
 	closeTabsToRight: string;
 	copyPath: string;
+	copyReference: string;
+	saveImageAs: string;
+	saveDiagramAsSvg: string;
+	undo: string;
+	redo: string;
+	editFile: string;
+	closeFile: string;
 
 	// Uninstaller
 	uninstallTitle: string;
@@ -133,6 +140,13 @@ const translations: Record<Locale, Translations> = {
 		closeOtherTabs: '关闭其他标签页',
 		closeTabsToRight: '关闭右侧标签页',
 		copyPath: '复制路径',
+		copyReference: '复制引用',
+		saveImageAs: '图片另存为',
+		saveDiagramAsSvg: '图表另存为 SVG',
+		undo: '撤销',
+		redo: '重做',
+		editFile: '编辑文件',
+		closeFile: '关闭文件',
 
 		// Uninstaller
 		uninstallTitle: '卸载 Markpad',
@@ -206,6 +220,13 @@ const translations: Record<Locale, Translations> = {
 		closeOtherTabs: 'Close Other Tabs',
 		closeTabsToRight: 'Close Tabs to Right',
 		copyPath: 'Copy Path',
+		copyReference: 'Copy Reference',
+		saveImageAs: 'Save Image As',
+		saveDiagramAsSvg: 'Save Diagram as SVG',
+		undo: 'Undo',
+		redo: 'Redo',
+		editFile: 'Edit File',
+		closeFile: 'Close File',
 
 		// Uninstaller
 		uninstallTitle: 'Uninstall Markpad',

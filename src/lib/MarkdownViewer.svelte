@@ -17,6 +17,7 @@
 	import Toc from './components/Toc.svelte';
 	import Toast from './components/Toast.svelte';
 	import ZoomOverlay from './components/ZoomOverlay.svelte';
+	import ContextMenu, { type ContextMenuItem } from './components/ContextMenu.svelte';
 	import type { ExportFormat, PdfPageSize } from './export';
 	import { exportAsHtml, exportAsPdf } from './export';
 	import { i18n } from './i18n';
@@ -116,6 +117,19 @@
 
 	// Upstream: zoom overlay for images/diagrams
 	let zoomData = $state<{ src?: string; html?: string } | null>(null);
+
+	// Upstream: context menu
+	let docContextMenu = $state<{
+		show: boolean;
+		x: number;
+		y: number;
+		items: ContextMenuItem[];
+	}>({
+		show: false,
+		x: 0,
+		y: 0,
+		items: [],
+	});
 
 	// Upstream: toast notifications
 	let toasts = $state<{ id: string; message: string; type: 'info' | 'error' | 'warning' }[]>([]);
@@ -1419,19 +1433,144 @@
 		}
 	}
 
+	async function saveImageAs(src: string) {
+		let realPath = '';
+		if (src.startsWith('asset:')) {
+			try {
+				const url = new URL(src);
+				realPath = decodeURIComponent(url.pathname);
+				if (realPath.startsWith('/localhost/')) {
+					realPath = realPath.substring(11);
+				} else if (realPath.startsWith('/')) {
+					realPath = realPath.substring(1);
+				}
+			} catch (e) {
+				console.error('Failed to parse asset URL:', e);
+			}
+		} else if (src.startsWith('http')) {
+			try {
+				const response = await fetch(src);
+				const buffer = await response.arrayBuffer();
+				const dest = await save({
+					defaultPath: 'image.png',
+					filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+				});
+				if (dest) {
+					await invoke('save_file_binary', { path: dest, data: Array.from(new Uint8Array(buffer)) });
+					addToast('Image saved successfully');
+				}
+			} catch (e) {
+				addToast('Failed to save remote image', 'error');
+			}
+			return;
+		}
+
+		if (realPath) {
+			const ext = realPath.split('.').pop() || 'png';
+			const dest = await save({
+				defaultPath: `image.${ext}`,
+				filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] }]
+			});
+			if (dest) {
+				try {
+					await invoke('copy_file', { src: realPath, dest });
+					addToast('Image saved successfully');
+				} catch (e) {
+					addToast(`Failed to save image: ${e}`, 'error');
+				}
+			}
+		}
+	}
+
+	async function saveDiagramAs(container: HTMLElement) {
+		const svg = container.querySelector('svg')?.outerHTML;
+		if (!svg) return;
+		const dest = await save({
+			defaultPath: 'diagram.svg',
+			filters: [{ name: 'SVG Image', extensions: ['svg'] }]
+		});
+		if (dest) {
+			try {
+				await invoke('save_file_content', { path: dest, content: svg });
+				addToast('Diagram saved as SVG');
+			} catch (e) {
+				addToast(`Failed to save diagram: ${e}`, 'error');
+			}
+		}
+	}
+
 	function handleContextMenu(e: MouseEvent) {
 		if (mode !== 'app') return;
 		e.preventDefault();
 
 		const selection = window.getSelection();
 		const hasSelection = selection ? selection.toString().length > 0 : false;
+		const isInsideEditor = (e.target as HTMLElement).closest('.editor-container');
 
-		invoke('show_context_menu', {
-			menuType: 'document',
-			path: currentFile || null,
-			tabId: null,
-			hasSelection,
-		}).catch(console.error);
+		// detect heading for copy ref
+		const heading = (e.target as HTMLElement).closest('h1, h2, h3, h4, h5, h6');
+		let copyRefItem: ContextMenuItem[] = [];
+		if (heading) {
+			const text = heading.textContent?.trim() || '';
+			const tab = tabManager.activeTab;
+			const filename = tab?.path ? tab.path.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') || '' : '';
+			const ref = filename ? `[[${filename}#${text}]]` : `#${text}`;
+			copyRefItem = [
+				{ label: t.copyReference, onClick: () => invoke('clipboard_write_text', { text: ref }) },
+				{ separator: true },
+			];
+		}
+
+		const img = (e.target as HTMLElement).closest('img');
+		let mediaItems: ContextMenuItem[] = [];
+		if (img) {
+			mediaItems = [
+				{ label: t.saveImageAs, onClick: () => saveImageAs(img.src) },
+				{ separator: true }
+			];
+		}
+
+		const mermaidDiag = (e.target as HTMLElement).closest('.mermaid-diagram');
+		if (mermaidDiag) {
+			mediaItems = [
+				{ label: t.saveDiagramAsSvg, onClick: () => saveDiagramAs(mermaidDiag as HTMLElement) },
+				{ separator: true }
+			];
+		}
+
+		docContextMenu = {
+			show: true,
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				...copyRefItem,
+				...mediaItems,
+				...(isEditing && isInsideEditor
+					? [
+							{ label: t.undo, shortcut: 'Ctrl+Z', onClick: () => { import('./components/Editor.svelte').then(m => { m.undo(); m.redo; }); } },
+							{ label: t.redo, shortcut: 'Ctrl+Y', onClick: () => { import('./components/Editor.svelte').then(m => { m.redo(); }); } },
+							{ separator: true }
+						]
+					: []),
+				...(hasSelection ? [{ label: t.copy, onClick: () => {
+					const sel = window.getSelection()?.toString();
+					if (sel) invoke('clipboard_write_text', { text: sel });
+				} }] : []),
+				{ label: t.selectAll, onClick: () => {
+					if (!markdownBody) return;
+					const range = document.createRange();
+					range.selectNodeContents(markdownBody);
+					const sel = window.getSelection();
+					sel?.removeAllRanges();
+					sel?.addRange(range);
+				} },
+				{ separator: true },
+				{ label: t.openInFolder, onClick: openFileLocation, disabled: !currentFile },
+				{ label: t.editFile, onClick: () => toggleEdit() },
+				{ separator: true },
+				{ label: t.closeFile, onClick: closeFile },
+			],
+		};
 	}
 
 	function handleMouseOver(event: MouseEvent) {
@@ -2377,7 +2516,10 @@
 			onclose={() => zoomData = null} />
 	{/if}
 
-<style>
+	<!-- Upstream: Context menu -->
+	<ContextMenu {...docContextMenu} onhide={() => (docContextMenu.show = false)} />
+
+	<style>
 	:root {
 		--animation: cubic-bezier(0.05, 0.95, 0.05, 0.95);
 		scroll-behavior: smooth !important;
