@@ -195,9 +195,8 @@
 			el.classList.add('toc-target-active');
 			activeTargetEl = el;
 
-			const containerRect = markdownBody.getBoundingClientRect();
-			const elRect = el.getBoundingClientRect();
-			const targetScrollTop = elRect.top - containerRect.top + markdownBody.scrollTop - 60;
+			// Use offsetTop (layout coords, unaffected by CSS zoom) instead of getBoundingClientRect
+			const targetScrollTop = el.offsetTop - 60;
 			markdownBody.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
 
 			// release lock after scroll settles
