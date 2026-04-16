@@ -109,6 +109,8 @@
   let showMetadata = $state(false);
 
   let isDragging = $state(false);
+  let dragTarget = $state<'editor' | 'preview' | null>(null);
+  let isForceExiting = $state(false);
   let isProgrammaticScroll = false;
   let renderVersion = 0; // Render version counter to cancel stale renders
 
@@ -173,6 +175,10 @@
 
   let showHome = $state(false);
   let isFullWidth = $state(localStorage.getItem('isFullWidth') === 'true');
+  let viewerPaneEl = $state<HTMLElement>();
+  let viewerWidth = $state(0);
+  const TOC_WIDTH = 240;
+  let isOverhanging = $derived(isFullWidth || (viewerWidth > 0 && TOC_WIDTH > Math.max(50, (viewerWidth - 780) / 2)));
 
   $effect(() => {
     localStorage.setItem('isFullWidth', String(isFullWidth));
@@ -251,9 +257,33 @@
     modalState.show = false;
   }
 
+  async function appExit() {
+    const dirtyTabs = tabManager.tabs.filter((t) => t.isDirty || (t.path === '' && t.rawContent.trim() !== ''));
+    if (dirtyTabs.length > 0) {
+      const response = await askCustom(
+        `You have ${dirtyTabs.length} unsaved file(s). Discard changes and exit?`,
+        { title: t.unsavedChanges, kind: 'warning', showSave: false },
+      );
+      if (response !== 'discard') return;
+    }
+    isForceExiting = true;
+    appWindow.close();
+  }
+
   function handleModalConfirm() {
     if (modalState.resolve) modalState.resolve('discard');
     modalState.show = false;
+  }
+
+  function handleSplitterKeyDown(e: KeyboardEvent) {
+    const activeTab = tabManager.activeTab;
+    if (!activeTab || !tabManager.activeTabId) return;
+
+    if (e.key === 'ArrowLeft') {
+      tabManager.setSplitRatio(tabManager.activeTabId, Math.max(0.1, activeTab.splitRatio - 0.05));
+    } else if (e.key === 'ArrowRight') {
+      tabManager.setSplitRatio(tabManager.activeTabId, Math.min(0.9, activeTab.splitRatio + 0.05));
+    }
   }
 
   function handleModalCancel() {
@@ -537,6 +567,37 @@
       }
     }
 
+    // Process task list checkboxes
+    for (const input of Array.from(doc.querySelectorAll('li input[type="checkbox"]'))) {
+      input.setAttribute('data-task-checkbox', '');
+      input.removeAttribute('disabled');
+      (input as HTMLInputElement).style.cursor = 'pointer';
+
+      const li = input.closest('li');
+      if (!li) continue;
+
+      const nodes = Array.from(li.childNodes);
+      const inputIdx = nodes.indexOf(input);
+      const afterInput = nodes.slice(inputIdx + 1);
+
+      const inlineNodes = [];
+      for (const n of afterInput) {
+        if (n.nodeType === 1 && ['P', 'DIV', 'UL', 'OL'].includes((n as Element).tagName)) break;
+        inlineNodes.push(n);
+      }
+
+      if (inlineNodes.length > 0) {
+        const wrapper = doc.createElement('span');
+        wrapper.className = 'task-text';
+        for (const n of inlineNodes) wrapper.appendChild(n);
+        li.insertBefore(wrapper, afterInput[inlineNodes.length] || null);
+      }
+
+      if ((input as HTMLInputElement).checked) {
+        li.classList.add('task-done');
+      }
+    }
+
     // Clean up empty paragraphs
     Array.from(doc.querySelectorAll('p')).forEach((p) => {
       if (p.innerHTML.replace(/&nbsp;|\s/g, '').trim() === '') {
@@ -652,9 +713,7 @@
       console.error('Error loading file:', error);
       const errStr = String(error);
       if (errStr.includes('The system cannot find the file specified') || errStr.includes('No such file or directory')) {
-        // Remove from recent files if file no longer exists
-        recentFiles = recentFiles.filter((f) => f !== filePath);
-        localStorage.setItem('recent-files', JSON.stringify(recentFiles));
+        deleteRecentFile(filePath);
         if (tabManager.activeTab && tabManager.activeTab.path === filePath) {
           tabManager.closeTab(tabManager.activeTab.id);
         }
@@ -1204,6 +1263,52 @@
     wrapper.classList.toggle('is-collapsed', !isCurrentlyCollapsed);
   }
 
+  async function toggleTaskCheckbox(checkbox: HTMLInputElement) {
+    const tab = tabManager.activeTab;
+    if (!tab || !tab.path) return;
+
+    let raw: string;
+    try {
+      raw = (await invoke('read_file_content', { path: tab.path })) as string;
+    } catch (e) {
+      console.error('failed to read file for task toggle', e);
+      return;
+    }
+
+    const allBoxes = Array.from(markdownBody?.querySelectorAll('[data-task-checkbox]') || []);
+    const index = allBoxes.indexOf(checkbox);
+    if (index === -1) return;
+
+    const nowChecked = !checkbox.checked;
+
+    let count = 0;
+    const updated = raw.replace(/^(\s*[-*+] )\[( |x|X)\]/gm, (match, prefix) => {
+      if (count === index) {
+        count++;
+        return `${prefix}[${nowChecked ? 'x' : ' '}]`;
+      }
+      count++;
+      return match;
+    });
+
+    if (updated === raw) return;
+
+    try {
+      await invoke('save_file_content', { path: tab.path, content: updated });
+      tab.rawContent = updated;
+      tab.originalContent = updated;
+    } catch (e) {
+      console.error('failed to save task toggle', e);
+      return;
+    }
+
+    checkbox.checked = nowChecked;
+    const li = checkbox.closest('li');
+    if (li) {
+      li.classList.toggle('task-done', nowChecked);
+    }
+  }
+
   function saveRecentFile(path: string) {
     let files = [...recentFiles].filter((f) => f !== path);
     files.unshift(path);
@@ -1222,10 +1327,14 @@
     }
   }
 
-  function removeRecentFile(path: string, event: MouseEvent) {
-    event.stopPropagation();
+  function deleteRecentFile(path: string) {
     recentFiles = recentFiles.filter((f) => f !== path);
     localStorage.setItem('recent-files', JSON.stringify(recentFiles));
+  }
+
+  function removeRecentFile(path: string, event: MouseEvent) {
+    event.stopPropagation();
+    deleteRecentFile(path);
     if (currentFile === path) tabManager.closeTab(tabManager.activeTabId!);
   }
 
@@ -1593,6 +1702,14 @@
   function handleLinkClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
 
+    // task checkbox toggle in read mode
+    if (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'checkbox' && target.hasAttribute('data-task-checkbox')) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleTaskCheckbox(target as HTMLInputElement);
+      return;
+    }
+
     // header fold toggle
     const foldIcon = target.closest('.header-fold-icon');
     const foldableHeader = foldIcon ? foldIcon.closest('.foldable-header') as HTMLElement : null;
@@ -1807,7 +1924,7 @@
     }
     if (cmdOrCtrl && key === 'q') {
       e.preventDefault();
-      appWindow.close();
+      appExit();
     }
   }
 
@@ -2168,9 +2285,8 @@
       );
       unlisteners.push(
         await appWindow.onCloseRequested(async (event) => {
-          console.log('onCloseRequested triggered');
+          if (isForceExiting) return;
           const dirtyTabs = tabManager.tabs.filter((t) => t.isDirty);
-          console.log('Dirty tabs:', dirtyTabs.length);
           if (dirtyTabs.length > 0) {
             console.log('Preventing default close');
             event.preventDefault();
@@ -2209,16 +2325,36 @@
         await appWindow.onDragDropEvent((event) => {
           if (isEditing) {
             isDragging = false;
+            dragTarget = null;
             return;
           }
 
           if (event.payload.type === 'enter' || event.payload.type === 'over') {
             isDragging = true;
+            const { position } = event.payload;
+            const x = position?.x ?? 0;
+            const y = position?.y ?? 0;
+
+            if (viewerPaneEl) {
+              const vRect = viewerPaneEl.getBoundingClientRect();
+              if (x >= vRect.left && x <= vRect.right && y >= vRect.top && y <= vRect.bottom) {
+                dragTarget = 'preview';
+              } else {
+                dragTarget = null;
+              }
+            }
           } else if (event.payload.type === 'drop') {
             isDragging = false;
-            event.payload.paths.forEach((path) => loadMarkdown(path));
+            dragTarget = null;
+            event.payload.paths.forEach((path) => {
+              const ext = path.split('.').pop()?.toLowerCase();
+              if (ext && ['md', 'markdown', 'txt'].includes(ext)) {
+                loadMarkdown(path);
+              }
+            });
           } else {
             isDragging = false;
+            dragTarget = null;
           }
         }),
       );
@@ -2265,7 +2401,7 @@
     onopenFile={selectFile}
     onsaveFile={saveContent}
     onsaveFileAs={saveContentAs}
-    onexit={() => appWindow.close()}
+    onexit={appExit}
     ontoggleHome={toggleHome}
     ononpenFileLocation={openFileLocation}
     ontoggleLiveMode={toggleLiveMode}
@@ -2307,7 +2443,7 @@
     onopenFile={selectFile}
     onsaveFile={saveContent}
     onsaveFileAs={saveContentAs}
-    onexit={() => appWindow.close()}
+    onexit={appExit}
     ontoggleHome={toggleHome}
     ononpenFileLocation={openFileLocation}
     ontoggleLiveMode={toggleLiveMode}
@@ -2366,11 +2502,11 @@
           <!-- Splitter -->
           {#if isSplit}
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
-            <div class="split-bar" onmousedown={(e) => startDrag(e, tabManager.activeTabId)} role="separator" aria-orientation="vertical" tabindex="0"></div>
+            <div class="split-bar" onmousedown={(e) => startDrag(e, tabManager.activeTabId)} onkeydown={handleSplitterKeyDown} role="separator" aria-orientation="vertical" tabindex="0"></div>
           {/if}
 
           <!-- Viewer Pane -->
-          <div class="pane viewer-pane" class:active={!isEditing || isSplit} style="flex: {isSplit ? 1 - tabManager.activeTab.splitRatio : !isEditing ? 1 : 0}">
+          <div bind:this={viewerPaneEl} bind:clientWidth={viewerWidth} class="pane viewer-pane" class:active={!isEditing || isSplit} style="flex: {isSplit ? 1 - tabManager.activeTab.splitRatio : !isEditing ? 1 : 0}">
           <div class="viewer-content">
             <article bind:this={markdownBody} contenteditable="false" class="markdown-body" class:full-width={isFullWidth} onscroll={handleScroll} onclick={handleLinkClick} tabindex="-1" style="outline: none;"></article>
                 {#if tabManager.activeTabId && loadingTabs.includes(tabManager.activeTabId) && isAtBottom}
@@ -2398,6 +2534,7 @@
               <div
                 transition:fly={{ x: settings.tocSide === 'left' ? -240 : 240, duration: 300, opacity: 1, easing: cubicOut }}
                 class="toc-overlay-wrapper"
+                class:is-overhanging={isOverhanging}
                 class:is-pinned={settings.pinnedToc}
                 class:on-right={settings.tocSide === 'right'}>
                 <Toc
@@ -2437,6 +2574,18 @@
     {/key}
   {:else}
     <HomePage {recentFiles} onselectFile={selectFile} onloadFile={loadMarkdown} onremoveRecentFile={removeRecentFile} onnewFile={handleNewFile} />
+  {/if}
+
+  {#if isDragging && !isEditing}
+    <div class="drag-overlay" role="presentation">
+      <div class="drag-zones">
+        <div class="drag-zone viewer-zone" class:active={dragTarget === 'preview'}>
+          <div class="drag-message">
+            <span>Drop to open file</span>
+          </div>
+        </div>
+      </div>
+    </div>
   {/if}
 
   {#if tooltip.show}
@@ -3096,5 +3245,48 @@
 
   .layout-container.editing .toc-overlay-wrapper.on-right {
     right: 0;
+  }
+
+  .drag-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  .drag-zones {
+    display: flex;
+    gap: 16px;
+    width: 80%;
+    max-width: 600px;
+  }
+
+  .drag-zone {
+    flex: 1;
+    padding: 40px 20px;
+    border: 2px dashed var(--color-border-muted);
+    border-radius: 12px;
+    text-align: center;
+    transition: all 0.2s ease;
+    opacity: 0.5;
+  }
+
+  .drag-zone.active {
+    opacity: 1;
+    border-color: var(--color-accent-fg);
+    background: var(--color-accent-subtle);
+  }
+
+  .drag-message {
+    color: var(--color-fg-muted);
+    font-size: 14px;
+  }
+
+  .drag-zone.active .drag-message {
+    color: var(--color-fg-default);
   }
 </style>
