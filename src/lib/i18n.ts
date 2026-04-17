@@ -66,6 +66,7 @@ export interface Translations {
 	redo: string;
 	editFile: string;
 	closeFile: string;
+	viewFullscreen: string;
 
 	// Uninstaller
 	uninstallTitle: string;
@@ -147,6 +148,7 @@ const translations: Record<Locale, Translations> = {
 		redo: '重做',
 		editFile: '编辑文件',
 		closeFile: '关闭文件',
+		viewFullscreen: '全屏查看',
 
 		// Uninstaller
 		uninstallTitle: '卸载 Markpad',
@@ -227,6 +229,7 @@ const translations: Record<Locale, Translations> = {
 		redo: 'Redo',
 		editFile: 'Edit File',
 		closeFile: 'Close File',
+		viewFullscreen: 'View Fullscreen',
 
 		// Uninstaller
 		uninstallTitle: 'Uninstall Markpad',

@@ -155,7 +155,7 @@
       btn.className = 'img-lightbox-btn';
       btn.type = 'button';
       btn.innerHTML = LIGHTBOX_ICON;
-      btn.title = 'View fullscreen';
+      btn.title = t.viewFullscreen;
       btn.onclick = (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -180,7 +180,7 @@
       btn.className = 'img-lightbox-btn';
       btn.type = 'button';
       btn.innerHTML = LIGHTBOX_ICON;
-      btn.title = 'View fullscreen';
+      btn.title = t.viewFullscreen;
       btn.onclick = (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -1863,10 +1863,11 @@
       if (svg) {
         const html = svg.outerHTML;
         const idx = viewableItems.findIndex(v => v.type === 'svg' && v.html === html);
-        lightboxIndex = idx >= 0 ? idx : -1;
-        if (idx < 0) {
-          viewableItems = [...viewableItems, { type: 'svg', html }];
-          lightboxIndex = viewableItems.length - 1;
+        if (idx >= 0) {
+          lightboxIndex = idx;
+        } else {
+          viewableItems = [{ type: 'svg', html }];
+          lightboxIndex = 0;
         }
       }
       return;
@@ -1878,10 +1879,11 @@
       if (svg) {
         const html = svg.outerHTML;
         const idx = viewableItems.findIndex(v => v.type === 'svg' && v.html === html);
-        lightboxIndex = idx >= 0 ? idx : -1;
-        if (idx < 0) {
-          viewableItems = [...viewableItems, { type: 'svg', html }];
-          lightboxIndex = viewableItems.length - 1;
+        if (idx >= 0) {
+          lightboxIndex = idx;
+        } else {
+          viewableItems = [{ type: 'svg', html }];
+          lightboxIndex = 0;
         }
       }
       return;

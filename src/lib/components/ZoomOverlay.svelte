@@ -68,12 +68,6 @@
 		if (newZoom >= MIN_ZOOM) zoom = newZoom;
 	}
 
-	function fitToWindow() {
-		zoom = 1;
-		panX = 0;
-		panY = 0;
-	}
-
 	function handleWheel(e: WheelEvent) {
 		e.preventDefault();
 		const delta = -e.deltaY;
@@ -105,7 +99,7 @@
 		switch (e.key) {
 			case 'Escape':
 				onclose();
-				break;
+				return;
 			case 'ArrowLeft':
 				navigatePrev();
 				break;
@@ -125,14 +119,20 @@
 				break;
 			case 'f':
 			case 'F':
-				fitToWindow();
+				resetView();
 				break;
+			default:
+				return;
 		}
+		e.preventDefault();
 	}
 
 	onMount(() => {
 		window.addEventListener('keydown', handleKeydown);
-		return () => window.removeEventListener('keydown', handleKeydown);
+		return () => {
+				window.removeEventListener('keydown', handleKeydown);
+				clearTimeout(navigateTimer);
+			};
 	});
 </script>
 
