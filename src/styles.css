@@ -1361,6 +1361,7 @@ body {
 }
 
 .markdown-body img:hover + .img-lightbox-btn,
+.img-lightbox-wrapper:hover .img-lightbox-btn,
 .diagram-wrapper:hover .img-lightbox-btn {
 	opacity: 0.8;
 }

@@ -24,6 +24,7 @@
 	let startX = 0;
 	let startY = 0;
 	let transitioning = $state(false);
+	let navigateTimer: ReturnType<typeof setTimeout>;
 
 	const MIN_ZOOM = 0.1;
 	const MAX_ZOOM = 10;
@@ -40,8 +41,9 @@
 
 	function navigateTo(index: number) {
 		if (index < 0 || index >= items.length) return;
+		clearTimeout(navigateTimer);
 		transitioning = true;
-		setTimeout(() => {
+		navigateTimer = setTimeout(() => {
 			currentIndex = index;
 			resetView();
 			setTimeout(() => { transitioning = false; }, 50);
