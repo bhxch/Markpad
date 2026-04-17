@@ -1329,6 +1329,42 @@ body {
 	color: var(--color-fg-default);
 }
 
+/* Lightbox hover button */
+.img-lightbox-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	width: 28px;
+	height: 28px;
+	background: rgba(0, 0, 0, 0.5);
+	border: none;
+	border-radius: 6px;
+	color: white;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.2s ease, background-color 0.15s ease;
+	z-index: 10;
+	pointer-events: auto;
+}
+
+.img-lightbox-btn:hover {
+	opacity: 1 !important;
+	background: rgba(0, 0, 0, 0.7);
+}
+
+.markdown-body img,
+.diagram-wrapper {
+	position: relative;
+}
+
+.markdown-body img:hover + .img-lightbox-btn,
+.diagram-wrapper:hover .img-lightbox-btn {
+	opacity: 0.8;
+}
+
 /* ==========================================
    Tree-sitter Syntax Highlighting
    ========================================== */
