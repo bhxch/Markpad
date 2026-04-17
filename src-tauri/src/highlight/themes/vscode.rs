@@ -223,6 +223,7 @@ pub fn build_vscode_theme_colors(theme_json: &str) -> ThemeColors {
 
 /// Look up the TextMate scope for a given capture name.
 /// Returns the first matching TextMate scope.
+#[allow(dead_code)]
 pub fn capture_to_textmate(capture: &str) -> Option<&'static str> {
     for (tm_scope, cap) in TEXTMATE_TO_CAPTURE.entries() {
         if *cap == capture {
@@ -233,6 +234,7 @@ pub fn capture_to_textmate(capture: &str) -> Option<&'static str> {
 }
 
 /// Look up the capture name for a given TextMate scope.
+#[allow(dead_code)]
 pub fn textmate_to_capture(scope: &str) -> Option<&'static str> {
     TEXTMATE_TO_CAPTURE.get(scope).copied()
 }

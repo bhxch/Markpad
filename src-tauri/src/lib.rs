@@ -71,6 +71,7 @@ fn split_frontmatter(text: &str) -> (&str, String) {
     (text, String::new())
 }
 
+#[allow(dead_code)]
 fn process_obsidian_embeds(content: &str) -> Cow<'_, str> {
     let re = Regex::new(r"!\[\[(.*?)\]\]").unwrap();
 
@@ -661,7 +662,7 @@ fn clipboard_read_text() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn clipboard_read_image(macos_image_scaling: bool) -> Result<String, String> {
+fn clipboard_read_image(_macos_image_scaling: bool) -> Result<String, String> {
     let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     let image = clipboard.get_image().map_err(|e| e.to_string())?;
 
