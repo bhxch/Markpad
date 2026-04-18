@@ -1857,37 +1857,9 @@
       return;
     }
 
-    const mermaidDiv = target.closest('.mermaid-diagram');
-    if (mermaidDiv) {
-      const svg = mermaidDiv.querySelector('svg');
-      if (svg) {
-        const html = svg.outerHTML;
-        const idx = viewableItems.findIndex(v => v.type === 'svg' && v.html === html);
-        if (idx >= 0) {
-          lightboxIndex = idx;
-        } else {
-          viewableItems = [{ type: 'svg', html }];
-          lightboxIndex = 0;
-        }
-      }
-      return;
-    }
-
+    // Diagram wrappers: do NOT open lightbox on click — only hover button triggers it
     const diagramWrapper = target.closest('.diagram-wrapper');
-    if (diagramWrapper && !target.closest('.img-lightbox-btn') && !target.closest('.diagram-toggle-btn')) {
-      const svg = diagramWrapper.querySelector('svg');
-      if (svg) {
-        const html = svg.outerHTML;
-        const idx = viewableItems.findIndex(v => v.type === 'svg' && v.html === html);
-        if (idx >= 0) {
-          lightboxIndex = idx;
-        } else {
-          viewableItems = [{ type: 'svg', html }];
-          lightboxIndex = 0;
-        }
-      }
-      return;
-    }
+    if (diagramWrapper) return;
   }
 
   async function handleDocumentClick(event: MouseEvent) {

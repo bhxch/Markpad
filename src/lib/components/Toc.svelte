@@ -33,54 +33,66 @@
 	let clickLockTimer: ReturnType<typeof setTimeout> | null = null;
 
 	$effect(() => {
-		if (htmlContent && markdownBody) {
-			const result: TocItem[] = [];
+		// Track reactive dependencies
+		const content = htmlContent;
+		const body = markdownBody;
 
-			const hs = markdownBody.querySelectorAll('h1, h2, h3, h4, h5, h6') as NodeListOf<HTMLElement>;
-			for (const h of Array.from(hs)) {
-				let text = h.textContent || '';
-				text = text.replace(/\s*\^[a-zA-Z0-9_-]+$/, '');
-				const anchor = h.querySelector('a.anchor') as HTMLElement | null;
-				const id = h.id || (anchor ? anchor.id : '');
-				if (id) {
-					result.push({ id, text: text.trim(), level: parseInt(h.tagName[1], 10), isBlock: false });
-				}
-			}
+		if (content && body) {
+			// Defer query to ensure parent $effect has updated markdownBody.innerHTML first
+			// (In Svelte 5, child $effects run before parent $effects)
+			let cancelled = false;
+			Promise.resolve().then(() => {
+				if (cancelled || !body) return;
 
-			const blockAnchors = markdownBody.querySelectorAll('a[id].block-id-anchor, span[id].block-id-anchor') as NodeListOf<HTMLElement>;
-			for (const el of Array.from(blockAnchors)) {
-				const id = el.id;
-				const label = el.getAttribute('data-label') || id;
-				result.push({ id, text: label, level: 0, isBlock: true });
-			}
+				const result: TocItem[] = [];
 
-			const allIds = new Map<string, number>();
-			const allEls = markdownBody.querySelectorAll('[id]') as NodeListOf<HTMLElement>;
-			let order = 0;
-			for (const el of Array.from(allEls)) {
-				allIds.set(el.id, order++);
-			}
-			result.sort((a, b) => (allIds.get(a.id) ?? 999) - (allIds.get(b.id) ?? 999));
-
-			for (let i = 0; i < result.length; i++) {
-				const item = result[i];
-				if (item.isBlock) continue;
-				item.hasChildren = false;
-				
-				if (i + 1 < result.length) {
-					const next = result[i+1];
-					if (next.isBlock || next.level > item.level) {
-						item.hasChildren = true;
+				const hs = body.querySelectorAll('h1, h2, h3, h4, h5, h6') as NodeListOf<HTMLElement>;
+				for (const h of Array.from(hs)) {
+					let text = h.textContent || '';
+					text = text.replace(/\s*\^[a-zA-Z0-9_-]+$/, '');
+					const anchor = h.querySelector('a.anchor') as HTMLElement | null;
+					const id = h.id || (anchor ? anchor.id : '');
+					if (id) {
+						result.push({ id, text: text.trim(), level: parseInt(h.tagName[1], 10), isBlock: false });
 					}
 				}
-			}
 
-			const currentFingerprint = items.map(i => `${i.id}-${i.text}-${i.level}`).join('|');
-			const newFingerprint = result.map(i => `${i.id}-${i.text}-${i.level}`).join('|');
-			
-			if (currentFingerprint !== newFingerprint) {
-				items = result;
-			}
+				const blockAnchors = body.querySelectorAll('a[id].block-id-anchor, span[id].block-id-anchor') as NodeListOf<HTMLElement>;
+				for (const el of Array.from(blockAnchors)) {
+					const id = el.id;
+					const label = el.getAttribute('data-label') || id;
+					result.push({ id, text: label, level: 0, isBlock: true });
+				}
+
+				const allIds = new Map<string, number>();
+				const allEls = body.querySelectorAll('[id]') as NodeListOf<HTMLElement>;
+				let order = 0;
+				for (const el of Array.from(allEls)) {
+					allIds.set(el.id, order++);
+				}
+				result.sort((a, b) => (allIds.get(a.id) ?? 999) - (allIds.get(b.id) ?? 999));
+
+				for (let i = 0; i < result.length; i++) {
+					const item = result[i];
+					if (item.isBlock) continue;
+					item.hasChildren = false;
+					
+					if (i + 1 < result.length) {
+						const next = result[i+1];
+						if (next.isBlock || next.level > item.level) {
+							item.hasChildren = true;
+						}
+					}
+				}
+
+				const currentFingerprint = items.map(i => `${i.id}-${i.text}-${i.level}`).join('|');
+				const newFingerprint = result.map(i => `${i.id}-${i.text}-${i.level}`).join('|');
+				
+				if (currentFingerprint !== newFingerprint) {
+					items = result;
+				}
+			});
+			return () => { cancelled = true; };
 		} else {
 			if (items.length > 0) items = [];
 		}

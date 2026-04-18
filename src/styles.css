@@ -1329,30 +1329,30 @@ body {
 	color: var(--color-fg-default);
 }
 
-/* Lightbox hover button */
+/* Lightbox hover button — unified with diagram-toggle-btn style */
 .img-lightbox-btn {
 	position: absolute;
 	top: 8px;
-	right: 8px;
+	right: 44px;
 	width: 28px;
 	height: 28px;
-	background: rgba(0, 0, 0, 0.5);
-	border: none;
-	border-radius: 6px;
-	color: white;
+	background-color: var(--color-canvas-default);
+	border: 1px solid var(--color-border-default);
+	border-radius: 4px;
+	color: var(--color-fg-muted);
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	cursor: pointer;
 	opacity: 0;
-	transition: opacity 0.2s ease, background-color 0.15s ease;
+	transition: opacity 0.2s, background-color 0.1s;
 	z-index: 10;
-	pointer-events: auto;
 }
 
 .img-lightbox-btn:hover {
 	opacity: 1 !important;
-	background: rgba(0, 0, 0, 0.7);
+	background-color: var(--color-canvas-subtle);
+	color: var(--color-fg-default);
 }
 
 .diagram-wrapper {
@@ -1360,9 +1360,12 @@ body {
 }
 
 .markdown-body img:hover + .img-lightbox-btn,
-.img-lightbox-wrapper:hover .img-lightbox-btn,
+.img-lightbox-wrapper:hover .img-lightbox-btn {
+	opacity: 0.6;
+}
+
 .diagram-wrapper:hover .img-lightbox-btn {
-	opacity: 0.8;
+	opacity: 0.6;
 }
 
 /* ==========================================
