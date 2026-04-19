@@ -112,7 +112,7 @@
   let dragTarget = $state<'editor' | 'preview' | null>(null);
   let isForceExiting = $state(false);
   let isProgrammaticScroll = false;
-  let renderVersion = 0; // Render version counter to cancel stale renders
+  let renderVersion = $state(0); // Render version counter to cancel stale renders
 
   // Upstream: heading fold state
   let collapsedHeaders = $state(new Set<string>());
@@ -2619,6 +2619,7 @@
                 <Toc
                   {markdownBody}
                   htmlContent={htmlContent}
+                  {renderVersion}
                   {collapsedHeaders}
                   ontoggleFold={toggleFold}
                   onBeforeJump={pushScrollHistory}

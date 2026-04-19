@@ -283,7 +283,6 @@
 		align-items: center;
 		justify-content: center;
 		user-select: none;
-		will-change: transform;
 		transform-origin: center center;
 		transition: opacity 0.15s ease;
 	}

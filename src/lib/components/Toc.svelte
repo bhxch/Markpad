@@ -2,9 +2,10 @@
 	import { settings } from '../stores/settings.svelte.js';
 	import { t } from '../utils/i18n.js';
 
-	let { markdownBody, htmlContent, onBeforeJump, collapsedHeaders, ontoggleFold, oncopyref, oncontext, onjump, onshowTooltip, onhideTooltip } = $props<{
+	let { markdownBody, htmlContent, renderVersion, onBeforeJump, collapsedHeaders, ontoggleFold, oncopyref, oncontext, onjump, onshowTooltip, onhideTooltip } = $props<{
 		markdownBody: HTMLElement | null;
 		htmlContent: string;
+		renderVersion: number;
 		onBeforeJump?: () => void;
 		collapsedHeaders?: Set<string>;
 		ontoggleFold?: (id: string) => void;
@@ -33,66 +34,59 @@
 	let clickLockTimer: ReturnType<typeof setTimeout> | null = null;
 
 	$effect(() => {
-		// Track reactive dependencies
+		// renderVersion is incremented by parent AFTER innerHTML is set, ensuring DOM is ready
+		const _rv = renderVersion;
 		const content = htmlContent;
 		const body = markdownBody;
 
 		if (content && body) {
-			// Defer query to ensure parent $effect has updated markdownBody.innerHTML first
-			// (In Svelte 5, child $effects run before parent $effects)
-			let cancelled = false;
-			Promise.resolve().then(() => {
-				if (cancelled || !body) return;
+			const result: TocItem[] = [];
 
-				const result: TocItem[] = [];
-
-				const hs = body.querySelectorAll('h1, h2, h3, h4, h5, h6') as NodeListOf<HTMLElement>;
-				for (const h of Array.from(hs)) {
-					let text = h.textContent || '';
-					text = text.replace(/\s*\^[a-zA-Z0-9_-]+$/, '');
-					const anchor = h.querySelector('a.anchor') as HTMLElement | null;
-					const id = h.id || (anchor ? anchor.id : '');
-					if (id) {
-						result.push({ id, text: text.trim(), level: parseInt(h.tagName[1], 10), isBlock: false });
-					}
+			const hs = body.querySelectorAll('h1, h2, h3, h4, h5, h6') as NodeListOf<HTMLElement>;
+			for (const h of Array.from(hs)) {
+				let text = h.textContent || '';
+				text = text.replace(/\s*\^[a-zA-Z0-9_-]+$/, '');
+				const anchor = h.querySelector('a.anchor') as HTMLElement | null;
+				const id = h.id || (anchor ? anchor.id : '');
+				if (id) {
+					result.push({ id, text: text.trim(), level: parseInt(h.tagName[1], 10), isBlock: false });
 				}
+			}
 
-				const blockAnchors = body.querySelectorAll('a[id].block-id-anchor, span[id].block-id-anchor') as NodeListOf<HTMLElement>;
-				for (const el of Array.from(blockAnchors)) {
-					const id = el.id;
-					const label = el.getAttribute('data-label') || id;
-					result.push({ id, text: label, level: 0, isBlock: true });
-				}
+			const blockAnchors = body.querySelectorAll('a[id].block-id-anchor, span[id].block-id-anchor') as NodeListOf<HTMLElement>;
+			for (const el of Array.from(blockAnchors)) {
+				const id = el.id;
+				const label = el.getAttribute('data-label') || id;
+				result.push({ id, text: label, level: 0, isBlock: true });
+			}
 
-				const allIds = new Map<string, number>();
-				const allEls = body.querySelectorAll('[id]') as NodeListOf<HTMLElement>;
-				let order = 0;
-				for (const el of Array.from(allEls)) {
-					allIds.set(el.id, order++);
-				}
-				result.sort((a, b) => (allIds.get(a.id) ?? 999) - (allIds.get(b.id) ?? 999));
+			const allIds = new Map<string, number>();
+			const allEls = body.querySelectorAll('[id]') as NodeListOf<HTMLElement>;
+			let order = 0;
+			for (const el of Array.from(allEls)) {
+				allIds.set(el.id, order++);
+			}
+			result.sort((a, b) => (allIds.get(a.id) ?? 999) - (allIds.get(b.id) ?? 999));
 
-				for (let i = 0; i < result.length; i++) {
-					const item = result[i];
-					if (item.isBlock) continue;
-					item.hasChildren = false;
-					
-					if (i + 1 < result.length) {
-						const next = result[i+1];
-						if (next.isBlock || next.level > item.level) {
-							item.hasChildren = true;
-						}
-					}
-				}
-
-				const currentFingerprint = items.map(i => `${i.id}-${i.text}-${i.level}`).join('|');
-				const newFingerprint = result.map(i => `${i.id}-${i.text}-${i.level}`).join('|');
+			for (let i = 0; i < result.length; i++) {
+				const item = result[i];
+				if (item.isBlock) continue;
+				item.hasChildren = false;
 				
-				if (currentFingerprint !== newFingerprint) {
-					items = result;
+				if (i + 1 < result.length) {
+					const next = result[i+1];
+					if (next.isBlock || next.level > item.level) {
+						item.hasChildren = true;
+					}
 				}
-			});
-			return () => { cancelled = true; };
+			}
+
+			const currentFingerprint = items.map(i => `${i.id}-${i.text}-${i.level}`).join('|');
+			const newFingerprint = result.map(i => `${i.id}-${i.text}-${i.level}`).join('|');
+			
+			if (currentFingerprint !== newFingerprint) {
+				items = result;
+			}
 		} else {
 			if (items.length > 0) items = [];
 		}
