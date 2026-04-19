@@ -2,10 +2,9 @@
 	import { settings } from '../stores/settings.svelte.js';
 	import { t } from '../utils/i18n.js';
 
-	let { markdownBody, htmlContent, renderVersion, onBeforeJump, collapsedHeaders, ontoggleFold, oncopyref, oncontext, onjump, onshowTooltip, onhideTooltip } = $props<{
+	let { markdownBody, htmlContent, onBeforeJump, collapsedHeaders, ontoggleFold, oncopyref, oncontext, onjump, onshowTooltip, onhideTooltip } = $props<{
 		markdownBody: HTMLElement | null;
 		htmlContent: string;
-		renderVersion: number;
 		onBeforeJump?: () => void;
 		collapsedHeaders?: Set<string>;
 		ontoggleFold?: (id: string) => void;
@@ -34,15 +33,10 @@
 	let clickLockTimer: ReturnType<typeof setTimeout> | null = null;
 
 	$effect(() => {
-		// renderVersion is incremented by parent AFTER innerHTML is set, ensuring DOM is ready
-		const _rv = renderVersion;
-		const content = htmlContent;
-		const body = markdownBody;
-
-		if (content && body) {
+		if (htmlContent && markdownBody) {
 			const result: TocItem[] = [];
 
-			const hs = body.querySelectorAll('h1, h2, h3, h4, h5, h6') as NodeListOf<HTMLElement>;
+			const hs = markdownBody.querySelectorAll('h1, h2, h3, h4, h5, h6') as NodeListOf<HTMLElement>;
 			for (const h of Array.from(hs)) {
 				let text = h.textContent || '';
 				text = text.replace(/\s*\^[a-zA-Z0-9_-]+$/, '');
@@ -53,7 +47,7 @@
 				}
 			}
 
-			const blockAnchors = body.querySelectorAll('a[id].block-id-anchor, span[id].block-id-anchor') as NodeListOf<HTMLElement>;
+			const blockAnchors = markdownBody.querySelectorAll('a[id].block-id-anchor, span[id].block-id-anchor') as NodeListOf<HTMLElement>;
 			for (const el of Array.from(blockAnchors)) {
 				const id = el.id;
 				const label = el.getAttribute('data-label') || id;
@@ -61,7 +55,7 @@
 			}
 
 			const allIds = new Map<string, number>();
-			const allEls = body.querySelectorAll('[id]') as NodeListOf<HTMLElement>;
+			const allEls = markdownBody.querySelectorAll('[id]') as NodeListOf<HTMLElement>;
 			let order = 0;
 			for (const el of Array.from(allEls)) {
 				allIds.set(el.id, order++);
