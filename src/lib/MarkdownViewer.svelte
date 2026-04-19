@@ -112,7 +112,8 @@
   let dragTarget = $state<'editor' | 'preview' | null>(null);
   let isForceExiting = $state(false);
   let isProgrammaticScroll = false;
-  let renderVersion = $state(0); // Render version counter to cancel stale renders
+  let renderVersion = 0; // Plain variable for stale render detection
+  let domReadyVersion = $state(0); // Reactive signal for TOC — set after innerHTML update
 
   // Upstream: heading fold state
   let collapsedHeaders = $state(new Set<string>());
@@ -1107,7 +1108,10 @@
       // 4. 递增渲染版本，取消之前所有在途渲染
       renderVersion++;
 
-      // 5. 执行渲染
+      // 5. 通知 TOC DOM 已更新（innerHTML 已设置）
+      domReadyVersion = renderVersion;
+
+      // 6. 执行渲染
       renderRichContent(renderVersion);
     }
   });
@@ -2619,7 +2623,7 @@
                 <Toc
                   {markdownBody}
                   htmlContent={htmlContent}
-                  {renderVersion}
+                  renderVersion={domReadyVersion}
                   {collapsedHeaders}
                   ontoggleFold={toggleFold}
                   onBeforeJump={pushScrollHistory}
