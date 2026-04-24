@@ -197,8 +197,9 @@
 			el.classList.add('toc-target-active');
 			activeTargetEl = el;
 
-			// Use offsetTop (layout coords, unaffected by CSS zoom) instead of getBoundingClientRect
-			const targetScrollTop = el.offsetTop - 60;
+			// comrak puts ID on <a class="anchor"> inside heading — use the heading for offsetTop
+			const scrollTarget = el.closest('h1,h2,h3,h4,h5,h6') as HTMLElement | null || el;
+			const targetScrollTop = scrollTarget.offsetTop - 60;
 			markdownBody.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
 
 			// release lock after scroll settles
