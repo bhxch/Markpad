@@ -1566,4 +1566,5 @@ digraph G {
 		let has_math_in_code = html2.contains("<code>") && html2.contains("data-math-style");
 		eprintln!("Has math inside code: {}", has_math_in_code);
 	}
+}
 
