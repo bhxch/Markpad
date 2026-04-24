@@ -2,9 +2,10 @@
 	import { settings } from '../stores/settings.svelte.js';
 	import { t } from '../utils/i18n.js';
 
-	let { markdownBody, htmlContent, onBeforeJump, collapsedHeaders, ontoggleFold, oncopyref, oncontext, onjump, onshowTooltip, onhideTooltip } = $props<{
+	let { markdownBody, htmlContent, contentRendered, onBeforeJump, collapsedHeaders, ontoggleFold, oncopyref, oncontext, onjump, onshowTooltip, onhideTooltip } = $props<{
 		markdownBody: HTMLElement | null;
 		htmlContent: string;
+		contentRendered: number;
 		onBeforeJump?: () => void;
 		collapsedHeaders?: Set<string>;
 		ontoggleFold?: (id: string) => void;
@@ -33,6 +34,7 @@
 	let clickLockTimer: ReturnType<typeof setTimeout> | null = null;
 
 	$effect(() => {
+		const _v = contentRendered;
 		if (htmlContent && markdownBody) {
 			const result: TocItem[] = [];
 

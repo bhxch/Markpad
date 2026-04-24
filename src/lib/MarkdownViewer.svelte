@@ -113,6 +113,7 @@
   let isForceExiting = $state(false);
   let isProgrammaticScroll = false;
   let renderVersion = 0; // Render version counter to cancel stale renders
+  let contentRendered = $state(0); // reactive signal for Toc: incremented after innerHTML is set
 
   // Upstream: heading fold state
   let collapsedHeaders = $state(new Set<string>());
@@ -1106,6 +1107,7 @@
       
       // 4. 递增渲染版本，取消之前所有在途渲染
       renderVersion++;
+      contentRendered = renderVersion;
 
       // 5. 执行渲染
       renderRichContent(renderVersion);
@@ -2619,6 +2621,7 @@
                 <Toc
                   {markdownBody}
                   htmlContent={htmlContent}
+                  {contentRendered}
                   {collapsedHeaders}
                   ontoggleFold={toggleFold}
                   onBeforeJump={pushScrollHistory}
