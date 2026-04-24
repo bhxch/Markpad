@@ -21,6 +21,7 @@
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-destroy",
-    "core:webview:allow-internal-toggle-devtools"
+    "core:webview:allow-internal-toggle-devtools",
+    "mcp-bridge:default"
   ]
 }

@@ -1009,7 +1009,7 @@ pub fn run() {
         );
     }
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .manage(AppState {
             startup_file: Mutex::new(None),
         })
@@ -1017,9 +1017,12 @@ pub fn run() {
             watcher: Mutex::new(None),
         })
         .plugin(tauri_plugin_opener::init())
-        #[cfg(debug_assertions)]
-        .plugin(tauri_plugin_mcp_bridge::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+
+    #[cfg(debug_assertions)]
+    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+
+    builder
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             println!("Single Instance Args: {:?}", args);
 
@@ -1563,4 +1566,4 @@ digraph G {
 		let has_math_in_code = html2.contains("<code>") && html2.contains("data-math-style");
 		eprintln!("Has math inside code: {}", has_math_in_code);
 	}
-}
+
