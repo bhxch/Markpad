@@ -1294,6 +1294,13 @@ body {
 .diagram-wrapper {
 	margin: 1.5em 0;
 	position: relative;
+	overflow-x: auto;
+	max-width: 100%;
+}
+
+.diagram-wrapper svg {
+	max-width: 100%;
+	height: auto;
 }
 
 .diagram-wrapper pre {
@@ -1353,10 +1360,6 @@ body {
 	opacity: 1 !important;
 	background-color: var(--color-canvas-subtle);
 	color: var(--color-fg-default);
-}
-
-.diagram-wrapper {
-	position: relative;
 }
 
 .markdown-body img:hover + .img-lightbox-btn,
