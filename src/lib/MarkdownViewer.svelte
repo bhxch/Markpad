@@ -849,16 +849,31 @@
                 if (normalizedLang === 'mermaid' && mermaid) {
                   const div = document.createElement('div');
                   div.className = 'mermaid';
-                  
+
                   try {
                     const id = 'mermaid-' + Math.random().toString(36).substring(2, 11);
                     const { svg } = await mermaid.render(id, code);
                     div.innerHTML = svg;
+                    // Make SVG responsive: ensure viewBox and constrain width
+                    const svgEl = div.querySelector('svg');
+                    if (svgEl) {
+                      const w = svgEl.getAttribute('width');
+                      const h = svgEl.getAttribute('height');
+                      if (w && h && !svgEl.getAttribute('viewBox')) {
+                        svgEl.setAttribute('viewBox', `0 0 ${parseFloat(w)} ${parseFloat(h)}`);
+                      }
+                      svgEl.removeAttribute('width');
+                      svgEl.removeAttribute('height');
+                      svgEl.removeAttribute('style');
+                      svgEl.style.width = '100%';
+                      svgEl.style.height = 'auto';
+                      svgEl.style.display = 'block';
+                    }
                   } catch (e) {
                     console.error('Failed to render Mermaid diagram:', e);
                     div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error: ${e}</div>`;
                   }
-                  
+
                   await setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'mermaid');
                 } else if (normalizedLang === 'math' && katex) {
                   // Math/LaTeX code block rendering

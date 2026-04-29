@@ -1295,12 +1295,18 @@ body {
 	margin: 1.5em 0;
 	position: relative;
 	overflow-x: auto;
-	max-width: 100%;
+	width: 100%;
+}
+
+.diagram-wrapper .mermaid {
+	width: 100%;
+	overflow: hidden;
 }
 
 .diagram-wrapper svg {
-	max-width: 100% !important;
-	height: auto !important;
+	display: block;
+	max-width: 100%;
+	height: auto;
 }
 
 .diagram-wrapper pre {
