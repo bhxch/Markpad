@@ -1299,8 +1299,8 @@ body {
 }
 
 .diagram-wrapper svg {
-	max-width: 100%;
-	height: auto;
+	max-width: 100% !important;
+	height: auto !important;
 }
 
 .diagram-wrapper pre {

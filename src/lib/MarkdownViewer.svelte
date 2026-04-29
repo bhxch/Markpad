@@ -2768,6 +2768,7 @@
     padding: 50px clamp(calc(calc(50% - 390px)), 5vw, 50px);
     height: 100%;
     overflow-y: auto;
+    overflow-x: hidden;
     transform: translate3d(0, 0, 0); /* Create stacking context */
   }
 
