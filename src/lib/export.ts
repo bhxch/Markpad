@@ -1269,7 +1269,7 @@ export function generateExportHtml(
 					var render = wrapper.querySelector('[data-diagram-render="true"]');
 					var code = wrapper.querySelector('[data-diagram-code="true"]');
 					if (!render || !code) return;
-					var showingCode = code.style.display !== 'none';
+					var showingCode = window.getComputedStyle(code).display !== 'none';
 					if (showingCode) {
 						render.style.display = 'block';
 						code.style.display = 'none';
@@ -1335,7 +1335,7 @@ export function generateExportHtml(
 			}
 
 			// Collect lightbox items
-			document.querySelectorAll('.img-lightbox-btn').forEach(function(btn, index) {
+			document.querySelectorAll('.img-lightbox-btn').forEach(function(btn) {
 				var wrapper = btn.closest('.img-lightbox-wrapper') || btn.closest('.diagram-wrapper');
 				if (!wrapper) return;
 				var img = wrapper.querySelector('img');
@@ -1345,10 +1345,11 @@ export function generateExportHtml(
 					src: img ? (img.getAttribute('src') || '') : null,
 					html: svg ? svg.outerHTML : null
 				});
+				var itemIndex = lightboxItems.length - 1;
 				btn.addEventListener('click', function(e) {
 					e.stopPropagation();
 					e.preventDefault();
-					showLightbox(index);
+					showLightbox(itemIndex);
 				});
 			});
 
@@ -1384,12 +1385,10 @@ ${dynamicHeightStyle}
 	</style>
 </head>
 <body>
-		<body>
 		${clone.outerHTML}
 		${tocToggleHtml}
 		${htmlScripts}
 	</body>
-</body>
 </html>`;
 
 	return html;
