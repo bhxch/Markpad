@@ -403,33 +403,38 @@ function getBaseStyles(): string {
 }
 
 html, body {
-	margin: 0;
-	padding: 0;
-	background-color: var(--color-canvas-default);
-	color: var(--color-fg-default);
-	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-	line-height: 1.6;
-}
+margin: 0;
+padding: 0;
+background-color: var(--color-canvas-default);
+color: var(--color-fg-default);
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+line-height: 1.6;
+ height: 100vh;
+		overflow: hidden;
+	}
 
 .markdown-container {
-	display: flex;
-	min-height: 100vh;
+display: flex;
+height: 100vh;
 }
 
 .layout-container {
-	display: flex;
-	flex: 1;
-	position: relative;
-}
+display: flex;
+flex: 1;
+position: relative;
+ height: 100%;
+		overflow: hidden;
+	}
 
 /* TOC Container */
 .toc-container {
-	width: 240px;
-	flex-shrink: 0;
-	display: flex;
-	flex-direction: column;
-	overflow: hidden;
-}
+width: 240px;
+flex-shrink: 0;
+display: flex;
+flex-direction: column;
+overflow: hidden;
+ height: 100%;
+	}
 
 .toc-header {
 	display: flex;
@@ -439,11 +444,12 @@ html, body {
 }
 
 .toc-list {
-	margin: 0;
-	padding: 0 0 16px;
-	list-style: none;
-	overflow-y: auto;
-}
+margin: 0;
+padding: 0 0 16px;
+list-style: none;
+overflow-y: auto;
+ flex: 1;
+	}
 
 .toc-item {
 	padding: 1px 0;
@@ -485,10 +491,17 @@ html, body {
 .level-4 .toc-link { font-size: 12px; opacity: 0.9; }
 
 .viewer-pane {
-	flex: 1;
-	padding: 20px;
-	overflow-x: auto;
-}
+flex: 1;
+padding: 20px;
+overflow-x: auto;
+ height: 100%;
+		overflow-y: hidden;
+	}
+
+	.viewer-content {
+		height: 100%;
+		overflow-y: auto;
+	}
 
 .markdown-body {
 	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -728,6 +741,168 @@ ${getTreeSitterStyles()}
 	color: var(--color-fg-default);
 }
 
+
+	/* Diagram default display states (for JS toggle) */
+	[data-diagram-render="true"] { display: block; }
+	[data-diagram-code="true"] { display: none; }
+
+	/* Export: TOC sidebar positioning */
+	.toc-overlay-wrapper {
+		position: relative !important;
+		flex-shrink: 0;
+		width: 240px;
+		height: 100%;
+		overflow: hidden;
+		background: var(--color-canvas-subtle, #f6f8fa);
+		padding-top: 0 !important;
+		transition: width 0.25s ease, opacity 0.25s ease;
+	}
+	.toc-overlay-wrapper:not(.on-right) {
+		order: -1;
+		border-right: 1px solid var(--color-border-default);
+		border-left: none !important;
+	}
+	.toc-overlay-wrapper.on-right {
+		order: 1;
+		border-left: 1px solid var(--color-border-default);
+		border-right: none !important;
+	}
+	.toc-overlay-wrapper .toc-container {
+		height: 100%;
+	}
+	.toc-overlay-wrapper .toc-list {
+		flex: 1;
+		overflow-y: auto;
+		min-height: 0;
+	}
+	.toc-overlay-wrapper.toc-hidden {
+		width: 0;
+		opacity: 0;
+		overflow: hidden;
+		border: none !important;
+		padding: 0;
+	}
+
+	/* Export: TOC toggle button (show when sidebar hidden) */
+	.toc-toggle-export {
+		position: fixed;
+		top: 50%;
+		transform: translateY(-50%);
+		width: 24px;
+		height: 48px;
+		background: var(--color-canvas-overlay, var(--color-canvas-default));
+		border: 1px solid var(--color-border-default);
+		border-radius: 0 6px 6px 0;
+		cursor: pointer;
+		display: none;
+		align-items: center;
+		justify-content: center;
+		z-index: 100;
+		color: var(--color-fg-muted);
+		opacity: 0.7;
+		transition: opacity 0.2s;
+		left: 0;
+	}
+	.toc-toggle-export:hover { opacity: 1; }
+	.toc-toggle-export.visible { display: flex; }
+	.toc-toggle-export.on-right {
+		left: auto;
+		right: 0;
+		border-radius: 6px 0 0 6px;
+	}
+	.toc-toggle-export svg { transition: transform 0.2s; }
+
+	/* Export: Image lightbox button */
+	.img-lightbox-btn {
+		position: absolute;
+		top: 8px;
+		right: 44px;
+		width: 28px;
+		height: 28px;
+		background-color: var(--color-canvas-default);
+		border: 1px solid var(--color-border-default);
+		border-radius: 4px;
+		color: var(--color-fg-muted);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity 0.2s, background-color 0.1s;
+		z-index: 10;
+	}
+	.img-lightbox-wrapper:hover .img-lightbox-btn,
+	.diagram-wrapper:hover .img-lightbox-btn { opacity: 0.6; }
+	.img-lightbox-btn:hover {
+		opacity: 1 !important;
+		background-color: var(--color-canvas-subtle);
+		color: var(--color-fg-default);
+	}
+
+	/* Export: Lightbox overlay */
+	.lightbox-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.85);
+		z-index: 10000;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.lightbox-content {
+		max-width: 95vw;
+		max-height: 95vh;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.lightbox-content img,
+	.lightbox-content svg {
+		max-width: 95vw;
+		max-height: 95vh;
+		object-fit: contain;
+	}
+	.lightbox-close {
+		position: absolute;
+		top: 16px;
+		right: 16px;
+		width: 36px;
+		height: 36px;
+		background: rgba(255, 255, 255, 0.15);
+		border: none;
+		border-radius: 50%;
+		color: white;
+		font-size: 20px;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 10001;
+		transition: background 0.2s;
+	}
+	.lightbox-close:hover { background: rgba(255, 255, 255, 0.3); }
+	.lightbox-nav {
+		position: absolute;
+		top: 50%;
+		transform: translateY(-50%);
+		width: 40px;
+		height: 40px;
+		background: rgba(255, 255, 255, 0.15);
+		border: none;
+		border-radius: 50%;
+		color: white;
+		font-size: 24px;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 10001;
+		transition: background 0.2s;
+	}
+	.lightbox-nav:hover { background: rgba(255, 255, 255, 0.3); }
+	.lightbox-prev { left: 16px; }
+	.lightbox-next { right: 16px; }
+
 /* Print styles */
 @media print {
 	.markdown-container {
@@ -885,26 +1060,65 @@ export function generateExportHtml(
 		el.removeAttribute('onwheel');
 	});
 
-	// For HTML export: Fix TOC items to be proper anchor links
-	if (!forPrint && showToc) {
-		// Remove interactive buttons (fold, pin, switch side)
-		clone.querySelectorAll('.toc-fold-btn, .toc-header-btn').forEach(el => el.remove());
-		clone.querySelectorAll('.toc-header').forEach(el => el.remove());
+		// For HTML export: Fix TOC for standalone HTML
+		if (!forPrint && showToc) {
+			// Ensure TOC wrapper acts as pinned sidebar
+			clone.querySelectorAll('.toc-overlay-wrapper').forEach(el => {
+				const wrapper = el as HTMLElement;
+				wrapper.classList.add('is-pinned');
+				wrapper.style.cssText = '';
+			});
 
-		// Convert TOC links to anchor links
-		clone.querySelectorAll('.toc-link').forEach(item => {
-			const tocItem = item as HTMLElement;
-			const targetId = tocItem.getAttribute('data-id');
-			if (targetId) {
-				const link = document.createElement('a');
-				link.href = `#${targetId}`;
-				link.className = tocItem.className;
-				link.textContent = tocItem.textContent;
-				link.setAttribute('data-id', targetId);
-				tocItem.replaceWith(link);
-			}
-		});
-	}
+			// Rebuild TOC header with export-friendly buttons
+			clone.querySelectorAll('.toc-header').forEach(header => {
+				const h = header as HTMLElement;
+				h.innerHTML = '';
+				h.style.cssText = 'display:flex;justify-content:flex-end;gap:4px;padding:10px 14px;flex-shrink:0;';
+
+				const switchBtn = document.createElement('button');
+				switchBtn.className = 'toc-header-btn';
+				switchBtn.setAttribute('data-action', 'switch-side');
+				switchBtn.title = 'Switch Side';
+				switchBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 8 4 4-4 4"></path><path d="M2 12h20"></path><path d="m6 8-4 4 4 4"></path></svg>';
+				switchBtn.style.cssText = 'background:none;border:none;padding:6px;cursor:pointer;color:var(--color-fg-muted);opacity:0.7;border-radius:4px;display:flex;align-items:center;justify-content:center;';
+				h.appendChild(switchBtn);
+
+				const hideBtn = document.createElement('button');
+				hideBtn.className = 'toc-header-btn';
+				hideBtn.setAttribute('data-action', 'hide');
+				hideBtn.title = 'Hide TOC';
+				hideBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>';
+				hideBtn.style.cssText = 'background:none;border:none;padding:6px;cursor:pointer;color:var(--color-fg-muted);opacity:0.7;border-radius:4px;display:flex;align-items:center;justify-content:center;';
+				h.appendChild(hideBtn);
+			});
+
+			// Convert TOC link buttons to anchor links
+			clone.querySelectorAll('.toc-link').forEach(item => {
+				const tocItem = item as HTMLElement;
+				const targetId = tocItem.getAttribute('data-id');
+				if (targetId) {
+					const link = document.createElement('a');
+					link.href = `#${targetId}`;
+					link.className = tocItem.className;
+					link.textContent = tocItem.textContent;
+					link.setAttribute('data-id', targetId);
+					tocItem.replaceWith(link);
+				}
+			});
+		}
+
+		// For HTML export: remove !important inline display styles from diagrams so JS toggle works
+		if (!forPrint) {
+			clone.querySelectorAll('[data-diagram-render="true"]').forEach(el => {
+				(el as HTMLElement).style.removeProperty('display');
+			});
+			clone.querySelectorAll('[data-diagram-code="true"]').forEach(el => {
+				(el as HTMLElement).style.removeProperty('display');
+			});
+			clone.querySelectorAll('[data-diagram-render]').forEach(el => {
+				(el as HTMLElement).style.removeProperty('pointer-events');
+			});
+		}
 
 	// Ensure headings have proper IDs for TOC links
 	clone.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6').forEach(heading => {
@@ -936,45 +1150,219 @@ export function generateExportHtml(
 		dynamicHeightStyle = `@page { size: 210mm ${height}mm; margin: 15mm; }`;
 	}
 
-	// Add scripts for HTML export (TOC navigation + diagram toggle)
-	const htmlScripts = forPrint ? '' : `
-<script>
-// TOC smooth scrolling
-document.querySelectorAll('.toc-link, .toc-sidebar a[data-id], .toc-container a[data-id]').forEach(item => {
-	item.addEventListener('click', function(e) {
-		e.preventDefault();
-		const targetId = this.getAttribute('data-id') || this.getAttribute('href')?.substring(1);
-		if (targetId) {
-			const target = document.getElementById(targetId);
-			if (target) {
-				target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-				history.pushState(null, '', '#' + targetId);
-			}
-		}
-	});
-});
+		// Add scripts for HTML export
+		const tocToggleHtml = (!forPrint && showToc) ? `
+		<button class="toc-toggle-export" data-action="show" title="Show TOC">
+			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+		</button>` : '';
 
-// Diagram toggle functionality
-document.querySelectorAll('.diagram-toggle-btn').forEach(btn => {
-	btn.addEventListener('click', function() {
-		const wrapper = this.closest('.diagram-wrapper');
-		if (wrapper) {
-			wrapper.classList.toggle('show-source');
-			const chartLayer = wrapper.querySelector('.diagram-chart-layer');
-			const sourceLayer = wrapper.querySelector('.diagram-source-layer');
-			if (chartLayer && sourceLayer) {
-				if (wrapper.classList.contains('show-source')) {
-					chartLayer.style.display = 'none';
-					sourceLayer.style.display = 'block';
-				} else {
-					chartLayer.style.display = 'block';
-					sourceLayer.style.display = 'none';
+		const htmlScripts = forPrint ? '' : `
+		<script>
+		(function() {
+			// === TOC: Toggle visibility ===
+			var tocSidebar = document.querySelector('.toc-overlay-wrapper');
+			var tocToggle = document.querySelector('.toc-toggle-export');
+
+			function hideToc() {
+				if (tocSidebar) tocSidebar.classList.add('toc-hidden');
+				if (tocToggle) {
+					tocToggle.classList.add('visible');
+					if (tocSidebar && tocSidebar.classList.contains('on-right')) {
+						tocToggle.classList.add('on-right');
+					} else {
+						tocToggle.classList.remove('on-right');
+					}
 				}
 			}
-		}
-	});
-});
-</script>`;
+			function showToc() {
+				if (tocSidebar) tocSidebar.classList.remove('toc-hidden');
+				if (tocToggle) tocToggle.classList.remove('visible');
+			}
+
+			// TOC header button clicks
+			document.querySelectorAll('.toc-header-btn').forEach(function(btn) {
+				btn.addEventListener('click', function() {
+					var action = this.getAttribute('data-action');
+					if (action === 'hide') hideToc();
+					else if (action === 'switch-side' && tocSidebar) {
+						tocSidebar.classList.toggle('on-right');
+						if (tocToggle && tocSidebar.classList.contains('toc-hidden')) {
+							tocToggle.classList.toggle('on-right');
+						}
+					}
+				});
+			});
+
+			// Show button click
+			if (tocToggle) {
+				tocToggle.addEventListener('click', showToc);
+			}
+
+			// === TOC: Smooth scrolling ===
+			document.querySelectorAll('.toc-link, .toc-container a[data-id]').forEach(function(item) {
+				item.addEventListener('click', function(e) {
+					e.preventDefault();
+					var targetId = this.getAttribute('data-id') || (this.getAttribute('href') || '').substring(1);
+					if (targetId) {
+						var target = document.getElementById(targetId);
+						if (target) {
+							var viewer = document.querySelector('.viewer-content');
+							if (viewer) {
+								viewer.scrollTo({ top: target.offsetTop - 20, behavior: 'smooth' });
+							}
+							history.pushState(null, '', '#' + targetId);
+							document.querySelectorAll('.toc-link.active, a.toc-link.active').forEach(function(el) {
+								el.classList.remove('active');
+							});
+							this.classList.add('active');
+						}
+					}
+				});
+			});
+
+			// === TOC: Active tracking on scroll ===
+			var viewerContent = document.querySelector('.viewer-content');
+			if (viewerContent) {
+				viewerContent.addEventListener('scroll', function() {
+					var scrollTop = viewerContent.scrollTop;
+					var activeId = null;
+					document.querySelectorAll('.toc-link, a[data-id]').forEach(function(link) {
+						var id = link.getAttribute('data-id') || (link.getAttribute('href') || '').substring(1);
+						if (id) {
+							var el = document.getElementById(id);
+							if (el && el.offsetTop - scrollTop < 150) activeId = id;
+						}
+					});
+					document.querySelectorAll('.toc-link, a[data-id]').forEach(function(link) {
+						var id = link.getAttribute('data-id') || (link.getAttribute('href') || '').substring(1);
+						if (id === activeId) link.classList.add('active');
+						else link.classList.remove('active');
+					});
+				});
+			}
+
+			// === TOC: Fold/unfold ===
+			document.querySelectorAll('.toc-fold-btn').forEach(function(btn) {
+				btn.addEventListener('click', function() {
+					var li = this.closest('.toc-item');
+					if (!li) return;
+					var match = li.className.match(/level-(\\d+)/);
+					if (!match) return;
+					var level = parseInt(match[1]);
+					var collapsed = this.classList.toggle('collapsed');
+					var sibling = li.nextElementSibling;
+					while (sibling && sibling.classList.contains('toc-item')) {
+						var sm = sibling.className.match(/level-(\\d+)/);
+						if (!sm) break;
+						if (parseInt(sm[1]) <= level) break;
+						sibling.style.display = collapsed ? 'none' : '';
+						sibling = sibling.nextElementSibling;
+					}
+				});
+			});
+
+			// === Diagram toggle ===
+			document.querySelectorAll('.diagram-toggle-btn').forEach(function(btn) {
+				btn.addEventListener('click', function() {
+					var wrapper = this.closest('.diagram-wrapper');
+					if (!wrapper) return;
+					var render = wrapper.querySelector('[data-diagram-render="true"]');
+					var code = wrapper.querySelector('[data-diagram-code="true"]');
+					if (!render || !code) return;
+					var showingCode = code.style.display !== 'none';
+					if (showingCode) {
+						render.style.display = 'block';
+						code.style.display = 'none';
+						this.title = 'Show Source';
+						this.innerHTML = '<svg style="pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>';
+					} else {
+						render.style.display = 'none';
+						code.style.display = 'block';
+						this.title = 'Show Diagram';
+						this.innerHTML = '<svg style="pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>';
+					}
+				});
+			});
+
+			// === Lightbox ===
+			var lightboxItems = [];
+			var lightboxOverlay = null;
+			var currentLightboxIndex = -1;
+
+			function createLightbox() {
+				lightboxOverlay = document.createElement('div');
+				lightboxOverlay.id = 'lightbox-overlay';
+				lightboxOverlay.className = 'lightbox-overlay';
+				lightboxOverlay.style.display = 'none';
+				lightboxOverlay.innerHTML = '<div class="lightbox-content" id="lightbox-content"></div>'
+					+ '<button class="lightbox-close" id="lightbox-close">\u00d7</button>'
+					+ '<button class="lightbox-nav lightbox-prev" id="lightbox-prev">\u2039</button>'
+					+ '<button class="lightbox-nav lightbox-next" id="lightbox-next">\u203a</button>';
+				document.body.appendChild(lightboxOverlay);
+
+				document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
+				document.getElementById('lightbox-prev').addEventListener('click', function() { navigateLightbox(-1); });
+				document.getElementById('lightbox-next').addEventListener('click', function() { navigateLightbox(1); });
+				lightboxOverlay.addEventListener('click', function(e) {
+					if (e.target === lightboxOverlay) closeLightbox();
+				});
+			}
+
+			function showLightbox(index) {
+				if (!lightboxOverlay) createLightbox();
+				var item = lightboxItems[index];
+				if (!item) return;
+				currentLightboxIndex = index;
+				var content = document.getElementById('lightbox-content');
+				if (item.type === 'img') {
+					content.innerHTML = '<img src="' + item.src + '" style="max-width:95vw;max-height:95vh;object-fit:contain;">';
+				} else if (item.type === 'svg') {
+					content.innerHTML = item.html;
+				}
+				lightboxOverlay.style.display = 'flex';
+				document.getElementById('lightbox-prev').style.display = index > 0 ? 'flex' : 'none';
+				document.getElementById('lightbox-next').style.display = index < lightboxItems.length - 1 ? 'flex' : 'none';
+			}
+
+			function closeLightbox() {
+				if (lightboxOverlay) lightboxOverlay.style.display = 'none';
+				currentLightboxIndex = -1;
+			}
+
+			function navigateLightbox(delta) {
+				var next = currentLightboxIndex + delta;
+				if (next >= 0 && next < lightboxItems.length) showLightbox(next);
+			}
+
+			// Collect lightbox items
+			document.querySelectorAll('.img-lightbox-btn').forEach(function(btn, index) {
+				var wrapper = btn.closest('.img-lightbox-wrapper') || btn.closest('.diagram-wrapper');
+				if (!wrapper) return;
+				var img = wrapper.querySelector('img');
+				var svg = wrapper.querySelector('[data-diagram-render="true"] svg');
+				lightboxItems.push({
+					type: img ? 'img' : 'svg',
+					src: img ? (img.getAttribute('src') || '') : null,
+					html: svg ? svg.outerHTML : null
+				});
+				btn.addEventListener('click', function(e) {
+					e.stopPropagation();
+					e.preventDefault();
+					showLightbox(index);
+				});
+			});
+
+			// Keyboard shortcuts
+			document.addEventListener('keydown', function(e) {
+				if (e.key === 'Escape') closeLightbox();
+				if (lightboxOverlay && lightboxOverlay.style.display !== 'none') {
+					if (e.key === 'ArrowLeft') navigateLightbox(-1);
+					if (e.key === 'ArrowRight') navigateLightbox(1);
+				}
+			});
+		})();
+		</script>`;
+
 
 	// Build HTML
 	const html = `<!DOCTYPE html>
@@ -996,8 +1384,11 @@ ${dynamicHeightStyle}
 	</style>
 </head>
 <body>
-	${clone.outerHTML}
-	${htmlScripts}
+		<body>
+		${clone.outerHTML}
+		${tocToggleHtml}
+		${htmlScripts}
+	</body>
 </body>
 </html>`;
 
