@@ -45,7 +45,7 @@ export function paginateContent(
 	const clone = container.cloneNode(true) as HTMLElement;
 	
 	// Remove interactive elements
-	clone.querySelectorAll('.toc-sidebar, .toc-container, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label').forEach(el => el.remove());
+	clone.querySelectorAll('.toc-sidebar, .toc-container, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
 	clone.querySelectorAll('[onclick], [onmousedown], [onwheel]').forEach(el => {
 		el.removeAttribute('onclick');
 		el.removeAttribute('onmousedown');
@@ -1047,10 +1047,10 @@ export function generateExportHtml(
 	// Remove interactive elements (but keep diagram-toggle-btn for HTML export)
 	if (forPrint) {
 		// For PDF: remove TOC sidebar, diagram toggle buttons, and other interactive elements
-		clone.querySelectorAll('.toc-sidebar, .toc-container, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label').forEach(el => el.remove());
+		clone.querySelectorAll('.toc-sidebar, .toc-container, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
 	} else {
 		// For HTML: keep diagram toggle buttons, remove other interactive elements
-		clone.querySelectorAll('.editor-pane, .split-bar, .lang-label').forEach(el => el.remove());
+		clone.querySelectorAll('.editor-pane, .split-bar, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
 	}
 	
 	// Remove event handlers
