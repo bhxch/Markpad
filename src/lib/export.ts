@@ -171,7 +171,7 @@ function createPage(
 ${cssVariables}
 }
 
-${getBaseStyles()}
+${getBaseStyles(themeMode)}
 
 @page {
 	size: ${A4_WIDTH}mm ${height}mm;
@@ -358,44 +358,44 @@ function extractCssVariables(): string {
 
 /**
  * Get tree-sitter syntax highlighting CSS
+ * Colors adapt based on current theme mode
  */
-function getTreeSitterStyles(): string {
+function getTreeSitterStyles(theme: string): string {
+	const dark = theme === 'dark';
 	return `
-/* Tree-sitter Syntax Highlighting */
-.ts-comment { color: var(--ts-comment, #6A9955); }
-.ts-keyword { color: var(--ts-keyword, #569CD6); }
-.ts-keyword\\.control { color: var(--ts-keyword-control, #C586C0); }
-.ts-string { color: var(--ts-string, #CE9178); }
-.ts-string\\.regexp { color: var(--ts-string-regexp, #D16969); }
-.ts-number { color: var(--ts-number, #B5CEA8); }
-.ts-constant { color: var(--ts-constant, #4FC1FF); }
-.ts-constant\\.builtin { color: var(--ts-constant-builtin, #569CD6); }
-.ts-boolean { color: var(--ts-boolean, #569CD6); }
-.ts-type { color: var(--ts-type, #4EC9B0); }
-.ts-type\\.builtin { color: var(--ts-type-builtin, #4EC9B0); }
-.ts-function { color: var(--ts-function, #DCDCAA); }
-.ts-method { color: var(--ts-method, #DCDCAA); }
-.ts-macro { color: var(--ts-macro, #DCDCAA); }
-.ts-variable { color: var(--ts-variable, #9CDCFE); }
-.ts-variable\\.builtin { color: var(--ts-variable-builtin, #569CD6); }
-.ts-parameter { color: var(--ts-parameter, #9CDCFE); }
-.ts-property { color: var(--ts-property, #9CDCFE); }
-.ts-operator { color: var(--ts-operator, #D4D4D4); }
-.ts-punctuation { color: var(--ts-punctuation, #D4D4D4); }
-.ts-bracket { color: var(--ts-bracket, #FFD700); }
-.ts-constructor { color: var(--ts-constructor, #4EC9B0); }
-.ts-namespace { color: var(--ts-namespace, #4EC9B0); }
-.ts-tag { color: var(--ts-tag, #569CD6); }
-.ts-attribute { color: var(--ts-attribute, #9CDCFE); }
-.ts-special { color: var(--ts-special, #C586C0); }
-.ts-escape { color: var(--ts-escape, #D7A635); }
+	/* Tree-sitter Syntax Highlighting */
+.ts-comment, .ts-comment-line, .ts-comment-block, .ts-comment-doc { color: ${dark ? '#6A9955' : '#008000'}; font-style: italic; }
+.ts-keyword { color: ${dark ? '#569CD6' : '#0000FF'}; }
+.ts-keyword-control, .ts-keyword-conditional, .ts-keyword-repeat, .ts-keyword-import, .ts-keyword-return, .ts-keyword-exception, .ts-keyword-function, .ts-keyword-storage, .ts-keyword-operator { color: ${dark ? '#C586C0' : '#AF00DB'}; }
+.ts-string { color: ${dark ? '#CE9178' : '#A31515'}; }
+.ts-string-regexp { color: ${dark ? '#D16969' : '#811F3F'}; }
+.ts-string-special, .ts-string-path, .ts-string-url, .ts-string-symbol, .ts-char { color: ${dark ? '#CE9178' : '#A31515'}; }
+.ts-number, .ts-integer, .ts-float { color: ${dark ? '#B5CEA8' : '#098658'}; }
+.ts-constant { color: ${dark ? '#4FC1FF' : '#0070C1'}; }
+.ts-constant-builtin, .ts-boolean { color: ${dark ? '#569CD6' : '#0000FF'}; }
+.ts-type, .ts-constructor, .ts-namespace { color: ${dark ? '#4EC9B0' : '#267F99'}; }
+.ts-type-builtin, .ts-enum-variant { color: ${dark ? '#4EC9B0' : '#267F99'}; }
+.ts-function, .ts-function-builtin, .ts-method, .ts-macro, .ts-function-special { color: ${dark ? '#DCDCAA' : '#795E26'}; }
+.ts-variable, .ts-label { color: ${dark ? '#9CDCFE' : '#001080'}; }
+.ts-variable-builtin { color: ${dark ? '#569CD6' : '#0000FF'}; }
+.ts-parameter, .ts-member, .ts-property { color: ${dark ? '#9CDCFE' : '#001080'}; }
+.ts-operator { color: ${dark ? '#D4D4D4' : '#000000'}; }
+.ts-punctuation, .ts-delimiter { color: ${dark ? '#D4D4D4' : '#000000'}; }
+.ts-bracket { color: ${dark ? '#FFD700' : '#000000'}; }
+.ts-punctuation-special { color: ${dark ? '#D4D4D4' : '#000000'}; }
+.ts-tag { color: ${dark ? '#569CD6' : '#800000'}; }
+.ts-attribute { color: ${dark ? '#9CDCFE' : '#FF0000'}; }
+.ts-special { color: ${dark ? '#C586C0' : '#AF00DB'}; }
+.ts-escape { color: ${dark ? '#D7A635' : '#EE0000'}; }
+.ts-tag-error { color: ${dark ? '#F44747' : '#F44747'}; }
+.ts-default { color: ${dark ? '#D4D4D4' : '#1F2328'}; }
 `;
 }
 
 /**
  * Get the base CSS styles for export
  */
-function getBaseStyles(): string {
+function getBaseStyles(theme: string): string {
 	return `
 /* Base styles */
 * {
@@ -647,7 +647,7 @@ overflow-x: auto;
 .hljs-deletion { background: #ffdce0; }
 .hljs-addition { background: #cdffd8; }
 
-${getTreeSitterStyles()}
+${getTreeSitterStyles(theme)}
 
 /* Diagram styles */
 .diagram-wrapper {
@@ -812,7 +812,30 @@ ${getTreeSitterStyles()}
 	}
 	.toc-toggle-export svg { transition: transform 0.2s; }
 
-	/* Export: Image lightbox button */
+	/* Export: TOC fold button */
+		.toc-fold-btn {
+			background: none;
+			border: none;
+			padding: 2px;
+			cursor: pointer;
+			opacity: 0;
+			color: var(--color-fg-muted);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			transition: transform 0.2s ease, opacity 0.2s ease;
+			border-radius: 4px;
+			flex-shrink: 0;
+			width: 20px;
+			height: 20px;
+			box-sizing: border-box;
+		}
+		.toc-item:hover > .toc-fold-btn,
+		.toc-fold-btn.collapsed { opacity: 0.6; }
+		.toc-fold-btn:hover { opacity: 1 !important; }
+		.toc-fold-btn.collapsed { transform: rotate(-90deg); }
+
+		/* Export: Image lightbox button */
 	.img-lightbox-btn {
 		position: absolute;
 		top: 8px;
@@ -850,12 +873,19 @@ ${getTreeSitterStyles()}
 		justify-content: center;
 	}
 	.lightbox-content {
-		max-width: 95vw;
-		max-height: 95vh;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
+	max-width: 95vw;
+	max-height: 95vh;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	 background: var(--color-canvas-default, #fff);
+			border-radius: 8px;
+			padding: 12px;
+			box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+			overflow: hidden;
+			transform-origin: center center;
+			transition: transform 0.15s ease;
+		}
 	.lightbox-content img,
 	.lightbox-content svg {
 		max-width: 95vw;
@@ -1263,25 +1293,18 @@ export function generateExportHtml(
 
 			// === Diagram toggle ===
 			document.querySelectorAll('.diagram-toggle-btn').forEach(function(btn) {
-				btn.addEventListener('click', function() {
-					var wrapper = this.closest('.diagram-wrapper');
-					if (!wrapper) return;
-					var render = wrapper.querySelector('[data-diagram-render="true"]');
-					var code = wrapper.querySelector('[data-diagram-code="true"]');
-					if (!render || !code) return;
-					var showingCode = window.getComputedStyle(code).display !== 'none';
-					if (showingCode) {
-						render.style.display = 'block';
-						code.style.display = 'none';
-						this.title = 'Show Source';
-						this.innerHTML = '<svg style="pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>';
-					} else {
-						render.style.display = 'none';
-						code.style.display = 'block';
-						this.title = 'Show Diagram';
-						this.innerHTML = '<svg style="pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>';
-					}
-				});
+			btn.addEventListener('click', function() {
+			var wrapper = this.closest('.diagram-wrapper');
+			if (!wrapper) return;
+			var isSource = wrapper.classList.toggle('show-source');
+			if (isSource) {
+			 this.title = 'Show Diagram';
+			 this.innerHTML = '<svg style="pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>';
+			} else {
+			this.title = 'Show Source';
+			this.innerHTML = '<svg style="pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>';
+			}
+			});
 			});
 
 			// === Lightbox ===
@@ -1304,9 +1327,20 @@ export function generateExportHtml(
 				document.getElementById('lightbox-prev').addEventListener('click', function() { navigateLightbox(-1); });
 				document.getElementById('lightbox-next').addEventListener('click', function() { navigateLightbox(1); });
 				lightboxOverlay.addEventListener('click', function(e) {
-					if (e.target === lightboxOverlay) closeLightbox();
+				if (e.target === lightboxOverlay) closeLightbox();
 				});
-			}
+				 lightboxOverlay.addEventListener('wheel', function(e) {
+						e.preventDefault();
+						var content = document.getElementById('lightbox-content');
+						if (!content) return;
+						var s = content.style.transform || '';
+						var m = s.match(/scale\(([\d.]+)\)/);
+						var scale = m ? parseFloat(m[1]) : 1;
+						scale += (e.deltaY < 0 ? 0.15 : -0.15);
+						scale = Math.max(0.2, Math.min(5, scale));
+						content.style.transform = 'scale(' + scale + ')';
+					}, { passive: false });
+				}
 
 			function showLightbox(index) {
 				if (!lightboxOverlay) createLightbox();
@@ -1325,8 +1359,12 @@ export function generateExportHtml(
 			}
 
 			function closeLightbox() {
-				if (lightboxOverlay) lightboxOverlay.style.display = 'none';
-				currentLightboxIndex = -1;
+			if (lightboxOverlay) {
+			 lightboxOverlay.style.display = 'none';
+						var content = document.getElementById('lightbox-content');
+						if (content) content.style.transform = '';
+					}
+					currentLightboxIndex = -1;
 			}
 
 			function navigateLightbox(delta) {
@@ -1377,7 +1415,7 @@ export function generateExportHtml(
 ${cssVariables}
 }
 
-${getBaseStyles()}
+${getBaseStyles(themeMode)}
 
 ${forPrint ? getPrintStyles(pageSize) : ''}
 
@@ -1483,7 +1521,7 @@ async function exportMultiPagePdf(
 ${cssVariables}
 }
 
-${getBaseStyles()}
+${getBaseStyles(themeMode)}
 
 @page {
 	size: ${A4_WIDTH}mm ${maxHeight}mm;
