@@ -165,17 +165,22 @@
       wrapper.appendChild(btn);
     }
 
-    // Collect diagram wrappers with rendered SVG output
+    // Collect diagram wrappers with rendered SVG or IMG output
     const diagramWrappers = markdownBody.querySelectorAll('.diagram-wrapper');
     for (const dw of Array.from(diagramWrappers)) {
       const renderEl = dw.querySelector('[data-diagram-render="true"]');
       if (!renderEl) continue;
 
       const svg = renderEl.querySelector('svg');
-      if (!svg) continue;
+      const img = renderEl.querySelector('img');
+      if (!svg && !img) continue;
 
       const index = items.length;
-      items.push({ type: 'svg', html: svg.outerHTML });
+      if (svg) {
+        items.push({ type: 'svg', html: svg.outerHTML });
+      } else if (img) {
+        items.push({ type: 'img', src: img.getAttribute('src') || '' });
+      }
 
       const btn = document.createElement('button');
       btn.className = 'img-lightbox-btn';

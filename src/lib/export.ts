@@ -886,12 +886,19 @@ ${getTreeSitterStyles(theme)}
 			transform-origin: center center;
 			transition: transform 0.15s ease;
 		}
-	.lightbox-content img,
-	.lightbox-content svg {
-		max-width: 95vw;
-		max-height: 95vh;
-		object-fit: contain;
-	}
+		.lightbox-content img {
+			max-width: 95vw;
+			max-height: 95vh;
+			object-fit: contain;
+		}
+		.lightbox-content svg {
+			max-width: 95vw;
+			max-height: 95vh;
+			object-fit: contain;
+			background: var(--color-canvas-default, #fff);
+			border-radius: 4px;
+			padding: 8px;
+		}
 	.lightbox-close {
 		position: absolute;
 		top: 16px;
@@ -1372,24 +1379,28 @@ export function generateExportHtml(
 				if (next >= 0 && next < lightboxItems.length) showLightbox(next);
 			}
 
-			// Collect lightbox items
-			document.querySelectorAll('.img-lightbox-btn').forEach(function(btn) {
-				var wrapper = btn.closest('.img-lightbox-wrapper') || btn.closest('.diagram-wrapper');
-				if (!wrapper) return;
-				var img = wrapper.querySelector('img');
-				var svg = wrapper.querySelector('[data-diagram-render="true"] svg');
-				lightboxItems.push({
-					type: img ? 'img' : 'svg',
-					src: img ? (img.getAttribute('src') || '') : null,
-					html: svg ? svg.outerHTML : null
+				// Collect lightbox items
+				document.querySelectorAll('.img-lightbox-btn').forEach(function(btn) {
+					var wrapper = btn.closest('.img-lightbox-wrapper') || btn.closest('.diagram-wrapper');
+					if (!wrapper) return;
+					var renderEl = wrapper.querySelector('[data-diagram-render="true"]');
+					var svg = renderEl ? renderEl.querySelector('svg') : null;
+					var img = renderEl ? renderEl.querySelector('img') : null;
+					if (!svg && !img) {
+						img = wrapper.querySelector('img');
+					}
+					lightboxItems.push({
+						type: img ? 'img' : 'svg',
+						src: img ? (img.getAttribute('src') || '') : null,
+						html: svg ? svg.outerHTML : null
+					});
+					var itemIndex = lightboxItems.length - 1;
+					btn.addEventListener('click', function(e) {
+						e.stopPropagation();
+						e.preventDefault();
+						showLightbox(itemIndex);
+					});
 				});
-				var itemIndex = lightboxItems.length - 1;
-				btn.addEventListener('click', function(e) {
-					e.stopPropagation();
-					e.preventDefault();
-					showLightbox(itemIndex);
-				});
-			});
 
 			// Keyboard shortcuts
 			document.addEventListener('keydown', function(e) {
