@@ -729,7 +729,7 @@
             if (markdownBody) isAtBottom = markdownBody.scrollHeight <= markdownBody.clientHeight + 100;
           });
           Promise.all([
-            invoke('open_markdown', { path: filePath }) as Promise<string>,
+            invoke('open_markdown', { path: filePath }) as Promise<MarkdownResponse>,
             invoke('read_file_content', { path: filePath }) as Promise<string>
           ]).then(([fullHtml, fullContent]) => {
             const applyFull = () => {
@@ -739,7 +739,7 @@
                   return;
                 }
                 if (tabManager.tabs.find((t) => t.id === activeId)?.path === filePath) {
-                  const fullProcessed = processMarkdownHtml(fullHtml, filePath);
+                  const fullProcessed = processMarkdownHtml(fullHtml.html, filePath);
                   tabManager.updateTabContent(activeId, fullProcessed);
                   tabManager.setTabRawContent(activeId, fullContent);
                   loadingTabs = loadingTabs.filter((id) => id !== activeId);
