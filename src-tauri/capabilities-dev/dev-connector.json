@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "dev-connector",
+  "description": "Development connector capability",
+  "windows": ["main"],
+  "permissions": [
+    "connector:default"
+  ]
+}

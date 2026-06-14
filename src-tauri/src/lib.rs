@@ -1019,7 +1019,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init());
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "dev-connector")]
     let builder = builder.plugin(tauri_plugin_connector::init());
 
     builder
@@ -1065,6 +1065,13 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            #[cfg(feature = "dev-connector")]
+            {
+                let dev_connector_capability = include_str!("../capabilities-dev/dev-connector.json");
+                app.add_capability(dev_connector_capability)
+                    .map_err(|e| format!("dev-connector capability: {e}"))?;
+            }
+
             let args: Vec<String> = std::env::args().collect();
             println!("Setup Args: {:?}", args);
 

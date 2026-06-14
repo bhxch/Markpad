@@ -21,7 +21,6 @@
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-destroy",
-    "core:webview:allow-internal-toggle-devtools",
-    "connector:default"
+    "core:webview:allow-internal-toggle-devtools"
   ]
 }
