@@ -1573,5 +1573,41 @@ digraph G {
 		let has_math_in_code = html2.contains("<code>") && html2.contains("data-math-style");
 		eprintln!("Has math inside code: {}", has_math_in_code);
 	}
+
+	#[test]
+	fn test_render_markdown_returns_html_string_field() {
+		// MarkdownResponse.html is a String field. The frontend must access `.html`
+		// rather than stringify the whole response object — see MarkdownViewer.svelte
+		// loadMarkdown (the >50KB "[object Object]" regression).
+		let resp = render_markdown("# 标题\n\n正文".to_string());
+		assert!(resp.html.contains("<h1"), "html field should render the heading");
+		assert!(resp.html.contains("标题"));
+		assert!(resp.html.contains("正文"));
+	}
+
+	#[test]
+	fn test_render_markdown_large_input() {
+		// Regression for >50KB markdown rendering as "[object Object]".
+		// Pins the backend contract: render_markdown returns a MarkdownResponse whose
+		// html field holds the FULL rendered HTML for large inputs (all headings),
+		// so the frontend progressive-load path can safely read `.html`.
+		let mut content = String::from("# 大文件渲染回归测试\n\n");
+		for i in 0..200 {
+			content.push_str(&format!("## 第 {} 节\n\n{}\n\n", i, "正文内容填充；".repeat(20)));
+		}
+		assert!(
+			content.len() > 50_000,
+			"test input should exceed the 50KB preview threshold"
+		);
+
+		let resp = render_markdown(content);
+		assert!(resp.html.contains("第 199 节"), "html should contain the last heading");
+		assert!(
+			!resp.html.contains("[object Object]"),
+			"html must never contain [object Object]"
+		);
+		let h2_count = resp.html.matches("<h2").count();
+		assert_eq!(h2_count, 200, "all 200 h2 headings should be rendered");
+	}
 }
 
