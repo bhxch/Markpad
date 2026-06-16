@@ -23,3 +23,6 @@ test_*.zip
 
 # Coverage reports
 src-tauri/tarpaulin-report.json
+
+# Sandbox-generated empty MCP placeholder; the real config lives in the parent repo
+.mcp.json
