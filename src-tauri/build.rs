@@ -325,12 +325,18 @@ fn compile_grammar(name: &str, grammar_dir: &Path, subpath: &str, c_symbol: &str
     };
 
     // Build C files (parser.c + optional scanner.c) with C compiler
+    // 固定 C 标准为 gnu11: gcc 16+ 默认使用 C23, glibc 在 C23 下会用 _Generic
+    // 将 bsearch() 等 stdlib 函数宏化, 与部分 grammar 自带同名 C 函数冲突
+    // (例如 grammars/perl/src/bsearch.c 定义了自己的 bsearch), 预处理后
+    // 变成 `void *_Generic(...)` 触发 "expected identifier before '_Generic'" 错误。
+    // 用 gnu11 编译既修复此问题, 也符合 tree-sitter 生成的 C 代码的预期标准。
     let mut build = cc::Build::new();
     build
         .file(&parser_c)
         .include(&src_dir)
         .include(grammar_dir)
-        .warnings(false);
+        .warnings(false)
+        .flag("-std=gnu11");
 
     let has_c_scanner = scanner_c.exists() && !scanner_cc.exists();
     if has_c_scanner {
@@ -378,6 +384,10 @@ fn compile_grammar(name: &str, grammar_dir: &Path, subpath: &str, c_symbol: &str
 
             let status = std::process::Command::new(&compiler)
                 .args(&[
+                    // 固定 C++ 标准为 gnu++17: gcc 16 默认标准下 mingw 的 libstdc++
+                    // 缺少 std::string move 构造符号, 导致链接报 undefined reference
+                    // to basic_string::basic_string(&&). 显式 gnu++17 规避此问题.
+                    "-std=gnu++17",
                     "-Os", "-fPIC", "-ffunction-sections", "-fdata-sections",
                     "-c", "-w",
                     &format!("-I{}", src_dir.display()),
