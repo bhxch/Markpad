@@ -1,6 +1,5 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
-import { settings } from './stores/settings.svelte.js';
 import { i18n } from './i18n';
 
 export type ExportFormat = 'html' | 'pdf';
@@ -509,6 +508,8 @@ overflow-x: auto;
 	line-height: 1.6;
 	color: var(--color-fg-default);
 	max-width: 900px;
+	margin: 0 auto;
+	overflow-wrap: break-word;
 }
 
 .markdown-body > *:first-child {
@@ -972,6 +973,15 @@ ${getTreeSitterStyles(theme)}
 	table {
 		break-inside: avoid;
 	}
+
+	pre, table, img, .markdown-body svg {
+		max-width: 100%;
+	}
+
+	.markdown-body pre {
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
 }
 `;
 }
@@ -1084,7 +1094,7 @@ export function generateExportHtml(
 	// Remove interactive elements (but keep diagram-toggle-btn for HTML export)
 	if (forPrint) {
 		// For PDF: remove TOC sidebar, diagram toggle buttons, and other interactive elements
-		clone.querySelectorAll('.toc-sidebar, .toc-container, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
+		clone.querySelectorAll('.toc-sidebar, .toc-container, .toc-overlay-wrapper, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
 	} else {
 		// For HTML: keep diagram toggle buttons, remove other interactive elements
 		clone.querySelectorAll('.editor-pane, .split-bar, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
