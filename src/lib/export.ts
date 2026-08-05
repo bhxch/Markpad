@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { i18n } from './i18n';
 
 export type ExportFormat = 'html' | 'pdf';
-export type PdfPageSize = 'dynamic' | 'a4' | 'a3' | 'letter' | 'legal';
+export type PdfPageSize = 'a4' | 'a3' | 'letter' | 'legal';
 
 // Page constants (in mm)
 const A4_WIDTH = 210;
@@ -313,7 +313,6 @@ export async function exportAsPdf(
 
 // Page size dimensions in mm
 const PAGE_SIZES: Record<string, { width: number; height: number }> = {
-	dynamic: { width: 210, height: 0 }, // Height will be calculated
 	a4: { width: 210, height: 297 },
 	a3: { width: 297, height: 420 },
 	letter: { width: 215.9, height: 279.4 },
@@ -992,27 +991,6 @@ ${getTreeSitterStyles(theme)}
 function getPrintStyles(pageSize: PdfPageSize): string {
 	const size = PAGE_SIZES[pageSize];
 	
-	if (pageSize === 'dynamic') {
-		// Dynamic height will be set via JavaScript
-		return `
-@page {
-	size: 210mm auto;
-	margin: 15mm;
-}
-
-@media print {
-	html, body {
-		height: auto !important;
-		overflow: visible !important;
-	}
-	
-	.markdown-container {
-		display: block;
-	}
-}
-`;
-	}
-
 	return `
 @page {
 	size: ${size.width}mm ${size.height}mm;
@@ -1034,47 +1012,56 @@ function getPrintStyles(pageSize: PdfPageSize): string {
 }
 
 /**
- * Calculate dynamic page height based on content
+ * Decide whether an element (diagram/img/svg) should be scaled to fit a page,
+ * based on the ratio of its height to the page's usable height.
+ *
+ * ratio = elementHeight / pageUsableHeight
+ * - ratio > 1: taller than a page → scale to 95% of a page, start a new page
+ * - 0.8 < ratio (and resulting scale < 1): nearly a page → scale down slightly
+ * - otherwise: null (no scaling needed)
  */
-function calculateDynamicHeight(container: HTMLElement): number {
-	const contentHeight = container.scrollHeight;
-	const pxToMm = contentHeight / 96 * 25.4; // 96 DPI
-	return Math.ceil(pxToMm + 30); // Add margins
+export function computeFitScale(ratio: number): { scale: number; newPage: boolean } | null {
+	if (ratio > 1) {
+		return { scale: 0.95 / ratio, newPage: true };
+	}
+	if (ratio > 0.8) {
+		const scale = 0.95 / ratio;
+		if (scale < 1) {
+			return { scale, newPage: false };
+		}
+	}
+	return null;
 }
 
 /**
  * Process diagrams for pagination
  */
 function processDiagramsForPrint(container: HTMLElement, pageSize: PdfPageSize): void {
-	if (pageSize === 'dynamic') return;
-
 	const size = PAGE_SIZES[pageSize];
 	const pageHeightMm = size.height - 30; // Subtract margins (15mm * 2)
 	const pageHeightPx = pageHeightMm / 25.4 * 96; // Convert to pixels
 
-	const diagrams = container.querySelectorAll('.diagram-wrapper');
-	
-	diagrams.forEach(diagram => {
-		const el = diagram as HTMLElement;
-		const height = el.scrollHeight;
-		const ratio = height / pageHeightPx;
+	// Collect targets: diagram wrappers, plus inline img/svg that are NOT inside
+	// a diagram-wrapper (those are already handled via the wrapper).
+	const targets: HTMLElement[] = [];
+	container.querySelectorAll('.diagram-wrapper').forEach(el => targets.push(el as HTMLElement));
+	container.querySelectorAll('.markdown-body img, .markdown-body svg').forEach(el => {
+		if (el.closest('.diagram-wrapper')) return;
+		targets.push(el as HTMLElement);
+	});
 
-		if (ratio > 1) {
-			// Large diagram: move to new page and scale
+	targets.forEach(el => {
+		const height = el.scrollHeight;
+		if (!height) return;
+		const fit = computeFitScale(height / pageHeightPx);
+		if (!fit) return;
+
+		if (fit.newPage) {
 			el.classList.add('large-diagram');
-			const scale = (pageHeightPx * 0.95) / height;
-			el.style.transform = `scale(${scale})`;
-			el.style.transformOrigin = 'top left';
-			el.style.width = `${100 / scale}%`;
-		} else if (ratio > 0.8) {
-			// Medium diagram: scale slightly
-			const scale = (pageHeightPx * 0.95) / height;
-			if (scale < 1) {
-				el.style.transform = `scale(${scale})`;
-				el.style.transformOrigin = 'top left';
-				el.style.width = `${100 / scale}%`;
-			}
 		}
+		el.style.transform = `scale(${fit.scale})`;
+		el.style.transformOrigin = 'top left';
+		el.style.width = `${100 / fit.scale}%`;
 	});
 }
 
@@ -1084,7 +1071,7 @@ function processDiagramsForPrint(container: HTMLElement, pageSize: PdfPageSize):
 export function generateExportHtml(
 	container: HTMLElement,
 	showToc: boolean,
-	pageSize: PdfPageSize = 'dynamic',
+	pageSize: PdfPageSize = 'a4',
 	forPrint: boolean = false,
 	title: string = 'Exported Document'
 ): string {
@@ -1185,16 +1172,9 @@ export function generateExportHtml(
 	// Extract CSS variables
 	const cssVariables = extractCssVariables();
 
-	// Process diagrams for print
-	if (forPrint && pageSize !== 'dynamic') {
+	// Process diagrams/img/svg for print (scale to fit page)
+	if (forPrint) {
 		processDiagramsForPrint(clone, pageSize);
-	}
-
-	// Calculate dynamic height if needed
-	let dynamicHeightStyle = '';
-	if (forPrint && pageSize === 'dynamic') {
-		const height = calculateDynamicHeight(clone);
-		dynamicHeightStyle = `@page { size: 210mm ${height}mm; margin: 15mm; }`;
 	}
 
 		// Add scripts for HTML export
@@ -1439,8 +1419,6 @@ ${cssVariables}
 ${getBaseStyles(themeMode)}
 
 ${forPrint ? getPrintStyles(pageSize) : ''}
-
-${dynamicHeightStyle}
 	</style>
 </head>
 <body>
@@ -1468,7 +1446,7 @@ export async function exportAsHtml(
 
 	if (!filePath) return false;
 
-	const html = generateExportHtml(container, showToc, 'dynamic', false, defaultFileName);
+	const html = generateExportHtml(container, showToc, 'a4', false, defaultFileName);
 	await invoke('save_file_content', { path: filePath, content: html });
 	return true;
 }
@@ -1495,7 +1473,7 @@ export async function exportAsPdfPaginated(
 		
 		// 2. For single page, generate directly with dynamic height
 		if (pages.length === 1) {
-			return exportAsPdf(container, showToc, 'dynamic', title);
+			return exportAsPdf(container, showToc, 'a4', title);
 		}
 		
 		// 3. For multiple pages, we need to either:

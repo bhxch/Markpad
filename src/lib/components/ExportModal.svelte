@@ -3,7 +3,7 @@
 	import { i18n, type Locale } from '../i18n';
 
 	export type ExportFormat = 'html' | 'pdf';
-	export type PdfPageSize = 'dynamic' | 'a4' | 'a3' | 'letter' | 'legal';
+	export type PdfPageSize = 'a4' | 'a3' | 'letter' | 'legal';
 
 	// Reactive translations
 	let t = $state(i18n.getAll());
@@ -25,10 +25,9 @@
 	}>();
 
 	let format = $state<ExportFormat>('html');
-	let pageSize = $state<PdfPageSize>('dynamic');
+	let pageSize = $state<PdfPageSize>('a4');
 
 	const pageSizes: { value: PdfPageSize }[] = [
-		{ value: 'dynamic' },
 		{ value: 'a4' },
 		{ value: 'a3' },
 		{ value: 'letter' },
@@ -36,10 +35,7 @@
 	];
 
 	function getPageSizeLabel(size: PdfPageSize): string {
-		switch (size) {
-			case 'dynamic': return t.dynamicSinglePage;
-			default: return size.toUpperCase();
-		}
+		return size.toUpperCase();
 	}
 
 	let modalContent = $state<HTMLDivElement>();
