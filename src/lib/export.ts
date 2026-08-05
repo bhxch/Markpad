@@ -947,6 +947,11 @@ ${getTreeSitterStyles(theme)}
 
 /* Print styles */
 @media print {
+	html, body {
+		height: auto !important;
+		overflow: visible !important;
+	}
+
 	.markdown-container {
 		display: block;
 	}

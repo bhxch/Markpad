@@ -89,6 +89,13 @@ describe('PDF 分页（只一页回归）', () => {
 	});
 });
 
+describe('PDF html/body 分页', () => {
+	it('@media print 覆盖 html/body 为 overflow:visible（基础 overflow:hidden 会阻止分页）', async () => {
+		const out = await generateExportHtml(makeContainer(), true, 'a4', true, '测试');
+		expect(out).toMatch(/@media\s+print[\s\S]*?html,\s*body[\s\S]*?overflow:\s*visible/i);
+	});
+});
+
 describe('HTML 导出 diagram 切换按钮', () => {
 	it('diagram toggle CSS 选择器匹配实际 DOM ([data-diagram-render/code])', async () => {
 		const out = await generateExportHtml(makeContainerWithDiagram(), false, 'a4', false, '测试');
