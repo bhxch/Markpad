@@ -273,10 +273,15 @@ export async function exportAsPdf(
 	pageSize: PdfPageSize,
 	title: string = 'Exported Document'
 ): Promise<{ success: boolean; message: string }> {
+	let html: string;
+	try {
+		html = await generateExportHtml(container, showToc, pageSize, true, title);
+	} catch (e) {
+		return { success: false, message: `PDF export failed: ${e}` };
+	}
+
 	return new Promise((resolve) => {
 		try {
-			const html = generateExportHtml(container, showToc, pageSize, true, title);
-			
 			const iframe = document.createElement('iframe');
 			iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:210mm;height:auto;border:none;';
 			document.body.appendChild(iframe);
@@ -1034,6 +1039,34 @@ export function computeFitScale(ratio: number): { scale: number; newPage: boolea
 }
 
 /**
+ * Convert asset:// images to data URIs so exported HTML works in external browsers.
+ * asset:// is a Tauri webview-only protocol; external browsers can't load it.
+ */
+export async function convertAssetImagesToDataUri(container: HTMLElement): Promise<void> {
+	const imgs = Array.from(container.querySelectorAll('img')).filter(img =>
+		(img.getAttribute('src') || '').startsWith('asset:'),
+	);
+	await Promise.all(
+		imgs.map(async (img) => {
+			const src = img.getAttribute('src') || '';
+			try {
+				const resp = await fetch(src);
+				const blob = await resp.blob();
+				const buf = await blob.arrayBuffer();
+				const bytes = new Uint8Array(buf);
+				let binary = '';
+				for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+				const base64 = btoa(binary);
+				const mime = blob.type || 'image/png';
+				img.setAttribute('src', `data:${mime};base64,${base64}`);
+			} catch {
+				// conversion failed (not in webview / fetch error); keep original src
+			}
+		}),
+	);
+}
+
+/**
  * Process diagrams for pagination
  */
 function processDiagramsForPrint(container: HTMLElement, pageSize: PdfPageSize): void {
@@ -1068,13 +1101,13 @@ function processDiagramsForPrint(container: HTMLElement, pageSize: PdfPageSize):
 /**
  * Generate complete HTML for export
  */
-export function generateExportHtml(
+export async function generateExportHtml(
 	container: HTMLElement,
 	showToc: boolean,
 	pageSize: PdfPageSize = 'a4',
 	forPrint: boolean = false,
 	title: string = 'Exported Document'
-): string {
+): Promise<string> {
 	// Clone the container
 	const clone = container.cloneNode(true) as HTMLElement;
 
@@ -1404,6 +1437,11 @@ export function generateExportHtml(
 		</script>`;
 
 
+	// HTML export: convert asset:// images to data URIs (external browsers can't load asset://)
+	if (!forPrint) {
+		await convertAssetImagesToDataUri(clone);
+	}
+
 	// Build HTML
 	const html = `<!DOCTYPE html>
 <html lang="zh-CN" data-theme-mode="${themeMode}" data-theme-scheme="${themeScheme}">
@@ -1446,7 +1484,7 @@ export async function exportAsHtml(
 
 	if (!filePath) return false;
 
-	const html = generateExportHtml(container, showToc, 'a4', false, defaultFileName);
+	const html = await generateExportHtml(container, showToc, 'a4', false, defaultFileName);
 	await invoke('save_file_content', { path: filePath, content: html });
 	return true;
 }
