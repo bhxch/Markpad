@@ -278,7 +278,7 @@ export async function exportAsPdf(
 			const html = generateExportHtml(container, showToc, pageSize, true, title);
 			
 			const iframe = document.createElement('iframe');
-			iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0;border:none;';
+			iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:210mm;height:auto;border:none;';
 			document.body.appendChild(iframe);
 			
 			const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -696,20 +696,20 @@ ${getTreeSitterStyles(theme)}
 	height: auto;
 }
 
-.diagram-chart-layer {
+[data-diagram-render="true"] {
 	width: 100%;
 }
 
-.diagram-source-layer {
+[data-diagram-code="true"] {
 	display: none;
 	width: 100%;
 }
 
-.diagram-wrapper.show-source .diagram-chart-layer {
+.diagram-wrapper.show-source [data-diagram-render="true"] {
 	display: none;
 }
 
-.diagram-wrapper.show-source .diagram-source-layer {
+.diagram-wrapper.show-source [data-diagram-code="true"] {
 	display: block;
 }
 
@@ -947,7 +947,7 @@ ${getTreeSitterStyles(theme)}
 	}
 	
 	.layout-container {
-		display: flex;
+		display: block;
 	}
 	
 	.toc-sidebar {
@@ -1576,7 +1576,7 @@ ${content}
 			
 			// Create hidden iframe for printing
 			const iframe = document.createElement('iframe');
-			iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0;border:none;';
+			iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:210mm;height:auto;border:none;';
 			document.body.appendChild(iframe);
 			
 			const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
