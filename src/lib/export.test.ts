@@ -211,6 +211,22 @@ describe('convertAssetImagesToDataUri', () => {
 	});
 });
 
+describe('.md→.html 链接改写（Task 16 吸收 rewriteMarkdownHrefForExport）', () => {
+	it('相对 .md 链接导出后改写为 .html，保留 query/hash；外链 .md 不动', async () => {
+		const container = makeContainer(
+			'<a href="notes/Plan%20A.md#todo">邻居文档</a>' +
+				'<a href="https://example.test/a.md">外链</a>' +
+				'<a href="readme.markdown?raw=1">带query</a>' +
+				'<a href="#test">锚点</a>',
+		);
+		const out = await generateExportHtml(container, false, 'a4', false, '测试');
+		expect(out).toContain('href="notes/Plan%20A.html#todo"');
+		expect(out).toContain('href="readme.html?raw=1"');
+		expect(out).toContain('href="https://example.test/a.md"');
+		expect(out).toContain('href="#test"');
+	});
+});
+
 describe('TOC 新交互类清理（Task 16）', () => {
 	function makeContainerWithTocHandle(): HTMLElement {
 		const container = makeContainer();

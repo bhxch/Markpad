@@ -1,5 +1,6 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+import { rewriteMarkdownHrefForExport } from './utils/exportHtml';
 
 export type ExportFormat = 'html' | 'pdf';
 export type PdfPageSize = 'a4' | 'a3' | 'letter' | 'legal';
@@ -1214,6 +1215,16 @@ export async function generateExportHtml(
 			const id = text.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-').replace(/^-|-$/g, '');
 			h.id = id;
 		}
+	});
+
+	// .md→.html 链接改写（吸收上游 utils/exportHtml.ts 的 rewriteMarkdownHrefForExport，
+	// 白名单 §7.2-6）：导出物只含本文档，指向邻居 .md/.markdown/… 的相对链接在导出
+	// 目录里没有对应文件，改写为 .html（保留 query/hash；带 scheme 的外链与 mailto
+	// 等不动）。纯输出侧的 href 重写，直接复用上游函数。
+	clone.querySelectorAll('a[href]').forEach(link => {
+		const href = link.getAttribute('href');
+		if (!href) return;
+		link.setAttribute('href', rewriteMarkdownHrefForExport(href));
 	});
 
 	// Get current theme
