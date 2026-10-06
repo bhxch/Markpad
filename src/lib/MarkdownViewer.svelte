@@ -29,7 +29,6 @@
   import { tabManager } from './stores/tabs.svelte.js';
   import { settings } from './stores/settings.svelte.js';
   import { SUPPORTED_DIAGRAMS } from './kroki';
-  import { getDiagramType, DIAGRAM_ALIASES, type DiagramRenderMode } from './diagrams';
 
   const appWindow = getCurrentWindow();
 
@@ -48,9 +47,12 @@
   import 'highlight.js/styles/github-dark.css';
   import 'katex/dist/katex.min.css';
   // Tree-sitter code highlighting (extracted to pipeline/highlight module)
-  import { highlightCodeWithTreeSitterBlock, initTreeSitterLanguages } from './pipeline/highlight';
+  import { initTreeSitterLanguages } from './pipeline/highlight';
   // Multi-engine diagram pipeline (extracted to pipeline/diagrams module; mermaid single instance, spec D12)
-  import { renderDiagramBlocks, syncMermaidTheme, ensureMermaidInitialized, getMermaid, setDiagramVersionGate } from './pipeline/diagrams';
+  import { syncMermaidTheme, ensureMermaidInitialized, getMermaid, setDiagramVersionGate } from './pipeline/diagrams';
+  // Unified render pipeline (highlight/diagrams/katex/copyCode/lightbox steps, spec D5)
+  import { runPipeline, setPipelineVersionSource } from './pipeline';
+  import { setLightboxOpener, getViewableItems } from './pipeline/lightbox';
 
   let mode = $state<'loading' | 'app' | 'installer' | 'uninstall'>('loading');
 
@@ -70,90 +72,21 @@
   let renderVersion = 0; // Render version counter to cancel stale renders
   // Diagram pipeline stale-render gate (renderVersion stays component-local; injected into pipeline/diagrams)
   setDiagramVersionGate((v) => v !== renderVersion);
+  // Unified pipeline reads the current render version (captured once per runPipeline)
+  setPipelineVersionSource(() => renderVersion);
   let contentRendered = $state(0); // reactive signal for Toc: incremented after innerHTML is set
 
   // Upstream: heading fold state
   let collapsedHeaders = $state(new Set<string>());
 
   // Upstream: lightbox for images/diagrams
+  // （打开状态与 ZoomOverlay 模板是组件 UI；DOM 装配在 pipeline/lightbox，经回调桥接）
   let viewableItems = $state<Array<{ type: 'img' | 'svg'; src?: string; html?: string }>>([]);
   let lightboxIndex = $state(-1);
-
-  const LIGHTBOX_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>`;
-
-  function injectLightboxButtons(markdownBody: HTMLElement) {
-    const items: Array<{ type: 'img' | 'svg'; src?: string; html?: string }> = [];
-
-    // Collect all <img> elements that are not inside diagram wrappers
-    const images = markdownBody.querySelectorAll('img');
-    for (const img of Array.from(images)) {
-      // Skip small icons, emojis, and images already inside diagram wrappers
-      if (img.closest('.diagram-wrapper')) continue;
-      if (img.closest('.kroki-container')) continue;
-      if (img.width > 0 && img.width < 32 && img.height > 0 && img.height < 32) continue;
-
-      const src = img.getAttribute('src');
-      if (!src) continue;
-
-      const index = items.length;
-      items.push({ type: 'img', src });
-
-      // Wrap image if not already wrapped
-      let wrapper = img.parentElement;
-      if (!wrapper || wrapper.tagName !== 'DIV' || !wrapper.classList.contains('img-lightbox-wrapper')) {
-        wrapper = document.createElement('div');
-        wrapper.className = 'img-lightbox-wrapper';
-        wrapper.style.position = 'relative';
-        wrapper.style.display = 'inline-block';
-        img.parentNode?.insertBefore(wrapper, img);
-        wrapper.appendChild(img);
-      }
-
-      const btn = document.createElement('button');
-      btn.className = 'img-lightbox-btn';
-      btn.type = 'button';
-      btn.innerHTML = LIGHTBOX_ICON;
-      btn.title = t.viewFullscreen;
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        lightboxIndex = index;
-      };
-      wrapper.appendChild(btn);
-    }
-
-    // Collect diagram wrappers with rendered SVG or IMG output
-    const diagramWrappers = markdownBody.querySelectorAll('.diagram-wrapper');
-    for (const dw of Array.from(diagramWrappers)) {
-      const renderEl = dw.querySelector('[data-diagram-render="true"]');
-      if (!renderEl) continue;
-
-      const svg = renderEl.querySelector('svg');
-      const img = renderEl.querySelector('img');
-      if (!svg && !img) continue;
-
-      const index = items.length;
-      if (svg) {
-        items.push({ type: 'svg', html: svg.outerHTML });
-      } else if (img) {
-        items.push({ type: 'img', src: img.getAttribute('src') || '' });
-      }
-
-      const btn = document.createElement('button');
-      btn.className = 'img-lightbox-btn';
-      btn.type = 'button';
-      btn.innerHTML = LIGHTBOX_ICON;
-      btn.title = t.viewFullscreen;
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        lightboxIndex = index;
-      };
-      dw.appendChild(btn);
-    }
-
+  setLightboxOpener((items, index) => {
     viewableItems = items;
-  }
+    lightboxIndex = index;
+  });
 
   // Upstream: context menu
   let docContextMenu = $state<{
@@ -760,164 +693,9 @@
     if (!markdownBody || version !== renderVersion) return;
 
     try {
-      // 1. Diagram Rendering (Mermaid + Kroki + Local renderers)
-      // (extracted to pipeline/diagrams; stale-render cancel via injected renderVersion gate)
-      await renderDiagramBlocks(markdownBody, version);
-
-      if (!hljs || !renderMathInElement) return;
-
-      // 3. Code Highlighting (Tree-sitter with hljs fallback)
-      const codeBlocks = markdownBody.querySelectorAll('pre code');
-      for (const block of Array.from(codeBlocks)) {
-        if (version !== renderVersion) return;
-        if (block.closest('.diagram-wrapper')) continue; // Skip diagrams
-        
-        const langClass = Array.from(block.classList).find((c) => c.startsWith('language-'));
-        const lang = langClass ? langClass.replace('language-', '').toLowerCase() : '';
-        const normalizedLang = DIAGRAM_ALIASES[lang] || lang;
-        if (getDiagramType(normalizedLang)) continue; // Skip diagrams (already processed above)
-
-        // Try tree-sitter first
-        const tsSuccess = await highlightCodeWithTreeSitterBlock(block as HTMLElement, lang);
-        
-        // Fallback to hljs if tree-sitter failed
-        if (!tsSuccess && hljs) {
-          hljs.highlightElement(block as HTMLElement);
-        }
-
-        const pre = block.parentElement;
-        if (pre && pre.tagName === 'PRE') {
-          pre.querySelectorAll('.lang-label').forEach((l) => l.remove());
-          const codeContent = (block as HTMLElement).textContent || '';
-          
-          // Create copy button
-          const label = document.createElement('button');
-          label.className = 'lang-label';
-          label.title = 'Click to copy code';
-          
-          if (langClass) {
-            label.textContent = langClass.replace('language-', '');
-          } else {
-            // Show copy icon for code blocks without language
-            label.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
-          }
-          
-          label.onclick = () => {
-            const codeToCopy = codeContent.replace(/\n$/, '');
-            navigator.clipboard.writeText(codeToCopy).then(() => {
-              const originalContent = label.innerHTML;
-              label.textContent = 'Copied!';
-              label.classList.add('copied');
-              setTimeout(() => {
-                label.innerHTML = originalContent;
-                label.classList.remove('copied');
-              }, 1500);
-            }).catch((err) => {
-              console.error('Failed to copy code:', err);
-            });
-          };
-          
-          pre.appendChild(label);
-        }
-      }
-
-      // 4. Inject lightbox hover buttons
-      injectLightboxButtons(markdownBody);
-
-      // 5. Math Rendering
-      // Handle math elements generated by comrak 0.24+ with math_dollars enabled
-      // comrak generates: <span data-math-style="display">...</span> and <span data-math-style="inline">...</span>
-      if (katex) {
-        // First, handle LaTeX delimiters \[...\] and \(...\) which comrak doesn't process
-        // We need to process these BEFORE handling data-math-style elements
-        // to avoid interfering with already rendered KaTeX
-        const processLatexDelimiters = (container: HTMLElement) => {
-          // Walk through text nodes and find delimiters
-          const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
-          const textNodes: Text[] = [];
-          while (walker.nextNode()) {
-            const node = walker.currentNode as Text;
-            // Skip if inside an already processed element or code blocks
-            // code, pre elements contain code that should not be processed as math
-            if (!node.parentElement?.closest('.katex, .katex-display, [data-math-style], code, pre')) {
-              textNodes.push(node);
-            }
-          }
-          
-          for (const textNode of textNodes) {
-            let text = textNode.textContent || '';
-            const parent = textNode.parentElement;
-            if (!parent) continue;
-            
-            // Check if this text contains LaTeX delimiters
-            if (!text.includes('\\[') && !text.includes('\\(')) continue;
-            
-            // Replace \[...\] with display math
-            text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, content) => {
-              try {
-                const html = katex.renderToString(content.trim(), {
-                  displayMode: true,
-                  throwOnError: false,
-                  strict: false,
-                });
-                return `<div class="katex-display">${html}</div>`;
-              } catch (e) {
-                return `\\[${content}\\]`;
-              }
-            });
-            
-            // Replace \(...\) with inline math
-            text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_, content) => {
-              try {
-                const html = katex.renderToString(content.trim(), {
-                  displayMode: false,
-                  throwOnError: false,
-                  strict: false,
-                });
-                return `<span class="katex">${html}</span>`;
-              } catch (e) {
-                return `\\(${content}\\)`;
-              }
-            });
-            
-            // Only update if changed
-            if (text !== textNode.textContent) {
-              const span = document.createElement('span');
-              span.innerHTML = text;
-              textNode.replaceWith(span);
-            }
-          }
-        };
-        
-        processLatexDelimiters(markdownBody);
-        
-        // Then handle comrak-generated math spans with data-math-style attribute
-        const mathSpans = markdownBody.querySelectorAll('span[data-math-style]');
-        for (const span of Array.from(mathSpans)) {
-          const content = span.textContent || '';
-          const isDisplay = span.getAttribute('data-math-style') === 'display';
-          
-          try {
-            const html = katex.renderToString(content, {
-              displayMode: isDisplay,
-              throwOnError: false,
-              strict: false,
-            });
-            
-            if (isDisplay) {
-              const wrapper = document.createElement('div');
-              wrapper.className = 'katex-display';
-              wrapper.innerHTML = html;
-              span.replaceWith(wrapper);
-            } else {
-              span.innerHTML = html;
-              span.classList.add('katex');
-            }
-          } catch (e) {
-            console.error('KaTeX render error:', e, 'Content:', content);
-          }
-        }
-      }
+      // 1-5. Diagrams / Code highlighting / Lightbox / Math / Copy buttons
+      // （统一渲染管线 pipeline/index；图表在途取消经 diagrams versionGate，版本源经 setPipelineVersionSource 注入）
+      await runPipeline(markdownBody, undefined);
     } catch (e) {
       console.error('Render error:', e);
     }
@@ -1676,9 +1454,13 @@
     if (img && !target.closest('.img-lightbox-btn')) {
       const src = img.getAttribute('src');
       if (src) {
-        const idx = viewableItems.findIndex(v => v.type === 'img' && v.src === src);
-        lightboxIndex = idx >= 0 ? idx : -1;
-        if (idx < 0) {
+        // 可查看项由 pipeline/lightbox 收集（getViewableItems）；此处仅解析索引并驱动 overlay 状态
+        const items = getViewableItems();
+        const idx = items.findIndex(v => v.type === 'img' && v.src === src);
+        if (idx >= 0) {
+          viewableItems = items;
+          lightboxIndex = idx;
+        } else {
           // Fallback: single-item lightbox
           viewableItems = [{ type: 'img', src }];
           lightboxIndex = 0;
