@@ -125,6 +125,32 @@ describe('frontmatter 面板清理（Task 14 ①）', () => {
 	});
 });
 
+describe('主题属性双兼容（Task 16）', () => {
+	it('无 data-theme-mode 时回落 data-theme 判暗色', async () => {
+		const root = document.documentElement;
+		root.removeAttribute('data-theme-mode');
+		root.setAttribute('data-theme', 'dark');
+		try {
+			const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+			expect(out).toMatch(/data-theme-mode="dark"/);
+		} finally {
+			root.removeAttribute('data-theme');
+		}
+	});
+
+	it('data-theme-mode 缺失且 data-theme 非暗色时按 light', async () => {
+		const root = document.documentElement;
+		root.removeAttribute('data-theme-mode');
+		root.setAttribute('data-theme', 'light');
+		try {
+			const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+			expect(out).toMatch(/data-theme-mode="light"/);
+		} finally {
+			root.removeAttribute('data-theme');
+		}
+	});
+});
+
 describe('convertAssetImagesToDataUri', () => {
 	it('把 asset:// 图片转为 data URI（外部浏览器可访问）', async () => {
 		const container = document.createElement('div');
@@ -155,5 +181,57 @@ describe('convertAssetImagesToDataUri', () => {
 		container.appendChild(img);
 		await convertAssetImagesToDataUri(container);
 		expect(img.getAttribute('src')).toBe('https://example.com/a.png');
+	});
+
+	it('Windows 形态 http(s)://asset.localhost/... 也转 data URI（Task 16 吸收）', async () => {
+		const container = document.createElement('div');
+		const winImg = document.createElement('img');
+		winImg.setAttribute('src', 'http://asset.localhost/C%3A%5CUsers%5Ctest%5Ca.png');
+		container.appendChild(winImg);
+		// 主机边界锚定：asset.localhost 的同名前缀外链不得被误吞
+		const evilImg = document.createElement('img');
+		evilImg.setAttribute('src', 'https://asset.localhost.example/a.png');
+		container.appendChild(evilImg);
+
+		const origFetch = globalThis.fetch;
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			blob: () =>
+				Promise.resolve(
+					new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' }),
+				),
+		}) as any;
+
+		try {
+			await convertAssetImagesToDataUri(container);
+			expect(winImg.getAttribute('src')).toMatch(/^data:image\/png;base64,/);
+			expect(evilImg.getAttribute('src')).toBe('https://asset.localhost.example/a.png');
+		} finally {
+			globalThis.fetch = origFetch;
+		}
+	});
+});
+
+describe('TOC 新交互类清理（Task 16）', () => {
+	function makeContainerWithTocHandle(): HTMLElement {
+		const container = makeContainer();
+		const wrapper = container.querySelector('.toc-overlay-wrapper') as HTMLElement;
+		const handle = document.createElement('div');
+		handle.className = 'toc-resize-handle';
+		wrapper.prepend(handle);
+		wrapper.classList.add('is-overhanging', 'is-resizing');
+		return container;
+	}
+
+	it('HTML 导出移除 .toc-resize-handle，wrapper 固化为 pinned 且无悬浮/拖拽态类', async () => {
+		const out = await generateExportHtml(makeContainerWithTocHandle(), true, 'a4', false, '测试');
+		expect(out).not.toMatch(/toc-resize-handle/);
+		expect(out).toMatch(/class="[^"]*toc-overlay-wrapper[^"]*is-pinned/);
+		expect(out).not.toMatch(/is-overhanging|is-resizing/);
+	});
+
+	it('PDF 导出移除整个 TOC wrapper（含 .toc-resize-handle）', async () => {
+		const out = await generateExportHtml(makeContainerWithTocHandle(), true, 'a4', true, '测试');
+		expect(out).not.toMatch(/toc-resize-handle/);
+		expect(out).not.toMatch(/class="[^"]*toc-overlay-wrapper/);
 	});
 });

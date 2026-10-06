@@ -575,9 +575,23 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 	async function handleExport(format: ExportFormat, pageSize: PdfPageSize) {
 		showExportModal = false;
 
-		// 上游骨架的预览容器是 .viewer-content（内含 article.markdown-body 与 TOC wrapper），
-		// 与原本地形态 .markdown-container 同角色；export.ts 以 clone.querySelector('.markdown-body')
-		// 取正文，容器必须是其祖先。
+		// 大文件全量保障（spec §7.2-4）：>5MB 文档走两段式加载，截断态下预览缓冲
+		// 与 DOM 都只有前 5MB 切片，直接克隆会静默导出残篇。与其他写路径（进入
+		// 编辑、frontmatter、拆分、搬移窗口）一致，先经 documentSession 拉全量；
+		// ensureFullContent 只补 rawContent 不重渲预览，而导出克隆的是 DOM，所以
+		// 补一次同步重渲再放行。
+		const activeTab = tabManager.activeTab;
+		if (activeTab?.isTruncated) {
+			if (!(await documentSession.ensureFullContent(activeTab.id))) {
+				addToast(t('toast.partialDocument', settings.language), 'error');
+				return;
+			}
+			await renderTabPreviewFromRaw(activeTab);
+		}
+
+		// 上游骨架的预览容器是 .viewer-content（内含 article.markdown-body；TOC wrapper
+		// 挂在其外的 .layout-container 下，不随克隆带出），与原本地形态 .markdown-container
+		// 同角色；export.ts 以 clone.querySelector('.markdown-body') 取正文，容器必须是其祖先。
 		const container = document.querySelector('.viewer-content') as HTMLElement;
 		if (!container) return;
 

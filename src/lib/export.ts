@@ -69,8 +69,7 @@ export function paginateContent(
 	const marginPx = MARGIN * pxPerMm;
 	
 	// Get theme info
-	const themeMode = document.documentElement.getAttribute('data-theme-mode') || 'light';
-	const themeScheme = document.documentElement.getAttribute('data-theme-scheme') || 'github-light';
+	const { mode: themeMode, scheme: themeScheme } = readExportTheme();
 	const cssVariables = extractCssVariables();
 	
 	// Paginate elements
@@ -306,6 +305,22 @@ const PAGE_SIZES: Record<string, { width: number; height: number }> = {
 	letter: { width: 215.9, height: 279.4 },
 	legal: { width: 215.9, height: 355.6 },
 };
+
+/**
+ * 主题属性双兼容（spec §7.2）：合并后两套主题属性并存——本地体系写
+ * `data-theme-mode`/`data-theme-scheme`（settings.applyTheme），上游体系写
+ * `data-theme`（app.html 启动脚本）。导出模板优先读本地属性；缺失时回落
+ * `data-theme`，值含 "dark" 判为暗色。三处读点（分页/单页导出/多页合并）共用。
+ */
+function readExportTheme(): { mode: string; scheme: string } {
+	const root = document.documentElement;
+	return {
+		mode:
+			root.getAttribute('data-theme-mode') ||
+			(root.getAttribute('data-theme')?.includes('dark') ? 'dark' : 'light'),
+		scheme: root.getAttribute('data-theme-scheme') || 'github-light',
+	};
+}
 
 /**
  * Extract CSS variables from computed styles
@@ -1031,9 +1046,15 @@ export function computeFitScale(ratio: number): { scale: number; newPage: boolea
  * asset:// is a Tauri webview-only protocol; external browsers can't load it.
  */
 export async function convertAssetImagesToDataUri(container: HTMLElement): Promise<void> {
-	const imgs = Array.from(container.querySelectorAll('img')).filter(img =>
-		(img.getAttribute('src') || '').startsWith('asset:'),
-	);
+	// Windows（与 Android）上 convertFileSrc 产出 http(s)://asset.localhost/<path>，
+	// 其余平台是 asset://localhost/<path>——只认 asset: 前缀会漏掉 Windows 的全部
+	// 本地图片（吸收上游 utils/exportHtml.ts isAssetUrl 的同款判定）。主机边界锚定，
+	// 避免误吞 https://asset.localhost.example 这类恰好同名前缀的外链。
+	const assetHostPattern = /^https?:\/\/asset\.localhost(?:\/|$)/i;
+	const imgs = Array.from(container.querySelectorAll('img')).filter(img => {
+		const src = img.getAttribute('src') || '';
+		return src.startsWith('asset:') || assetHostPattern.test(src);
+	});
 	await Promise.all(
 		imgs.map(async (img) => {
 			const src = img.getAttribute('src') || '';
@@ -1102,10 +1123,12 @@ export async function generateExportHtml(
 	// Remove interactive elements (but keep diagram-toggle-btn for HTML export)
 	if (forPrint) {
 		// For PDF: remove TOC sidebar, diagram toggle buttons, and other interactive elements
-		clone.querySelectorAll('.toc-sidebar, .toc-container, .toc-overlay-wrapper, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
+		// （.toc-resize-handle 是上游新增的拖拽手柄，位于 .toc-overlay-wrapper 内；运行时它
+		// 随容器外的 wrapper 不会入克隆，列在此处是防 DOM 结构变动的兜底。）
+		clone.querySelectorAll('.toc-sidebar, .toc-container, .toc-overlay-wrapper, .toc-resize-handle, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
 	} else {
 		// For HTML: keep diagram toggle buttons, remove other interactive elements
-		clone.querySelectorAll('.editor-pane, .split-bar, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
+		clone.querySelectorAll('.editor-pane, .split-bar, .lang-label, .toc-toggle-floating, .toc-resize-handle').forEach(el => el.remove());
 	}
 	// frontmatter 面板（Task 14 ①）：两个分支都移除——克隆自 .viewer-content，内含
 	// 预览的交互式 frontmatter 面板（select/input 编辑件），不属于导出文档。
@@ -1124,6 +1147,10 @@ export async function generateExportHtml(
 			clone.querySelectorAll('.toc-overlay-wrapper').forEach(el => {
 				const wrapper = el as HTMLElement;
 				wrapper.classList.add('is-pinned');
+				// 上游新增的悬浮/拖拽态类对静态导出无意义：is-overhanging 的样式以
+				// :not(.is-pinned) 规避、is-resizing 只在拖拽中存在，摘掉保证 pinned
+				// 侧栏形态唯一。
+				wrapper.classList.remove('is-overhanging', 'is-resizing');
 				wrapper.style.cssText = '';
 			});
 
@@ -1190,8 +1217,7 @@ export async function generateExportHtml(
 	});
 
 	// Get current theme
-	const themeMode = document.documentElement.getAttribute('data-theme-mode') || 'light';
-	const themeScheme = document.documentElement.getAttribute('data-theme-scheme') || 'github-light';
+	const { mode: themeMode, scheme: themeScheme } = readExportTheme();
 
 	// Extract CSS variables
 	const cssVariables = extractCssVariables();
@@ -1531,8 +1557,7 @@ async function exportMultiPagePdf(
 	return new Promise((resolve) => {
 		try {
 			// Combine all pages into one HTML with page breaks
-			const themeMode = document.documentElement.getAttribute('data-theme-mode') || 'light';
-			const themeScheme = document.documentElement.getAttribute('data-theme-scheme') || 'github-light';
+			const { mode: themeMode, scheme: themeScheme } = readExportTheme();
 			const cssVariables = extractCssVariables();
 			
 			// Calculate max height for consistency
