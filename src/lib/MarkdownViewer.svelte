@@ -28,9 +28,8 @@
   import HomePage from './components/HomePage.svelte';
   import { tabManager } from './stores/tabs.svelte.js';
   import { settings } from './stores/settings.svelte.js';
-  import { createKrokiUrl, SUPPORTED_DIAGRAMS } from './kroki';
+  import { SUPPORTED_DIAGRAMS } from './kroki';
   import { getDiagramType, DIAGRAM_ALIASES, type DiagramRenderMode } from './diagrams';
-  import { renderLocalDiagram, supportsLocalRender, renderRustDiagram, supportsRustRender } from './localRenderers';
 
   const appWindow = getCurrentWindow();
 
@@ -50,6 +49,8 @@
   import 'katex/dist/katex.min.css';
   // Tree-sitter code highlighting (extracted to pipeline/highlight module)
   import { highlightCodeWithTreeSitterBlock, initTreeSitterLanguages } from './pipeline/highlight';
+  // Multi-engine diagram pipeline (extracted to pipeline/diagrams module; mermaid single instance, spec D12)
+  import { renderDiagramBlocks, syncMermaidTheme, ensureMermaidInitialized, getMermaid, setDiagramVersionGate } from './pipeline/diagrams';
 
   let mode = $state<'loading' | 'app' | 'installer' | 'uninstall'>('loading');
 
@@ -67,6 +68,8 @@
   let isForceExiting = $state(false);
   let isProgrammaticScroll = false;
   let renderVersion = 0; // Render version counter to cancel stale renders
+  // Diagram pipeline stale-render gate (renderVersion stays component-local; injected into pipeline/diagrams)
+  setDiagramVersionGate((v) => v !== renderVersion);
   let contentRendered = $state(0); // reactive signal for Toc: incremented after innerHTML is set
 
   // Upstream: heading fold state
@@ -758,148 +761,8 @@
 
     try {
       // 1. Diagram Rendering (Mermaid + Kroki + Local renderers)
-      const allCodeBlocks = markdownBody.querySelectorAll('pre code');
-      for (const block of Array.from(allCodeBlocks)) {
-        if (version !== renderVersion) return;
-        if (block.closest('.diagram-wrapper')) continue;
-
-        const classes = Array.from(block.classList);
-        const langClass = classes.find((c) => c.startsWith('language-'));
-        if (langClass) {
-          const lang = langClass.replace('language-', '').toLowerCase();
-          const normalizedLang = DIAGRAM_ALIASES[lang] || lang;
-          const diagramType = getDiagramType(normalizedLang);
-          
-          if (diagramType) {
-            const renderMode = settings.getDiagramRenderMode(normalizedLang);
-            const pre = block.parentElement;
-            if (pre && pre.tagName === 'PRE') {
-              const wrapper = document.createElement('div');
-              wrapper.className = 'diagram-wrapper';
-              pre.replaceWith(wrapper);
-              
-              if (renderMode === 'source') {
-                // Show source code only
-                await setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
-              } else if (renderMode === 'kroki') {
-                // Render via Kroki
-                try {
-                  const url = createKrokiUrl(normalizedLang, (block as HTMLElement).textContent || '', settings.krokiHost);
-                  const img = document.createElement('img');
-                  img.src = url;
-                  img.className = 'kroki-chart';
-                  img.alt = `${normalizedLang} diagram`;
-                  
-                  const chartWrapper = document.createElement('div');
-                  chartWrapper.className = 'kroki-container';
-                  chartWrapper.appendChild(img);
-                  
-                  await setupDiagramWrapper(wrapper, chartWrapper, pre as HTMLElement, normalizedLang);
-                } catch (e) {
-                  console.error('Kroki error:', e);
-                  await setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
-                }
-              } else if (renderMode === 'local') {
-                // Local rendering
-                const rendererId = settings.getDiagramRenderer(normalizedLang) || diagramType.defaultRenderer || '';
-                const code = (block as HTMLElement).textContent || '';
-                
-                // Mermaid has special handling
-                if (normalizedLang === 'mermaid' && mermaid) {
-                  const div = document.createElement('div');
-                  div.className = 'mermaid';
-
-                  try {
-                    const id = 'mermaid-' + Math.random().toString(36).substring(2, 11);
-                    const { svg } = await mermaid.render(id, code);
-                    div.innerHTML = svg;
-                    // Make SVG responsive: ensure viewBox and constrain width
-                    const svgEl = div.querySelector('svg');
-                    if (svgEl) {
-                      const w = svgEl.getAttribute('width');
-                      const h = svgEl.getAttribute('height');
-                      if (w && h && !svgEl.getAttribute('viewBox')) {
-                        svgEl.setAttribute('viewBox', `0 0 ${parseFloat(w)} ${parseFloat(h)}`);
-                      }
-                      svgEl.removeAttribute('width');
-                      svgEl.removeAttribute('height');
-                      svgEl.removeAttribute('style');
-                      svgEl.style.width = '100%';
-                      svgEl.style.height = 'auto';
-                      svgEl.style.display = 'block';
-                    }
-                  } catch (e) {
-                    console.error('Failed to render Mermaid diagram:', e);
-                    div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error: ${e}</div>`;
-                  }
-
-                  await setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'mermaid');
-                } else if (normalizedLang === 'math' && katex) {
-                  // Math/LaTeX code block rendering
-                  const div = document.createElement('div');
-                  div.className = 'katex-display math-block';
-                  
-                  try {
-                    const html = katex.renderToString(code, {
-                      displayMode: true,
-                      throwOnError: false,
-                      output: 'html'
-                    });
-                    div.innerHTML = html;
-                  } catch (e) {
-                    console.error('Failed to render math:', e);
-                    div.innerHTML = `<div class="math-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">KaTeX Error: ${e}</div>`;
-                  }
-                  
-                  await setupDiagramWrapper(wrapper, div, pre as HTMLElement, 'math');
-                } else if (supportsLocalRender(normalizedLang)) {
-                  // Other local renderers
-                  const div = document.createElement('div');
-                  div.className = `local-diagram local-diagram-${normalizedLang}`;
-                  
-                  try {
-                    const svg = await renderLocalDiagram(normalizedLang, code, rendererId);
-                    div.innerHTML = svg;
-                  } catch (e) {
-                    console.error(`Failed to render ${normalizedLang} diagram:`, e);
-                    div.innerHTML = `<div class="diagram-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">${normalizedLang} Render Error: ${e}</div>`;
-                  }
-                  
-                  await setupDiagramWrapper(wrapper, div, pre as HTMLElement, normalizedLang);
-                } else {
-                  // Fallback: render as source
-                  await setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
-                }
-              } else if (renderMode === 'rust') {
-                // Rust backend rendering
-                const rendererId = settings.getDiagramRustRenderer(normalizedLang) || diagramType.defaultRustRenderer || '';
-                const code = (block as HTMLElement).textContent || '';
-                
-                if (supportsRustRender(normalizedLang)) {
-                  const div = document.createElement('div');
-                  div.className = `rust-diagram rust-diagram-${normalizedLang}`;
-                  
-                  try {
-                    const svg = await renderRustDiagram(normalizedLang, code, rendererId);
-                    div.innerHTML = svg;
-                  } catch (e) {
-                    console.error(`Failed to render ${normalizedLang} diagram (Rust):`, e);
-                    div.innerHTML = `<div class="diagram-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">${normalizedLang} Rust Render Error: ${e}</div>`;
-                  }
-                  
-                  await setupDiagramWrapper(wrapper, div, pre as HTMLElement, normalizedLang);
-                } else {
-                  // Fallback: render as source
-                  await setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
-                }
-              } else {
-                // Fallback: render as source
-                await setupDiagramWrapper(wrapper, null, pre as HTMLElement, normalizedLang);
-              }
-            }
-          }
-        }
-      }
+      // (extracted to pipeline/diagrams; stale-render cancel via injected renderVersion gate)
+      await renderDiagramBlocks(markdownBody, version);
 
       if (!hljs || !renderMathInElement) return;
 
@@ -1064,17 +927,8 @@
   $effect.pre(() => {
     const _scheme = settings.themeScheme; // 依赖主题变化
     if (htmlContent && markdownBody && !isEditing && hljs && renderMathInElement && mermaid) {
-      // 1. 确定 Mermaid 主题
-      const currentThemeObj = settings.themes.find((t) => t.id === settings.themeScheme);
-      const mode = currentThemeObj ? currentThemeObj.mode : 'light';
-      const mTheme = mode === 'dark' ? 'dark' : 'default';
-
-      // 2. 初始化 Mermaid
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: mTheme,
-        securityLevel: 'loose',
-      });
+      // 1-2. 同步 Mermaid 主题（extracted to pipeline/diagrams; mermaid 单实例，spec D12）
+      syncMermaidTheme();
 
       // 3. 重置 DOM (因为 renderRichContent 会破坏性修改 DOM，如 mermaid 替换文本为 SVG)
       markdownBody.innerHTML = htmlContent;
@@ -2083,130 +1937,6 @@
     return { duration: 0 };
   }
 
-  // Global diagram toggle handler - set up once
-  let diagramToggleHandlerAdded = false;
-
-  async function setupDiagramWrapper(container: HTMLElement, renderEl: HTMLElement | null, codeEl: HTMLElement, lang: string) {
-    // Helper function to highlight code block
-    const highlightCodeBlock = async (block: HTMLElement, language: string) => {
-      const codeElement = block.querySelector('code') || block;
-      if (!codeElement.textContent?.trim()) return;
-      
-      // Map diagram languages to syntax-compatible highlight languages
-      const diagramHighlightMap: Record<string, string> = {
-        'math': 'latex',
-        'vegalite': 'json',
-        'vega': 'json',
-        'bpmn': 'xml',
-        'excalidraw': 'json',
-        'graphviz': 'dot',
-        'c4plantuml': 'java',
-      };
-      const highlightLang = diagramHighlightMap[language] || language;
-      
-      // Try tree-sitter first
-      const tsSuccess = await highlightCodeWithTreeSitterBlock(codeElement as HTMLElement, highlightLang);
-      
-      // Fallback to hljs if tree-sitter failed
-      if (!tsSuccess && hljs) {
-        // Set language class for hljs
-        codeElement.className = `language-${highlightLang}`;
-        hljs.highlightElement(codeElement as HTMLElement);
-      }
-    };
-    
-    // If no render element, just show source code with highlighting
-    if (!renderEl) {
-      codeEl.style.setProperty('display', 'block', 'important');
-      container.appendChild(codeEl);
-      // Apply syntax highlighting to the code block
-      await highlightCodeBlock(codeEl, lang);
-      return;
-    }
-
-    // Add data attributes for identification
-    renderEl.dataset.diagramRender = 'true';
-    codeEl.dataset.diagramCode = 'true';
-
-    // Initial state
-    codeEl.style.setProperty('display', 'none', 'important');
-    renderEl.style.setProperty('display', 'block', 'important');
-    renderEl.style.setProperty('pointer-events', 'none');
-
-    // Toggle Button
-    const btn = document.createElement('button');
-    btn.className = 'diagram-toggle-btn';
-    btn.type = 'button';
-    btn.innerHTML = `<svg style="pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`;
-    btn.title = 'Show Source';
-    btn.dataset.showingCode = 'false';
-
-    container.appendChild(btn);
-    container.appendChild(renderEl);
-    container.appendChild(codeEl);
-    
-    // Store language for toggle handler
-    container.dataset.diagramLang = lang;
-
-    // Set up global click handler once
-    if (!diagramToggleHandlerAdded) {
-      diagramToggleHandlerAdded = true;
-      document.addEventListener('click', async (e) => {
-        const target = e.target as HTMLElement;
-        const toggleBtn = target.closest('.diagram-toggle-btn') as HTMLElement | null;
-        if (!toggleBtn) return;
-        
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const wrapper = toggleBtn.closest('.diagram-wrapper') as HTMLElement;
-        if (!wrapper) return;
-        
-        const renderElement = wrapper.querySelector('[data-diagram-render="true"]') as HTMLElement;
-        const codeElement = wrapper.querySelector('[data-diagram-code="true"]') as HTMLElement;
-        
-        if (!renderElement || !codeElement) return;
-        
-        const isShowingCode = toggleBtn.dataset.showingCode === 'true';
-        const newIsShowingCode = !isShowingCode;
-        toggleBtn.dataset.showingCode = String(newIsShowingCode);
-        
-        if (newIsShowingCode) {
-          renderElement.style.setProperty('display', 'none', 'important');
-          codeElement.style.setProperty('display', 'block', 'important');
-          toggleBtn.innerHTML = `<svg style="pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`;
-          toggleBtn.title = 'Show Diagram';
-          
-          // Highlight code when showing source
-          const lang = wrapper.dataset.diagramLang || '';
-          const diagramHighlightMap: Record<string, string> = {
-            'math': 'latex',
-            'vegalite': 'json',
-            'vega': 'json',
-            'bpmn': 'xml',
-            'excalidraw': 'json',
-            'graphviz': 'dot',
-            'c4plantuml': 'java',
-          };
-          const highlightLang = diagramHighlightMap[lang] || lang;
-          const codeEl = codeElement.querySelector('code') || codeElement;
-          if (codeEl.textContent?.trim()) {
-            const tsSuccess = await highlightCodeWithTreeSitterBlock(codeEl as HTMLElement, highlightLang);
-            if (!tsSuccess && hljs) {
-              codeEl.className = `language-${highlightLang}`;
-              hljs.highlightElement(codeEl as HTMLElement);
-            }
-          }
-        } else {
-          renderElement.style.setProperty('display', 'block', 'important');
-          codeElement.style.setProperty('display', 'none', 'important');
-          toggleBtn.innerHTML = `<svg style="pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`;
-          toggleBtn.title = 'Show Source';
-        }
-      }, true);
-    }
-  }
-
   onMount(() => {
     loadRecentFiles();
 
@@ -2219,18 +1949,13 @@
     });
 
     // @ts-ignore
-    Promise.all([import('highlight.js'), import('katex'), import('katex/dist/contrib/auto-render'), import('mermaid')]).then(
-      ([hljsModule, katexModule, autoRenderModule, mermaidModule]) => {
+    Promise.all([import('highlight.js'), import('katex'), import('katex/dist/contrib/auto-render'), ensureMermaidInitialized()]).then(
+      ([hljsModule, katexModule, autoRenderModule]) => {
         hljs = hljsModule.default;
         katex = katexModule.default;
         renderMathInElement = autoRenderModule.default;
-        mermaid = mermaidModule.default;
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: 'default',
-          securityLevel: 'loose',
-        });
-        
+        mermaid = getMermaid(); // mermaid 单实例来自 pipeline/diagrams（spec D12）；赋值 $state 以触发首次渲染
+
         // Initialize tree-sitter supported languages
         initTreeSitterLanguages();
       },
