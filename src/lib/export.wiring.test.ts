@@ -10,16 +10,24 @@ const mv = readFileSync(join(__dirname, 'MarkdownViewer.svelte'), 'utf8');
 const titlebar = readFileSync(join(__dirname, 'components', 'TitleBar.svelte'), 'utf8');
 
 describe('导出管线接线契约（spec §7.2 风险 1）', () => {
-  it('MV 保留 handleExport 且调用本地 export.ts 的两个入口', () => {
+  it('MV 保留 handleExport 且以容器实参调用本地 export.ts 的两个入口', () => {
     expect(mv).toMatch(/function handleExport\(/);
-    expect(mv).toMatch(/exportAsHtml\(/);
-    expect(mv).toMatch(/exportAsPdf\(/);
-    expect(mv).toMatch(/from '\.\/export'/);
+    // 实际调用形态（容器为首参）+ 精确 import 路径：handleExport 改调上游
+    // utils/export.ts 的同名函数（或 import 被换成 './utils/export'）时在此变红。
+    expect(mv).toMatch(
+      /import \{ exportAsHtml, exportAsPdf, type ExportFormat, type PdfPageSize \} from '\.\/export'/,
+    );
+    expect(mv).toMatch(/exportAsHtml\(container, settings\.showToc/);
+    expect(mv).toMatch(/exportAsPdf\(container, settings\.showToc, pageSize, fileName\)/);
   });
 
-  it('MV 挂载 ExportModal 并向 TitleBar 传 onexport', () => {
-    expect(mv).toMatch(/ExportModal/);
-    expect(mv).toMatch(/onexport=\{/);
+  it('MV 挂载 ExportModal 并以 handleExport 实绑定 onexport（防空绑定）', () => {
+    expect(mv).toMatch(/<ExportModal\b/);
+    // 字面绑定 handleExport：`onexport={() => {}}` 空壳也能通过"存在 onexport"
+    // 的检查，接线的 ExportModal → handleExport 一跳必须钉死。
+    expect(mv).toMatch(/onexport=\{handleExport\}/);
+    // TitleBar 两个入口只负责打开弹窗，绑定同样不得是空函数。
+    expect(mv).toMatch(/onexport=\{\(\) => \(showExportModal = true\)\}/);
   });
 
   it('TitleBar 保留 onexport prop（合并后与上游 onfind 并存）', () => {
