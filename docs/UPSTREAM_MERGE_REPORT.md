@@ -160,3 +160,88 @@ cargo check
 ## 结论
 
 合并已成功完成，所有冲突已解决。我们的自定义功能（tree-sitter 语法高亮、Kroki 图表、TOC 侧边栏、主题系统、可定制工具栏）已保留，同时获得了上游的新功能（设置页面、vim 模式、禅模式等）。建议进行一些额外的集成工作以充分利用合并的功能。
+
+---
+
+# 第二轮上游合并报告（2026-10-06）
+
+## 基线与范围
+
+| 项 | 值 |
+|----|----|
+| merge-base | `1b53002` |
+| 上游 | `2154730`（sftwrdotdev/Markpad master，v2.6.4 → **v2.8.3**，626 个上游提交） |
+| 本地起点 | `30ee4f3`（master，154 个本地提交） |
+| 集成分支 | `feat/upstream-merge-2`（自 master 线性前进） |
+| 合并提交 | `ef663c5`（双亲 `db84385` + `2154730`），分支共 18 个新提交（合并前 8 + 合并后 9 + 合并本身），终态 `5711f58` |
+| 冲突规模 | 19 个冲突文件 / 137 hunk（逐 hunk 档案见 spec `docs/superpowers/specs/2026-10-06-merge-upstream-round2-design.md` §6.10） |
+
+## 架构策略
+
+以特性原生主人定骨架、另一方移植差异点：`MarkdownViewer.svelte` 取上游 skeleton（从相对 1b53002 的 6377 行 diff 缩减为"上游轮廓 + pipeline/adapter 调用行"），本地渲染链抽为 `src/lib/pipeline/`（highlight、diagrams、latex、lightbox、copy 等步进管线），导出走本地 `src/lib/export.ts`（D6），图表分发走 `pipeline/diagrams.ts`（D12），settings 持久化取上游机制 + 本地字段迁入切片 `stores/slices/`。
+
+## 裁决要点（关键决策）
+
+| 决策 | 内容 |
+|------|------|
+| D6 | 导出引擎保持本地 `export.ts`（交互式 HTML/PDF/asset→dataURI），不吸收上游 MarkdownViewer 内 `exportAsHtml/exportAsPdf` 单体 |
+| D10 | CSP 保留本地放宽项（`asset:`、`fonts.googleapis`、connector 9555/9556、`wasm-unsafe-eval`），不采纳上游收紧版 |
+| D12 | 图表分发由本地 pipeline 接管，上游 `rememberDiagramSource` 单写者约定不适用 |
+| D13 | `stores/tabs.svelte.ts` 整文件取上游（1241 行为本地 372 行语义超集），分屏/滚动同步/最近关闭由上游版承接 |
+| D14 | Home 菜单 / MoreMenu / metadata 弹窗由上游承接退役；本地 `export`/`vim_mode`/`zen_mode`/`metadata`/`theme_scheme`/`code_theme` 六动作注册进上游 `titlebarToolbar.ts` 注册表；Home 菜单仅保留 fork URL（`bhxch/Markpad`） |
+| D15 | YouTube 保留本地内嵌（frame-src youtube.com），不采纳上游缩略图方案 |
+| D17 | 测试三轨：上游 node --test 轨 + upstream-spec vitest 轨 + local-unit vitest 轨 |
+
+## 验证（四门 + 差分归类）
+
+| 门 | 结果 |
+|----|------|
+| `npm run build` | exit 0 |
+| `npx svelte-check` | 0 errors / 4 warnings（既有基线） |
+| `npm test`（node --test） | 1112 = 1102 pass + 10 fail（见下"已知差异声明"） |
+| `npx vitest run` | 538/538 pass（local-unit 46 + upstream-spec 492） |
+| `cargo test` | 240 pass / 0 fail |
+
+### 已知差异声明
+
+合并后 `npm test` 有 **10 个失败 = 预期差分，非回归**：9 个为 spec 决策（D6/D10/D12/D15）与上游断言的故意分歧，1 个为本地切片持久化架构与上游单写者约定的分歧（stores/slices 直写 localStorage）。逐条归因见父仓库 `docs/report/2026-10-06-round2-acceptance-smoke.md` §2。master 基线（30ee4f3）的 `npm test` 16/16 全绿且无上游测试轨，故该差集全部由合并引入并已逐条归类，无一为行为回归。
+
+### 人工 GUI 冒烟清单补录
+
+Task 18 交接的人工冒烟清单（acceptance-smoke 报告 §4）存在两处清单缺口，在此显式补录：
+
+1. **"编辑器中输入新代码块 → 即时高亮/图表"**：原清单仅覆盖既有代码块的渲染目测，需补充在编辑器中新输入 ```fence 代码块后预览区即时出现 tree-sitter 高亮、新输入 mermaid fence 即时出图。
+2. **"excalidraw/bpmn/vega 图表类型验证"**：原清单"图表四模式"仅列 mermaid/graphviz/plantuml/svgbob，需补充 excalidraw / bpmn / vega 三种图表类型在 local 模式下的出图目测。
+
+### updater 端点提示
+
+`src-tauri/tauri.conf.json` 的 updater endpoint 指向上游 `https://github.com/sftwrdotdev/Markpad/releases/latest/download/latest.json`（spec D10 采纳上游配置）。后果：fork 用户在应用内"检查更新"会拉到**上游构建**并可能被上游版本号覆盖。若需指向自己的发布渠道，需同时修改 endpoint 与 `plugins.updater.pubkey`（当前 pubkey 为上游签名密钥，自建发布必须换自己的密钥对）。记录为已知事项，本次不改动。
+
+## 遗留已知问题与限制
+
+1. **自托管 Kroki http 被拦（既有缺陷）**：CSP `img-src` 无 `http:`，自托管 Kroki 使用 http 地址时图片会被拦（spec §7.3 表末行，非本次引入），如需支持需自行收紧决策后补 `img-src http:`。
+2. **已知限制与后续建议**（自各任务台账 Minor 汇总）：
+   - mermaid rejection 负缓存无重试——**已在 Task 14 修复**（负缓存带重试）；
+   - `process_latex_delimiters` 对缩进码块的继承性存在转换边界缺口（资产原样继承，建议后续补注释或守卫）；
+   - `themeScheme` 跨窗口同步依赖上游窗口体系，多窗口场景未专项验证；
+   - 导出 `rewriteMarkdownHrefForExport` 将相对 `.txt` 链接一并改写为 `.html`（语义吸收，已披露接受）；
+   - 导出截断守卫存在 tab 切换竞态（窗口极小概率触发）；
+   - i18n 迁移的 13 个词条仅 en/zh 双语，`export.title` 与 `toolbar.export` 同文；
+   - 上游轨测试的 monacoStartupGraph 依赖显式文件路径导入（`./pipeline/index`），后续新增目录导入需沿用该写法。
+
+## 文件变更摘要（相对 master 30ee4f3）
+
+上游 626 个提交并入 + 集成分支 18 个新提交（重构/清理/修复），核心变更：
+
+```
+ merged:    上游 626 提交（v2.8.3 基座：documentSession、frontmatter 面板、FindBar、
+            多窗标签、更新器、splitPanes、TOC 重构、snapshot 测试轨等）
+ new:       src/lib/pipeline/（本地渲染管线切片）、src/lib/stores/slices/（设置切片）、
+            src/lib/export.ts、src/lib/diagrams、tests 三轨配置（vitest upstream-spec/local-unit）
+ retired:   本地 i18n 目录（13 词条迁入上游 locales）、metadata-popup、MoreMenu、
+            旧 tabs store、dev:installer 入口
+```
+
+## 结论（第二轮）
+
+626 个上游提交以本地特性保全方式并入，四门验证通过，10 个测试差分全部归类为故意分歧。人工 GUI 冒烟清单（含本文补录两处）交接给有 GUI 环境的后续验证。
