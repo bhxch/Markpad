@@ -45,6 +45,9 @@ export function paginateContent(
 	
 	// Remove interactive elements
 	clone.querySelectorAll('.toc-sidebar, .toc-container, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
+	// frontmatter 面板（Task 14 ①）：viewer-content 克隆会带出预览的交互式
+	// <details class="frontmatter-panel">（含 select/input 编辑件），导出物不需要它。
+	clone.querySelectorAll('.frontmatter-panel').forEach(el => el.remove());
 	clone.querySelectorAll('[onclick], [onmousedown], [onwheel]').forEach(el => {
 		el.removeAttribute('onclick');
 		el.removeAttribute('onmousedown');
@@ -1124,6 +1127,9 @@ export async function generateExportHtml(
 		// For HTML: keep diagram toggle buttons, remove other interactive elements
 		clone.querySelectorAll('.editor-pane, .split-bar, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
 	}
+	// frontmatter 面板（Task 14 ①）：两个分支都移除——克隆自 .viewer-content，内含
+	// 预览的交互式 frontmatter 面板（select/input 编辑件），不属于导出文档。
+	clone.querySelectorAll('.frontmatter-panel').forEach(el => el.remove());
 	
 	// Remove event handlers
 	clone.querySelectorAll('[onclick], [onmousedown], [onwheel]').forEach(el => {

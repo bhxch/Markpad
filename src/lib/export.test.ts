@@ -108,6 +108,23 @@ describe('HTML 导出 diagram 切换按钮', () => {
 	});
 });
 
+describe('frontmatter 面板清理（Task 14 ①）', () => {
+	// viewer-content 克隆会带出预览的交互式 <details class="frontmatter-panel">，
+	// 两个导出分支（HTML/PDF）都不得把它带进导出物。
+	it('HTML 导出移除 .frontmatter-panel', async () => {
+		const container = makeContainer('<details class="frontmatter-panel"><summary>属性</summary></details>');
+		const out = await generateExportHtml(container, false, 'a4', false, '测试');
+		expect(out).not.toMatch(/class="[^"]*frontmatter-panel/);
+		expect(out).toContain('测试标题');
+	});
+
+	it('PDF 导出移除 .frontmatter-panel', async () => {
+		const container = makeContainer('<details class="frontmatter-panel"><summary>属性</summary></details>');
+		const out = await generateExportHtml(container, true, 'a4', true, '测试');
+		expect(out).not.toMatch(/class="[^"]*frontmatter-panel/);
+	});
+});
+
 describe('convertAssetImagesToDataUri', () => {
 	it('把 asset:// 图片转为 data URI（外部浏览器可访问）', async () => {
 		const container = document.createElement('div');
