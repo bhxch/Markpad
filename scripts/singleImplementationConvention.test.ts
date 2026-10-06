@@ -43,12 +43,18 @@ type Rule = {
 const RULES: Rule[] = [
 	{
 		name: 'mermaid rendering remembers the diagram source',
-		why: 'PDF/HTML export re-renders Mermaid in the light theme from data-mermaid-source; a render path without rememberDiagramSource exports blank or dark-themed diagrams (#359).',
+		why: 'PDF/HTML export re-renders Mermaid in the light theme from the remembered diagram source; a render path that discards the source exports blank or dark-themed diagrams (#359). Upstream records it via rememberDiagramSource into data-mermaid-source; the fork (D12) routes on-screen rendering through the local pipeline, whose source channel is the `[data-diagram-code]` code block the wrapper keeps (export.ts consumes it for print).',
 		marker: /mermaid\.render\(/g,
-		allowed: ['src/lib/utils/mermaidPrint.ts', 'src/lib/utils/richContent.ts'],
+		allowed: [
+			'src/lib/utils/mermaidPrint.ts',
+			'src/lib/utils/richContent.ts',
+			// D12：图表分发接管后本地管线的两个 mermaid.render 站点（首渲 + 主题重绘），
+			// 源记录走 wrapper 内的 data-diagram-code 代码块而非 rememberDiagramSource。
+			'src/lib/pipeline/diagrams.ts',
+		],
 		requires: {
-			pattern: /rememberDiagramSource/,
-			message: 'a Mermaid render site must record the source via rememberDiagramSource',
+			pattern: /rememberDiagramSource|data-diagram-code/,
+			message: 'a Mermaid render site must remember the source — rememberDiagramSource (upstream) or the wrapper\'s data-diagram-code block (local pipeline)',
 		},
 	},
 	{
