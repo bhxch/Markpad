@@ -509,13 +509,14 @@ test('a cold start restores again once its enrichment has landed', async () => {
 	// first await, so without `untrack` that effect re-runs on unrelated
 	// changes — re-enriching every open tab's host on top of the pass above.
 	//
-	// Matched on the `untrack`, not on the guard beside it: the guard was
-	// `markdownBody && !isEditing` when this was written and is `markdownBody`
-	// alone now (scripts/diagramThemeRefresh.spec.ts owns that question). What
-	// this test is for is the tracking.
+	// Matched on the `untrack`, not on the guard beside it: the guard has been
+	// `markdownBody && !isEditing`, then `if (markdownBody)`, and is now an
+	// early-return `if (!markdownBody)` at the top of the untrack block
+	// (scripts/diagramThemeRefresh.spec.ts owns that question). What this test
+	// is for is the tracking.
 	assert.match(
 		viewer,
-		/untrack\(\(\) => \{? ?if \(markdownBody\) renderRichContent\(\);/,
+		/untrack\(\(\) => \{\s*if \(!markdownBody\) return;\s*renderRichContent\(\);/,
 		'the theme effect must depend on the theme, not on the libraries arriving',
 	);
 });
