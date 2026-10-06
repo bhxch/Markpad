@@ -5,7 +5,8 @@
 // DOM 装配（收集可查看项 + 安装悬停按钮）归本模块；打开状态（viewableItems/lightboxIndex
 // $state）与 ZoomOverlay 模板是 MarkdownViewer 组件 UI，无法进入纯步骤，
 // 经 setLightboxOpener 回调桥接（与 pipeline/diagrams 的 setDiagramVersionGate 同一注入模式）。
-import { i18n } from '../i18n';
+import { t } from '../utils/i18n.js';
+import { settings } from '../stores/settings.svelte.js';
 
 export type LightboxItem = { type: 'img' | 'svg'; src?: string; html?: string };
 
@@ -31,7 +32,7 @@ function openLightboxAt(index: number): void {
 
 // Pipeline 步骤（spec D5）：收集可查看项（普通图片 + 已渲染图表）并安装悬停全屏按钮。
 // 原 injectLightboxButtons 逐字搬移；调整项：markdownBody → root、`lightboxIndex = index` →
-// openLightboxAt(index)、`t.viewFullscreen` → i18n.getAll().viewFullscreen（装配时取值等价）。
+// openLightboxAt(index)、`t.viewFullscreen` → t('tooltip.viewFullscreen', settings.language)。
 export async function injectLightboxButtons(root: ParentNode, blocks?: Element[]): Promise<void> {
 	items = [];
 
@@ -68,7 +69,7 @@ export async function injectLightboxButtons(root: ParentNode, blocks?: Element[]
 		btn.className = 'img-lightbox-btn';
 		btn.type = 'button';
 		btn.innerHTML = LIGHTBOX_ICON;
-		btn.title = i18n.getAll().viewFullscreen;
+		btn.title = t('tooltip.viewFullscreen', settings.language);
 		btn.onclick = (e) => {
 			e.stopPropagation();
 			e.preventDefault();
@@ -100,7 +101,7 @@ export async function injectLightboxButtons(root: ParentNode, blocks?: Element[]
 		btn.className = 'img-lightbox-btn';
 		btn.type = 'button';
 		btn.innerHTML = LIGHTBOX_ICON;
-		btn.title = i18n.getAll().viewFullscreen;
+		btn.title = t('tooltip.viewFullscreen', settings.language);
 		btn.onclick = (e) => {
 			e.stopPropagation();
 			e.preventDefault();

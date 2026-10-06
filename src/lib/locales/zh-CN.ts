@@ -6,6 +6,7 @@ export default {
         editor: '编辑器',
         preview: '预览',
         appearance: '外观',
+        diagrams: '图表',
         toolbars: '工具栏',
         toolbarsSettings: '工具栏设置',
         editorSettings: '编辑器设置',
@@ -358,7 +359,8 @@ export default {
         hideTableOfContents: '隐藏目录',
         newTab: '新标签页',
         close: '关闭',
-        find: '查找'
+        find: '查找',
+        viewFullscreen: '全屏查看'
     },
     toc: {
         noHeadingsFound: '未找到标题',
@@ -373,12 +375,29 @@ export default {
         defaultLight: '默认浅色',
         defaultDark: '默认深色'
     },
+    // 标题栏本地回挂动作（D14）的标签。
+    toolbar: {
+        export: '导出',
+        vimMode: 'Vim模式',
+        metadata: '元数据',
+        themeScheme: '配色方案',
+        codeTheme: '代码主题'
+    },
+    // 导出弹窗与导出结果提示（本地 i18n 退役后迁入，§5.4）；HTML/PDF 两个格式名复用 menu.exportHtml / menu.exportPdf。
+    export: {
+        title: '导出',
+        format: '导出格式',
+        pdfSize: 'PDF 尺寸',
+        success: 'HTML 导出成功！',
+        failed: '导出失败'
+    },
     tabs: {
         untitled: '无标题',
         home: '主页'
     },
     common: {
         close: '关闭',
+        cancel: '取消',
         minimize: '最小化',
         maximize: '最大化',
         loadingFullDocument: '正在加载完整文档…',

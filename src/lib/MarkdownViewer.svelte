@@ -29,7 +29,6 @@
 	// D5 统一渲染管线在上游 blockPatch 富化之后挂接。
 	import ExportModal from './components/ExportModal.svelte';
 	import { exportAsHtml, exportAsPdf, type ExportFormat, type PdfPageSize } from './export';
-	import { i18n } from './i18n';
 	import { runPipeline, setPipelineVersionSource } from './pipeline';
 	import {
 		ensureMermaidInitialized,
@@ -586,14 +585,11 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		const rawTitle = tabManager.activeTab?.title || 'document';
 		const fileName = rawTitle.replace(/\.md$/i, '');
 
-		// 词条暂走本地 i18n（与 ExportModal 同源；Task 15 随本地组件一起迁移 locales）
-		const messages = i18n.getAll();
-
 		try {
 			if (format === 'html') {
 				const success = await exportAsHtml(container, settings.showToc, fileName);
 				if (success) {
-					exportMessage = { show: true, text: messages.exportSuccess };
+					exportMessage = { show: true, text: t('export.success', settings.language) };
 					setTimeout(() => { exportMessage = { show: false, text: '' }; }, 3000);
 				}
 			} else {
@@ -604,7 +600,7 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 			}
 		} catch (e) {
 			console.error('Export failed:', e);
-			exportMessage = { show: true, text: `${messages.exportFailed}: ${e}` };
+			exportMessage = { show: true, text: `${t('export.failed', settings.language)}: ${e}` };
 			setTimeout(() => { exportMessage = { show: false, text: '' }; }, 5000);
 		}
 	}

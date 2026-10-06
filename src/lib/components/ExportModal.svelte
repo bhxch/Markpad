@@ -1,18 +1,10 @@
 <script lang="ts">
 	import { fade, scale } from 'svelte/transition';
-	import { i18n, type Locale } from '../i18n';
+	import { t } from '../utils/i18n.js';
+	import { settings } from '../stores/settings.svelte.js';
 
 	export type ExportFormat = 'html' | 'pdf';
 	export type PdfPageSize = 'a4' | 'a3' | 'letter' | 'legal';
-
-	// Reactive translations
-	let t = $state(i18n.getAll());
-	let currentLocale = $state(i18n.getLocale());
-
-	function updateTranslations() {
-		t = i18n.getAll();
-		currentLocale = i18n.getLocale();
-	}
 
 	let {
 		show,
@@ -89,26 +81,26 @@
 			tabindex="-1"
 			onkeydown={handleKeydown}>
 			<div class="modal-header">
-				<h3>{t.export}</h3>
+				<h3>{t('export.title', settings.language)}</h3>
 			</div>
 			<div class="modal-body">
 				<div class="form-group">
-					<label class="form-label">{t.exportFormat}</label>
+					<label class="form-label">{t('export.format', settings.language)}</label>
 					<div class="radio-group">
 						<label class="radio-item">
 							<input type="radio" name="format" value="html" bind:group={format} />
-							<span>{t.exportHtml}</span>
+							<span>{t('menu.exportHtml', settings.language)}</span>
 						</label>
 						<label class="radio-item">
 							<input type="radio" name="format" value="pdf" bind:group={format} />
-							<span>{t.exportPdf}</span>
+							<span>{t('menu.exportPdf', settings.language)}</span>
 						</label>
 					</div>
 				</div>
 
 				{#if format === 'pdf'}
 					<div class="form-group">
-						<label class="form-label">{t.pdfSize}</label>
+						<label class="form-label">{t('export.pdfSize', settings.language)}</label>
 						<select class="select-input" bind:value={pageSize}>
 							{#each pageSizes as size}
 								<option value={size.value}>{getPageSizeLabel(size.value)}</option>
@@ -118,8 +110,8 @@
 				{/if}
 			</div>
 			<div class="modal-footer">
-				<button class="modal-btn secondary" onclick={oncancel}>{t.cancel}</button>
-				<button class="modal-btn primary" onclick={handleExport}>{t.export}</button>
+				<button class="modal-btn secondary" onclick={oncancel}>{t('common.cancel', settings.language)}</button>
+				<button class="modal-btn primary" onclick={handleExport}>{t('export.title', settings.language)}</button>
 			</div>
 		</div>
 	</div>

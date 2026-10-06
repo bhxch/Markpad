@@ -427,7 +427,8 @@ const en: Translation = {
         hideTableOfContents: 'Hide Table of Contents',
         newTab: 'New Tab',
         close: 'Close',
-        find: 'Find'
+        find: 'Find',
+        viewFullscreen: 'View Fullscreen'
     },
     toc: {
         noHeadingsFound: 'No headings found',
@@ -442,7 +443,7 @@ const en: Translation = {
         defaultLight: 'Default Light',
         defaultDark: 'Default Dark'
     },
-    // Titlebar 本地回挂动作（D14）的标签；zh 词条由 i18n 词条任务补齐，缺失时回退英文。
+    // Titlebar 本地回挂动作（D14）的标签。
     toolbar: {
         export: 'Export',
         vimMode: 'Vim Mode',
@@ -450,12 +451,21 @@ const en: Translation = {
         themeScheme: 'Color Scheme',
         codeTheme: 'Code Theme'
     },
+    // 导出弹窗与导出结果提示（本地 i18n 退役后迁入，§5.4）；HTML/PDF 两个格式名复用 menu.exportHtml / menu.exportPdf。
+    export: {
+        title: 'Export',
+        format: 'Export Format',
+        pdfSize: 'PDF Size',
+        success: 'HTML export successful!',
+        failed: 'Export failed'
+    },
     tabs: {
         untitled: 'Untitled',
         home: 'Home'
     },
     common: {
         close: 'Close',
+        cancel: 'Cancel',
         minimize: 'Minimize',
         maximize: 'Maximize',
         loadingFullDocument: 'Loading full document...',

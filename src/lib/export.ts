@@ -1,6 +1,5 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
-import { i18n } from './i18n';
 
 export type ExportFormat = 'html' | 'pdf';
 export type PdfPageSize = 'a4' | 'a3' | 'letter' | 'legal';
@@ -246,25 +245,6 @@ export async function detectPlatform(): Promise<'windows' | 'macos' | 'linux' | 
 	}
 	
 	return currentPlatform;
-}
-
-/**
- * Get platform-specific print instructions
- */
-export function getPrintInstructions(): string {
-	const platform = currentPlatform;
-	const t = i18n.getAll();
-	
-	switch (platform) {
-		case 'windows':
-			return t.printInstructionsWindows;
-		case 'macos':
-			return t.printInstructionsMacos;
-		case 'linux':
-			return t.printInstructionsLinux;
-		default:
-			return t.printInstructionsDefault;
-	}
 }
 
 /**
