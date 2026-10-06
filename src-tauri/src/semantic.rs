@@ -641,8 +641,13 @@ fn app_syntax_spans(lines: &[&str], out: &mut Vec<(ByteSpan, &'static str)>) {
 /// `$…$` and `$$…$$`, found the way the renderer finds them.
 ///
 /// Not a second scanner: `find_math_spans` is the one `mask_math_spans` uses to
-/// decide what the frontend will typeset, so the editor colours exactly what
-/// KaTeX will render — including the code regions it refuses to look inside.
+/// decide what the frontend will typeset — including the code regions it
+/// refuses to look inside. Known asymmetry since the `\[…\]`/`\(…\)`
+/// preprocessing was wired into `render_markdown` (f2e806a): those delimiters
+/// become `$` vocabulary on the render path only, while this scan sees the raw
+/// document, so `\(...\)` math renders in the preview but stays uncoloured in
+/// the editor. Accepted visual-only gap; the `$` vocabulary itself still
+/// colours exactly what KaTeX renders.
 ///
 /// comrak's own math extension is off (`markdown_options`), so nothing else
 /// claims these ranges and the spans below are the only ones a formula gets.
