@@ -45,57 +45,11 @@
   let katex: any = $state(null);
   let mermaid: any = $state(null);
   
-  // Tree-sitter supported languages (cached)
-  let treeSitterLanguages: Set<string> = $state(new Set());
 
   import 'highlight.js/styles/github-dark.css';
   import 'katex/dist/katex.min.css';
-  
-  // Get the current code theme based on settings
-  function getCodeTheme(): string {
-    if (settings.codeTheme === 'auto') {
-      const currentThemeObj = settings.themes.find((t) => t.id === settings.themeScheme);
-      const mode = currentThemeObj ? currentThemeObj.mode : 'dark';
-      return mode === 'dark' ? 'dark-modern' : 'light-modern';
-    }
-    return settings.codeTheme;
-  }
-  
-  // Highlight code using tree-sitter with hljs fallback
-  async function highlightCodeWithTreeSitter(block: HTMLElement, lang: string): Promise<boolean> {
-    const code = block.textContent || '';
-    if (!code.trim()) return false;
-    
-    try {
-      const theme = getCodeTheme();
-      const highlightedHtml = await invoke<string>('highlight_code', {
-        code,
-        language: lang,
-        theme
-      });
-      
-      // Replace the content with highlighted HTML
-      block.innerHTML = highlightedHtml;
-      
-      // Mark as tree-sitter highlighted
-      block.classList.add('ts-highlighted');
-      
-      return true;
-    } catch (e) {
-      // Language not supported or highlighting failed, will fall back to hljs
-      return false;
-    }
-  }
-  
-  // Initialize tree-sitter supported languages list
-  async function initTreeSitterLanguages(): Promise<void> {
-    try {
-      const languages = await invoke<string[]>('get_supported_languages');
-      treeSitterLanguages = new Set(languages);
-    } catch (e) {
-      console.warn('Failed to get tree-sitter supported languages:', e);
-    }
-  }
+  // Tree-sitter code highlighting (extracted to pipeline/highlight module)
+  import { highlightCodeWithTreeSitterBlock, initTreeSitterLanguages } from './pipeline/highlight';
 
   let mode = $state<'loading' | 'app' | 'installer' | 'uninstall'>('loading');
 
@@ -961,7 +915,7 @@
         if (getDiagramType(normalizedLang)) continue; // Skip diagrams (already processed above)
 
         // Try tree-sitter first
-        const tsSuccess = await highlightCodeWithTreeSitter(block as HTMLElement, lang);
+        const tsSuccess = await highlightCodeWithTreeSitterBlock(block as HTMLElement, lang);
         
         // Fallback to hljs if tree-sitter failed
         if (!tsSuccess && hljs) {
@@ -2151,7 +2105,7 @@
       const highlightLang = diagramHighlightMap[language] || language;
       
       // Try tree-sitter first
-      const tsSuccess = await highlightCodeWithTreeSitter(codeElement as HTMLElement, highlightLang);
+      const tsSuccess = await highlightCodeWithTreeSitterBlock(codeElement as HTMLElement, highlightLang);
       
       // Fallback to hljs if tree-sitter failed
       if (!tsSuccess && hljs) {
@@ -2237,7 +2191,7 @@
           const highlightLang = diagramHighlightMap[lang] || lang;
           const codeEl = codeElement.querySelector('code') || codeElement;
           if (codeEl.textContent?.trim()) {
-            const tsSuccess = await highlightCodeWithTreeSitter(codeEl as HTMLElement, highlightLang);
+            const tsSuccess = await highlightCodeWithTreeSitterBlock(codeEl as HTMLElement, highlightLang);
             if (!tsSuccess && hljs) {
               codeEl.className = `language-${highlightLang}`;
               hljs.highlightElement(codeEl as HTMLElement);
