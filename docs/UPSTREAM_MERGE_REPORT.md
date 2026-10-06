@@ -173,7 +173,7 @@ cargo check
 | 上游 | `2154730`（sftwrdotdev/Markpad master，v2.6.4 → **v2.8.3**，626 个上游提交） |
 | 本地起点 | `30ee4f3`（master，154 个本地提交） |
 | 集成分支 | `feat/upstream-merge-2`（自 master 线性前进） |
-| 合并提交 | `ef663c5`（双亲 `db84385` + `2154730`），分支共 18 个新提交（合并前 8 + 合并后 9 + 合并本身），终态 `5711f58` |
+| 合并提交 | `ef663c5`（双亲 `db84385` + `2154730`），分支共 42 个新提交（重构 8 + 合并 1 + 收尾 11 + 审查修复 22），终态 `bba701b` |
 | 冲突规模 | 19 个冲突文件 / 137 hunk（逐 hunk 档案见 spec `docs/superpowers/specs/2026-10-06-merge-upstream-round2-design.md` §6.10） |
 
 ## 架构策略
@@ -185,11 +185,11 @@ cargo check
 | 决策 | 内容 |
 |------|------|
 | D6 | 导出引擎保持本地 `export.ts`（交互式 HTML/PDF/asset→dataURI），不吸收上游 MarkdownViewer 内 `exportAsHtml/exportAsPdf` 单体 |
-| D10 | CSP 保留本地放宽项（`asset:`、`fonts.googleapis`、connector 9555/9556、`wasm-unsafe-eval`），不采纳上游收紧版 |
+| D10 | CSP 保留本地放宽项（`asset:`、connector 9555/9556、`wasm-unsafe-eval`），不采纳上游收紧版；零消费者的 Google Fonts 项已在审查修复中收紧（`ed0a72c`） |
 | D12 | 图表分发由本地 pipeline 接管，上游 `rememberDiagramSource` 单写者约定不适用 |
 | D13 | `stores/tabs.svelte.ts` 整文件取上游（1241 行为本地 372 行语义超集），分屏/滚动同步/最近关闭由上游版承接 |
 | D14 | Home 菜单 / MoreMenu / metadata 弹窗由上游承接退役；本地 `export`/`vim_mode`/`zen_mode`/`metadata`/`theme_scheme`/`code_theme` 六动作注册进上游 `titlebarToolbar.ts` 注册表；Home 菜单仅保留 fork URL（`bhxch/Markpad`） |
-| D15 | YouTube 保留本地内嵌（frame-src youtube.com），不采纳上游缩略图方案 |
+| D15 | YouTube 保留本地内嵌（`replaceWithYoutubeEmbed` + frame-src youtube.com），不采纳上游缩略图方案。初版合并曾静默丢失渲染端（仅剩无生产端的 frame-src），审查修复已回挂（`18dbf78`）并 fork 化对应测试（`9e5c5ef`） |
 | D17 | 测试三轨：上游 node --test 轨 + upstream-spec vitest 轨 + local-unit vitest 轨 |
 
 ## 验证（四门 + 差分归类）
@@ -197,14 +197,24 @@ cargo check
 | 门 | 结果 |
 |----|------|
 | `npm run build` | exit 0 |
-| `npx svelte-check` | 0 errors / 4 warnings（既有基线） |
-| `npm test`（node --test） | 1112 = 1102 pass + 10 fail（见下"已知差异声明"） |
-| `npx vitest run` | 538/538 pass（local-unit 46 + upstream-spec 492） |
+| `npx svelte-check` | 0 errors / 0 warnings（初版 4 warnings 已治理，`bba701b`） |
+| `npm test`（node --test） | 1112 pass / 0 fail（初版 10 个失败已全部收敛，见下"已知差异声明"） |
+| `npx vitest run` | 546/546 pass（68 文件 = local-unit 7 + upstream-spec 61） |
 | `cargo test` | 240 pass / 0 fail |
 
 ### 已知差异声明
 
-合并后 `npm test` 有 **10 个失败 = 预期差分，非回归**：9 个为 spec 决策（D6/D10/D12/D15）与上游断言的故意分歧，1 个为本地切片持久化架构与上游单写者约定的分歧（stores/slices 直写 localStorage）。逐条归因见父仓库 `docs/report/2026-10-06-round2-acceptance-smoke.md` §2。master 基线（30ee4f3）的 `npm test` 16/16 全绿且无上游测试轨，故该差集全部由合并引入并已逐条归类，无一为行为回归。
+合并后 `npm test` 初版有 10 个失败，经逐条独立取证（2026-10-07 审查修复批次）：2 项为实施疏漏（slices 死方法直写 localStorage、YouTube 内嵌半吊子态）、2 项为死代码触发（detectPlatform 等）、其余为测试断言未随 fork 决策（D6/D10/D12/D15）与重构形状同步。22 个修复提交后三轨全绿：决策分歧的断言已按 fork 契约改写并在注释中引用决策编号，实施疏漏与死代码已修复/清除。归因全文见父仓库 `docs/report/2026-10-06-round2-acceptance-smoke.md` §2 与其勘误记录。
+
+### 审查修复批次（2026-10-07，`77d201f..bba701b`，22 提交）
+
+终审代码审查发现并修复的问题（按批次）：
+
+1. **export.ts 域**：`save_file_content` 调用补 `encoding` 参数（缺失会使 HTML 导出保存必败，spec §6.8 规划项被初版遗漏）；导出 HTML 内容宽度随预览设置派生（吸收上游 #467）；删零调用 `detectPlatform`；导出宽度契约改指本地管线。
+2. **D15 恢复**：回挂 YouTube 内嵌 iframe 播放与 `.video-container` CSS（初版合并静默丢失），删除上游缩略图方案，本地轨新增行为测试填补守护盲区。
+3. **测试收敛**：editorTheme 定位、previewAnchorRestore 形状、mermaid/iframe/connect-src/PDF 导出五条规则按 fork 契约改写；local-unit 超时放宽至 15s 消除全量并行 flaky；导出接线测试加固。
+4. **后端与配置**：删 slices 死持久化方法与 chrono/directories 零消费者依赖；CSP 收紧零消费者 Google Fonts 项；VSCode 主题读端改用 `app_config_dir` 同源路径（修复导入 .vsix 主题后代码块不着色的既有缺陷，Linux/Windows 双平台错位）；按 spec §6.8 注册 save_file_binary/delete_file/cleanup_empty_img_dir 储备命令（三命令实现自上游 v2.6.2 `79b697e` 恢复并改写为本仓现行风格）；退役本地 KaTeX 死分支（math 渲染由后端预处理 + 上游 richContent 完整接管）；semantic.rs 补记 latex 定界符预处理的着色差异注释。
+5. **a11y**：ZoomOverlay/ExportModal 的 4 处 svelte-check 警告治理，基线归零。
 
 ### 人工 GUI 冒烟清单补录
 
@@ -226,22 +236,22 @@ Task 18 交接的人工冒烟清单（acceptance-smoke 报告 §4）存在两处
    - `themeScheme` 跨窗口同步依赖上游窗口体系，多窗口场景未专项验证；
    - 导出 `rewriteMarkdownHrefForExport` 将相对 `.txt` 链接一并改写为 `.html`（语义吸收，已披露接受）；
    - 导出截断守卫存在 tab 切换竞态（窗口极小概率触发）；
-   - i18n 迁移的 13 个词条仅 en/zh 双语，`export.title` 与 `toolbar.export` 同文；
+   - i18n 迁移词条仅 en/zh 双语；口径说明：本地合并前活键 26 个（spec §5.4 实测），其中 7 键新增迁入上游 locales、19 键复用上游现有键或由上游动作承接，仅预览右键菜单 undo/redo 两键未随迁移（编辑器 Ctrl+Z/Y 与 Monaco 自带右键菜单为等价物，是否补回预览侧入口待裁决）；
    - 上游轨测试的 monacoStartupGraph 依赖显式文件路径导入（`./pipeline/index`），后续新增目录导入需沿用该写法。
 
 ## 文件变更摘要（相对 master 30ee4f3）
 
-上游 626 个提交并入 + 集成分支 18 个新提交（重构/清理/修复），核心变更：
+上游 626 个提交并入 + 集成分支 42 个新提交（重构/收尾/审查修复），核心变更：
 
 ```
  merged:    上游 626 提交（v2.8.3 基座：documentSession、frontmatter 面板、FindBar、
             多窗标签、更新器、splitPanes、TOC 重构、snapshot 测试轨等）
  new:       src/lib/pipeline/（本地渲染管线切片）、src/lib/stores/slices/（设置切片）、
             src/lib/export.ts、src/lib/diagrams、tests 三轨配置（vitest upstream-spec/local-unit）
- retired:   本地 i18n 目录（13 词条迁入上游 locales）、metadata-popup、MoreMenu、
-            旧 tabs store、dev:installer 入口
+ retired:   本地 i18n 目录（活键 24/26 迁移或复用上游）、metadata-popup、MoreMenu、
+            旧 tabs store、dev:installer 入口、本地 KaTeX 管线步骤（上游 richContent 接管）
 ```
 
 ## 结论（第二轮）
 
-626 个上游提交以本地特性保全方式并入，四门验证通过，10 个测试差分全部归类为故意分歧。人工 GUI 冒烟清单（含本文补录两处）交接给有 GUI 环境的后续验证。
+626 个上游提交以本地特性保全方式并入。终审审查修复 22 项后，三轨测试全绿（npm test 1112/0、vitest 546/546、cargo test 240/0）、svelte-check 0 errors / 0 warnings；初版合并的两处实施疏漏（HTML 导出保存必败、YouTube 内嵌丢失）已修复，10 个测试差分全部收敛为 fork 契约。人工 GUI 冒烟清单（含本文补录两处，HTML 导出全链路须在 encoding 修复后重验）交接给有 GUI 环境的后续验证。
