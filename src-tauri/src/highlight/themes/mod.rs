@@ -14,12 +14,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Get the VSCode themes directory using the same path as Tauri's app_config_dir.
-fn vscode_themes_dir() -> Option<std::path::PathBuf> {
-    directories::ProjectDirs::from("com", "alecdotdev", "Markpad")
-        .map(|dirs| dirs.config_dir().join("themes"))
-}
-
 /// Supported themes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Theme {
@@ -32,46 +26,36 @@ pub enum Theme {
 impl Theme {
     /// Get the theme colors.
     ///
-    /// For built-in themes, returns a static reference.
-    /// For VSCode themes, returns an owned `ThemeColors` loaded from disk.
-    /// If the VSCode theme file cannot be found, falls back to DarkModern.
-    pub fn colors(&self) -> Cow<'static, ThemeColors> {
+    /// Built-in themes return a static reference. VSCode themes are loaded from
+    /// `themes_dir` — the same `app_config_dir()/themes` directory the Tauri
+    /// commands (`fetch_vscode_theme`/`import_vscode_theme`, see `commands.rs`
+    /// `themes_dir`) write imported themes into. When `themes_dir` is `None`
+    /// or the theme file cannot be found, falls back to DarkModern.
+    pub fn colors_in(&self, themes_dir: Option<&Path>) -> Cow<'static, ThemeColors> {
         match self {
             Theme::DarkModern => Cow::Borrowed(&DARK_MODERN),
             Theme::LightModern => Cow::Borrowed(&LIGHT_MODERN),
             Theme::VSCode(name) => {
-                // Try loading from the same themes directory used by Tauri commands
-                if let Some(themes_dir) = vscode_themes_dir() {
-                    match load_vscode_theme_colors(&themes_dir, name) {
-                        Ok(colors) => Cow::Owned(colors),
-                        Err(_) => Cow::Borrowed(&DARK_MODERN),
-                    }
-                } else {
-                    Cow::Borrowed(&DARK_MODERN)
+                let loaded = themes_dir
+                    .and_then(|dir| load_vscode_theme_colors(dir, name).ok());
+                match loaded {
+                    Some(colors) => Cow::Owned(colors),
+                    None => Cow::Borrowed(&DARK_MODERN),
                 }
             }
         }
     }
 
-    /// Load VSCode theme colors from a specific themes directory.
-    /// Returns an error if the theme file is not found or cannot be parsed.
-    #[allow(dead_code)]
-    pub fn colors_from_dir(&self, themes_dir: &Path) -> Cow<'static, ThemeColors> {
-        match self {
-            Theme::DarkModern => Cow::Borrowed(&DARK_MODERN),
-            Theme::LightModern => Cow::Borrowed(&LIGHT_MODERN),
-            Theme::VSCode(name) => {
-                match load_vscode_theme_colors(themes_dir, name) {
-                    Ok(colors) => Cow::Owned(colors),
-                    Err(_) => Cow::Borrowed(&DARK_MODERN),
-                }
-            }
-        }
+    /// Dir-less convenience form of [`Theme::colors_in`]: only built-in themes
+    /// resolve to their own colors; VSCode themes fall back to DarkModern.
+    pub fn colors(&self) -> Cow<'static, ThemeColors> {
+        self.colors_in(None)
     }
-    
+
     /// Get the list of captured names that this theme supports.
-    pub fn captured_names(&self) -> Vec<String> {
-        self.colors().color_map.keys().cloned().collect()
+    /// VSCode themes resolve against `themes_dir` (see [`Theme::colors_in`]).
+    pub fn captured_names_in(&self, themes_dir: Option<&Path>) -> Vec<String> {
+        self.colors_in(themes_dir).color_map.keys().cloned().collect()
     }
     
     /// Get the CSS class name for a capture.
@@ -81,9 +65,9 @@ impl Theme {
     }
     
     /// Get the CSS class for a highlight index.
-    /// The index corresponds to the position in captured_names().
-    pub fn css_class_for_index(&self, index: usize) -> &'static str {
-        let names = self.captured_names();
+    /// The index corresponds to the position in captured_names_in(themes_dir).
+    pub fn css_class_for_index_in(&self, index: usize, themes_dir: Option<&Path>) -> &'static str {
+        let names = self.captured_names_in(themes_dir);
         if index < names.len() {
             CAPTURE_TO_CSS
                 .get(&names[index] as &str)
@@ -313,7 +297,7 @@ mod tests {
     
     #[test]
     fn test_captured_names() {
-        let names = Theme::DarkModern.captured_names();
+        let names = Theme::DarkModern.captured_names_in(None);
         assert!(!names.is_empty());
         assert!(names.contains(&"keyword".to_string()));
         assert!(names.contains(&"string".to_string()));
@@ -331,9 +315,9 @@ mod tests {
     fn test_css_class_for_index() {
         let theme = Theme::DarkModern;
         // First capture name should map to its CSS class
-        let names = theme.captured_names();
+        let names = theme.captured_names_in(None);
         if !names.is_empty() {
-            let class = theme.css_class_for_index(0);
+            let class = theme.css_class_for_index_in(0, None);
             assert!(class.starts_with("ts-"));
         }
     }
@@ -354,7 +338,7 @@ mod tests {
     fn test_css_class_for_out_of_bounds() {
         let theme = Theme::DarkModern;
         // Out of bounds should return default class
-        let class = theme.css_class_for_index(1000);
+        let class = theme.css_class_for_index_in(1000, None);
         assert_eq!(class, "ts-default");
     }
     

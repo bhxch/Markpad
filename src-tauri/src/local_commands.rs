@@ -27,16 +27,34 @@ fn get_highlighter() -> &'static Mutex<TreeSitterHighlighter> {
 ///
 /// Returns HTML with CSS classes for syntax highlighting.
 /// If the language is not supported, returns an error and the frontend should fall back to hljs.
+///
+/// `app` 由 Tauri 运行时注入（前端 invoke 参数不变）。导入的 VSCode 主题由
+/// commands.rs 写入 `app_config_dir()/themes`，读端（Theme::colors_in）必须
+/// 指向同一目录，导入主题的代码块着色才能生效。
 #[tauri::command]
-pub fn highlight_code(code: String, language: String, theme: String) -> Result<String, String> {
+pub fn highlight_code(
+    app: tauri::AppHandle,
+    code: String,
+    language: String,
+    theme: String,
+) -> Result<String, String> {
+    use tauri::Manager;
+
     let parsed_theme: Theme = theme.parse()
         .unwrap_or(Theme::DarkModern);
+
+    let themes_dir = app
+        .path()
+        .app_config_dir()
+        .ok()
+        .map(|dir| dir.join("themes"));
 
     let highlighter = get_highlighter();
     let mut highlighter = highlighter.lock().map_err(|e| e.to_string())?;
 
-    // Update theme if needed
-    if *highlighter.theme() != parsed_theme {
+    // 目录与主题任一变化都重解析捕获名（app_config_dir 进程内稳定，通常只走主题分支）
+    if highlighter.themes_dir() != themes_dir.as_deref() || *highlighter.theme() != parsed_theme {
+        highlighter.set_themes_dir(themes_dir);
         highlighter.set_theme(parsed_theme);
     }
 

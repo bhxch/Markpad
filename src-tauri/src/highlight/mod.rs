@@ -9,6 +9,7 @@ pub use registry::LanguageRegistry;
 pub use themes::Theme;
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::RwLock;
 use tree_sitter_highlight::{
     HighlightConfiguration, Highlighter, HighlightEvent,
@@ -85,6 +86,10 @@ pub struct TreeSitterHighlighter {
     /// Lazy-loaded highlight configurations (loaded on first use)
     configs: RwLock<HashMap<String, HighlightConfiguration>>,
     theme: Theme,
+    /// Directory imported VSCode theme JSONs are resolved from
+    /// (`app_config_dir()/themes`); `None` until a Tauri command sets it,
+    /// in which case VSCode themes fall back to DarkModern.
+    themes_dir: Option<std::path::PathBuf>,
 }
 
 impl TreeSitterHighlighter {
@@ -126,6 +131,7 @@ impl TreeSitterHighlighter {
             registry,
             configs: RwLock::new(HashMap::new()),
             theme,
+            themes_dir: None,
         }
     }
     
@@ -288,7 +294,7 @@ impl TreeSitterHighlighter {
         ).map_err(|e| HighlightError::QueryError(format!("Failed to create config: {:?}", e)))?;
         
         // Configure recognized capture names based on our theme
-        config.configure(&self.theme.captured_names());
+        config.configure(&self.theme.captured_names_in(self.themes_dir.as_deref()));
         
         Ok(config)
     }
@@ -307,11 +313,25 @@ impl TreeSitterHighlighter {
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
         // Reconfigure all cached configs with new theme
-        let captured_names = self.theme.captured_names();
+        let captured_names = self.theme.captured_names_in(self.themes_dir.as_deref());
         let mut configs = self.configs.write().unwrap();
         for config in configs.values_mut() {
             config.configure(&captured_names);
         }
+    }
+
+    /// Set the directory imported VSCode theme files are read from.
+    ///
+    /// Must be the same directory the Tauri commands write them to
+    /// (`app_config_dir()/themes`, see `commands.rs` `themes_dir`); see
+    /// [`Theme::colors_in`] for the fallback when it is `None`.
+    pub fn set_themes_dir(&mut self, dir: Option<std::path::PathBuf>) {
+        self.themes_dir = dir;
+    }
+
+    /// Get the directory VSCode themes are resolved against, if set.
+    pub fn themes_dir(&self) -> Option<&std::path::Path> {
+        self.themes_dir.as_deref()
     }
     
     /// Get the current theme.
@@ -354,7 +374,7 @@ impl TreeSitterHighlighter {
         source: &str,
         highlights: impl Iterator<Item = Result<HighlightEvent, tree_sitter_highlight::Error>>,
     ) -> HighlightResult<String> {
-        let mut renderer = HtmlRenderer::new(source, &self.theme);
+        let mut renderer = HtmlRenderer::new(source, &self.theme, self.themes_dir.as_deref());
         
         for event in highlights {
             match event {
@@ -387,16 +407,18 @@ impl Default for TreeSitterHighlighter {
 struct HtmlRenderer<'a> {
     source: &'a str,
     theme: &'a Theme,
+    themes_dir: Option<&'a Path>,
     html: String,
     highlight_stack: Vec<usize>,
     current_source_start: usize,
 }
 
 impl<'a> HtmlRenderer<'a> {
-    fn new(source: &'a str, theme: &'a Theme) -> Self {
+    fn new(source: &'a str, theme: &'a Theme, themes_dir: Option<&'a Path>) -> Self {
         Self {
             source,
             theme,
+            themes_dir,
             html: String::with_capacity(source.len() * 2),
             highlight_stack: Vec::new(),
             current_source_start: 0,
@@ -418,7 +440,7 @@ impl<'a> HtmlRenderer<'a> {
             
             if !self.highlight_stack.is_empty() {
                 let classes: Vec<&str> = self.highlight_stack.iter()
-                    .map(|&idx| self.theme.css_class_for_index(idx))
+                    .map(|&idx| self.theme.css_class_for_index_in(idx, self.themes_dir))
                     .filter(|&s| s != "ts-default")
                     .collect();
                 
