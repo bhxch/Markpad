@@ -101,10 +101,8 @@ pub mod markdown_ext {
     /// Convert LaTeX delimiters \[...\] to $$...$$ and \(...\) to $...$
     /// This is needed because comrak only supports $...$$ and $...$ natively
     /// Skips content inside code blocks (`...` and ```...```)
-    // 原调用点（旧 render_markdown 命令）随上游化退役；D8 结论为保留资产：
-    // 上游管线只识别 $/$$（markdown.rs find_math_spans），不覆盖用户输入的
-    // \[...\]/\(...\)，本函数是两者间的预处理桥，后续任务决定接线方式。
-    #[allow(dead_code)]
+	// 接线点（Task 14，D8 落地）：上游注册入口 render_markdown（commands.rs）在进入
+	// convert_markdown 前调用本函数，把用户输入的 \[…\]/\(…\) 统一成上游 math 词汇 $/$$。
     pub fn process_latex_delimiters(content: &str) -> String {
         let mut result = String::new();
         let chars: Vec<char> = content.chars().collect();
@@ -247,5 +245,37 @@ digraph G {
 		let svg = result.unwrap();
 		assert!(svg.contains("<svg"), "Result should contain SVG element");
 		println!("Generated SVG length: {} bytes", svg.len());
+	}
+
+	// Task 14 接线回归：process_latex_delimiters 现挂在 render_markdown 入口，
+	// 这里按函数实际行为钉住定界符转换契约。
+	#[test]
+	fn latex_delimiters_convert_to_dollar_vocabulary() {
+		use markdown_ext::process_latex_delimiters;
+
+		// display：\[x\] → $$x$$
+		assert_eq!(process_latex_delimiters(r"\[x\]"), "$$x$$");
+		// inline：\(x\) → $x$
+		assert_eq!(process_latex_delimiters(r"\(x\)"), "$x$");
+		// 多行 display 内容逐字保留（换行在 math_content 中透传）
+		assert_eq!(process_latex_delimiters("\\[\nfoo\n\\]"), "$$\nfoo\n$$");
+		// 行内代码 / 围栏代码块内不转换
+		assert_eq!(process_latex_delimiters("`\\(x\\)`"), "`\\(x\\)`");
+		assert_eq!(process_latex_delimiters("```\n\\(x\\)\n```"), "```\n\\(x\\)\n```");
+		// 未闭合的 display 只补开定界符（原实现语义）
+		assert_eq!(process_latex_delimiters("\\[x"), "$$x");
+		// 未闭合的 inline 同样保留内容
+		assert_eq!(process_latex_delimiters("\\(x"), "$x");
+	}
+
+	// convert_markdown 的 sourcepos 行号契约要求：预处理不得增删换行。
+	#[test]
+	fn latex_delimiters_preserve_line_count() {
+		use markdown_ext::process_latex_delimiters;
+
+		let doc = "para one\n\n\\[\ne^x\n\\]\n\ninline \\(y\\) here\n\n- [ ] task\n\n```\n\\(z\\)\n```\n";
+		let out = process_latex_delimiters(doc);
+		assert_eq!(out.lines().count(), doc.lines().count());
+		assert_eq!(out.matches('\n').count(), doc.matches('\n').count());
 	}
 }

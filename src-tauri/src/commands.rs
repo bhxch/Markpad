@@ -120,7 +120,17 @@ pub async fn markdown_semantic_spans(
 
 #[tauri::command]
 pub async fn render_markdown(content: String) -> Result<String, String> {
-    blocking(move || Ok(convert_markdown(&content))).await
+    blocking(move || {
+        // 接线点（上游文件一次性增行，feat/upstream-merge-2 Task 14）：用户输入的
+        // LaTeX 定界符 `\(…\)`/`\[…\]` 是 CommonMark 转义序列，comrak 先吃掉反斜杠，
+        // 而上游 math 词汇只有 `$`/`$$`（mask_math_spans → 前端 re-mint）。这个预处理桥
+        // 把定界符统一成 `$` 词汇后再交给上游管线，D8 遗留的定界符特性在此回接。
+        // 该转换不增删换行，`convert_markdown` 的 sourcepos 行号契约不受影响
+        // （local_commands::markdown_ext 的 tests 对行数不变有断言）。
+        let processed = crate::local_commands::markdown_ext::process_latex_delimiters(&content);
+        Ok(convert_markdown(&processed))
+    })
+    .await
 }
 
 /// Reads a file, with the fidelity of the decode and the encoding it was
