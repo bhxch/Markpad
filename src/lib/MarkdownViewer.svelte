@@ -168,9 +168,6 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 	 * background tab catches up when it is next shown.
 	 */
 	let previewHosts = $state<Record<string, HTMLElement | null>>({});
-	// Filled by `exportAsPdf` for the duration of a print and emptied again;
-	// `@media print` reveals it and hides everything else under `#app`.
-	let printRootEl = $state<HTMLElement | null>(null);
 
 	let previewBlocks = $derived(
 		tabManager.activeTabId ? (previewHosts[tabManager.activeTabId] ?? null) : null,
@@ -2827,7 +2824,8 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 
 	// 上游 exportAsHtml/exportAsPdf（utils/export 通路）随 D6 退役：本地 src/lib/export.ts
 	// 是唯一导出入口（handleExport → ExportModal），上游导出快捷键改为打开 ExportModal。
-	// 上游 #print-root 印刷根保留（printRootEl 绑定仍在，inert 标记，Task 14 评估去留）。
+	// 上游 #print-root 印刷根随 inert 的 printRootEl 一并移除（Task 14 去留评估：
+	// 删——本地 PDF 走隐藏 iframe，零消费者的空 DOM 只会误导）。
 
 	function handleNewFile() {
 		tabManager.addNewTab();
@@ -4515,12 +4513,6 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 {/if}
 
 <ContextMenu {...docContextMenu} onhide={() => (docContextMenu.show = false)} />
-
-<!-- What a PDF is rendered from: empty on screen, filled for the duration of a
-     print by `exportAsPdf`. It is a sibling of the app's own markup so that the
-     print sheet can hide everything else under `#app` in one rule, rather than
-     naming each part of the interface (#668). -->
-<article id="print-root" class="markdown-body" bind:this={printRootEl}></article>
 
 <style>
 	:root {

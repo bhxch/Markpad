@@ -94,9 +94,30 @@ test('the print sheet names no part of the interface', () => {
 });
 
 test('the viewer hands over an article rather than its own preview', () => {
-	assert.match(viewer, /<article id="print-root" class="markdown-body" bind:this=\{printRootEl\}><\/article>/);
-	const pdf = sliceBetween(viewer, 'async function exportAsPdf', '\n	}');
-	assert.match(pdf, /printRoot: printRootEl/);
+	// D6: the fork's PDF route is `exportAsPdf` in `src/lib/export.ts` — a
+	// hidden offscreen iframe carrying the @page sheet — not the upstream
+	// print-root mount, which the component has dropped. `functionSource`
+	// cannot read `export.ts` (its templates embed a literal `</script>`; see
+	// exportContentWidth.test.ts), so the slices anchor on unique declarations.
+	const exporter = readSource('src/lib/export.ts');
+	assert.match(viewer, /import \{ exportAsHtml, exportAsPdf, type ExportFormat, type PdfPageSize \} from '\.\/export'/);
+	const pdf = sliceBetween(exporter, 'export async function exportAsPdf', '\n// Page size dimensions in mm');
+	// The print document is generated from the container the viewer hands over
+	// (its preview content, not the live window) and printed inside the
+	// offscreen iframe — never `window.print()`, whose paper is whatever is on
+	// screen.
+	assert.match(pdf, /await generateExportHtml\(container, showToc, pageSize, true, title\)/);
+	assert.match(pdf, /iframe\.contentWindow\?\.print\(\)/);
+	assert.doesNotMatch(pdf, /window\.print\(/);
+	// And what the generator prints is the article alone: the app chrome is
+	// stripped from the clone before rendering, so nothing named after an
+	// interface part reaches the print document.
+	const generator = sliceBetween(exporter, 'export async function generateExportHtml(', 'export async function exportAsPdfPaginated');
+	assert.match(
+		generator,
+		/clone\.querySelectorAll\('\.toc-sidebar, \.toc-container, \.toc-overlay-wrapper, \.toc-resize-handle, \.editor-pane, \.split-bar[^']*'\)\.forEach\(el => el\.remove\(\)\)/,
+		'the print document must be stripped of the app chrome',
+	);
 	// The preview's own DOM, its fold state and its theme have nothing to do
 	// with what prints now, so nothing refreshes or re-themes it for an export.
 	assert.doesNotMatch(viewer, /syncPreviewForPrint/);
