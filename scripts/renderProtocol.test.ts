@@ -572,7 +572,8 @@ test('a checkbox outside a list item is left alone by the task pass', () => {
 /**
  * `processMarkdownHtml` does not restyle a media `<img>`, it *replaces* it: an
  * `.mp4`/`.mp3` src becomes a freshly created `<video>`/`<audio>`, a YouTube
- * src becomes a thumbnail `<a>`. A fresh element starts with no attributes, so
+ * src becomes an embedded `<iframe>` (D15). A fresh element starts with no
+ * attributes, so
  * unless the source range is carried across, the tallest thing in the preview
  * is the one element that maps to no source line — the same defect
  * `carrySourcepos` was written for on Mermaid diagrams. Both halves of scroll
@@ -594,8 +595,11 @@ test('a checkbox outside a list item is left alone by the task pass', () => {
 const MEDIA_FIXTURES = [
 	{ name: 'videoImage', selector: 'video' },
 	{ name: 'audioImage', selector: 'audio' },
-	{ name: 'youtubeImage', selector: 'a.youtube-link' },
-	{ name: 'youtubeLink', selector: 'a.youtube-link' },
+	// The source range lives on the container — the block scroll sync maps —
+	// while the iframe inside it is a pure viewport; youtubeExternalFallback
+	// pins the iframe itself.
+	{ name: 'youtubeImage', selector: '.video-container' },
+	{ name: 'youtubeLink', selector: '.video-container' },
 ] as const satisfies readonly { name: FixtureName; selector: string }[];
 
 /** The range comrak put on the element the substitution consumed. */

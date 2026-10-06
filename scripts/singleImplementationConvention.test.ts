@@ -104,15 +104,13 @@ const RULES: Rule[] = [
 		allowed: ['src/lib/utils/listSyntax.ts'],
 	},
 	{
-		name: 'YouTube links never become embedded frames',
-		why: 'The app dropped frame-src from its CSP and renders YouTube as a thumbnail anchor that opens the browser; an iframe path is the pre-fix version and cannot load.',
+		name: 'iframe creation has exactly two sanctioned implementations',
+		why: 'D15 keeps YouTube playing inside the app as an embedded iframe (the upstream thumbnail-anchor rendering was rejected), and the CSP frame-src in tauri.conf.json exists for exactly that player. Any second createElement("iframe") is either an unreviewed embedding surface or a print helper — both must earn a line here.',
 		marker: /createElement\((['"])iframe\1\)/g,
-		// Allowed nowhere. The entry that used to sit here covered
-		// `replaceWithYoutubeEmbed` in MarkdownViewer.svelte, an uncalled
-		// pre-fix leftover, and said to delete the two together — #388 deleted
-		// the copy, so the entry goes with it and the rule now guards the
-		// whole tree.
-		allowed: [],
+		allowed: [
+			'src/lib/utils/markdown.ts', // YouTube 内嵌 iframe（D15），replaceWithYoutubeEmbed
+			'src/lib/export.ts', // PDF 导出的隐藏打印 iframe
+		],
 	},
 	{
 		name: 'DOMPurify is configured in one place',
