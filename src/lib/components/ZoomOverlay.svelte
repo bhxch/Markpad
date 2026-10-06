@@ -16,6 +16,8 @@
 		onclose: () => void;
 	}>();
 
+	// svelte-ignore state_referenced_locally -- 快照语义：画廊打开时定位到 initialIndex，
+	// 之后 currentIndex 随导航独立演化，不应跟随 prop 更新。
 	let currentIndex = $state(initialIndex);
 	let zoom = $state(1);
 	let panX = $state(0);
@@ -197,6 +199,7 @@
 	</div>
 
 	{#if hasMultiple}
+		<!-- svelte-ignore a11y_click_events_have_key_events -- 纯显示计数，点击仅阻止冒泡避免误关 overlay，无可操作行为 -->
 		<div class="indicator" onclick={(e) => e.stopPropagation()}>
 			{currentIndex + 1} / {items.length}
 		</div>

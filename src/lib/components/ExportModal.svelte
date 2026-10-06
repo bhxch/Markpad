@@ -85,10 +85,10 @@
 			</div>
 			<div class="modal-body">
 				<div class="form-group">
-					<label class="form-label">{t('export.format', settings.language)}</label>
+					<label class="form-label" for="export-format-html">{t('export.format', settings.language)}</label>
 					<div class="radio-group">
 						<label class="radio-item">
-							<input type="radio" name="format" value="html" bind:group={format} />
+							<input type="radio" name="format" id="export-format-html" value="html" bind:group={format} />
 							<span>{t('menu.exportHtml', settings.language)}</span>
 						</label>
 						<label class="radio-item">
@@ -100,8 +100,8 @@
 
 				{#if format === 'pdf'}
 					<div class="form-group">
-						<label class="form-label">{t('export.pdfSize', settings.language)}</label>
-						<select class="select-input" bind:value={pageSize}>
+						<label class="form-label" for="export-page-size">{t('export.pdfSize', settings.language)}</label>
+						<select class="select-input" id="export-page-size" bind:value={pageSize}>
 							{#each pageSizes as size}
 								<option value={size.value}>{getPageSizeLabel(size.value)}</option>
 							{/each}
