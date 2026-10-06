@@ -7,20 +7,18 @@ use std::path::Path;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use serde::Serialize;
-use std::sync::OnceLock;
-
-// layout-rs for GraphViz DOT rendering
-use layout::backends::svg::SVGWriter;
-use layout::gv::{DotParser, GraphBuilder};
 
 mod highlight;
 mod setup;
 mod pdf;
-
-use highlight::{TreeSitterHighlighter, Theme};
+mod local_commands;
+mod connector;
 
 // Debug function to print queries directory info
 use highlight::debug_queries_dir;
+
+// Local markdown preprocessing asset (moved out of lib.rs, see local_commands::markdown_ext)
+use local_commands::markdown_ext::process_latex_delimiters;
 
 #[derive(Serialize)]
 struct MarkdownResponse {
@@ -30,13 +28,6 @@ struct MarkdownResponse {
 
 struct WatcherState {
     watcher: Mutex<Option<RecommendedWatcher>>,
-}
-
-/// Global highlighter instance
-static HIGHLIGHTER: OnceLock<Mutex<TreeSitterHighlighter>> = OnceLock::new();
-
-fn get_highlighter() -> &'static Mutex<TreeSitterHighlighter> {
-    HIGHLIGHTER.get_or_init(|| Mutex::new(TreeSitterHighlighter::new()))
 }
 
 fn split_frontmatter(text: &str) -> (&str, String) {
@@ -219,112 +210,6 @@ fn process_wikilinks<'a>(content: &'a str) -> Cow<'a, str> {
     processed
 }
 
-/// Convert LaTeX delimiters \[...\] to $$...$$ and \(...\) to $...$
-/// This is needed because comrak only supports $...$$ and $...$ natively
-/// Skips content inside code blocks (`...` and ```...```)
-fn process_latex_delimiters(content: &str) -> String {
-    let mut result = String::new();
-    let chars: Vec<char> = content.chars().collect();
-    let mut i = 0;
-    
-    // State tracking
-    let mut in_inline_code = false;      // `...`
-    let mut in_code_block = false;       // ```...```
-    let mut in_display_math = false;     // \[...\]
-    let mut in_inline_math = false;      // \(...\)
-    let mut math_content = String::new();
-    
-    while i < chars.len() {
-        let c = chars[i];
-        
-        // Check for backtick-related patterns first
-        if c == '`' {
-            // Always check for ``` first (higher priority than single `)
-            if i + 2 < chars.len() && chars[i + 1] == '`' && chars[i + 2] == '`' {
-                // Found ```
-                if !in_inline_code {
-                    // Only toggle code block if not inside inline code
-                    in_code_block = !in_code_block;
-                }
-                result.push_str("```");
-                i += 3;
-                continue;
-            }
-            
-            // Single backtick - only process if not in code block
-            if !in_code_block && !in_display_math && !in_inline_math {
-                in_inline_code = !in_inline_code;
-            }
-            result.push(c);
-            i += 1;
-            continue;
-        }
-        
-        // If inside code (inline or block), just pass through
-        if in_inline_code || in_code_block {
-            result.push(c);
-            i += 1;
-            continue;
-        }
-        
-        // Now process LaTeX delimiters
-        if !in_display_math && !in_inline_math {
-            // Check for \[ (display math start)
-            if c == '\\' && i + 1 < chars.len() && chars[i + 1] == '[' {
-                in_display_math = true;
-                math_content.clear();
-                result.push_str("$$");
-                i += 2;
-                continue;
-            }
-            // Check for \( (inline math start)
-            if c == '\\' && i + 1 < chars.len() && chars[i + 1] == '(' {
-                in_inline_math = true;
-                math_content.clear();
-                result.push('$');
-                i += 2;
-                continue;
-            }
-            result.push(c);
-            i += 1;
-        } else if in_display_math {
-            // Inside display math, look for \]
-            if c == '\\' && i + 1 < chars.len() && chars[i + 1] == ']' {
-                in_display_math = false;
-                result.push_str(&math_content);
-                result.push_str("$$");
-                math_content.clear();
-                i += 2;
-            } else {
-                math_content.push(c);
-                i += 1;
-            }
-        } else if in_inline_math {
-            // Inside inline math, look for \)
-            if c == '\\' && i + 1 < chars.len() && chars[i + 1] == ')' {
-                in_inline_math = false;
-                result.push_str(&math_content);
-                result.push('$');
-                math_content.clear();
-                i += 2;
-            } else {
-                math_content.push(c);
-                i += 1;
-            }
-        }
-    }
-    
-    // Handle unclosed math
-    if in_display_math {
-        result.push_str(&math_content);
-    }
-    if in_inline_math {
-        result.push_str(&math_content);
-    }
-    
-    result
-}
-
 #[tauri::command]
 fn convert_markdown(content: &str) -> String {
     let after_embeds = process_internal_embeds(content);
@@ -431,78 +316,6 @@ fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
     fs::rename(old_path, new_path).map_err(|e| e.to_string())
 }
 
-/// Highlight code using tree-sitter.
-/// 
-/// Returns HTML with CSS classes for syntax highlighting.
-/// If the language is not supported, returns an error and the frontend should fall back to hljs.
-#[tauri::command]
-fn highlight_code(code: String, language: String, theme: String) -> Result<String, String> {
-    let parsed_theme: Theme = theme.parse()
-        .unwrap_or(Theme::DarkModern);
-    
-    let highlighter = get_highlighter();
-    let mut highlighter = highlighter.lock().map_err(|e| e.to_string())?;
-    
-    // Update theme if needed
-    if *highlighter.theme() != parsed_theme {
-        highlighter.set_theme(parsed_theme);
-    }
-    
-    highlighter.highlight(&code, &language)
-        .map_err(|e| e.to_string())
-}
-
-/// Check if a language is supported by tree-sitter.
-#[tauri::command]
-fn is_language_supported(language: String) -> bool {
-    let highlighter = get_highlighter();
-    if let Ok(h) = highlighter.lock() {
-        h.is_language_supported(&language)
-    } else {
-        false
-    }
-}
-
-/// Get list of supported languages.
-#[tauri::command]
-fn get_supported_languages() -> Vec<String> {
-    let highlighter = get_highlighter();
-    if let Ok(h) = highlighter.lock() {
-        h.supported_languages().iter().map(|s| s.to_string()).collect()
-    } else {
-        Vec::new()
-    }
-}
-
-/// Render GraphViz DOT diagram using pure Rust (layout-rs).
-/// 
-/// Returns SVG string on success, error message on failure.
-#[tauri::command]
-fn render_graphviz_rust(code: String) -> Result<String, String> {
-	// Parse DOT code into AST
-	let mut parser = DotParser::new(&code);
-	let graph = parser.process().map_err(|e| format!("DOT parse error: {}", e))?;
-	
-	// Build VisualGraph from AST
-	let mut builder = GraphBuilder::new();
-	builder.visit_graph(&graph);
-	let mut visual_graph = builder.get();
-	
-	// Render to SVG
-	let mut svg_writer = SVGWriter::new();
-	visual_graph.do_it(false, false, false, &mut svg_writer);
-	
-	Ok(svg_writer.finalize())
-}
-
-/// Render Svgbob ASCII diagram using pure Rust (svgbob).
-/// 
-/// Returns SVG string on success, error message on failure.
-#[tauri::command]
-fn render_svgbob_rust(code: String) -> Result<String, String> {
-	let svg = svgbob::to_svg(&code);
-	Ok(svg)
-}
 #[tauri::command]
 fn watch_file(
     handle: AppHandle,
@@ -1019,8 +832,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init());
 
-    #[cfg(feature = "dev-connector")]
-    let builder = builder.plugin(tauri_plugin_connector::init());
+    let builder = connector::init_plugin(builder);
 
     builder
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -1065,12 +877,7 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            #[cfg(feature = "dev-connector")]
-            {
-                let dev_connector_capability = include_str!("../capabilities-dev/dev-connector.json");
-                app.add_capability(dev_connector_capability)
-                    .map_err(|e| format!("dev-connector capability: {e}"))?;
-            }
+            connector::register_capability(app.handle());
 
             let args: Vec<String> = std::env::args().collect();
             println!("Setup Args: {:?}", args);
@@ -1164,6 +971,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // ---- 上游命令（原列表；合并时随上游 lib.rs 拆分出的模块更新路径）----
             open_markdown,
             open_markdown_preview,
             render_markdown,
@@ -1172,9 +980,6 @@ pub fn run() {
             save_file_content,
             save_file_binary,
             get_app_mode,
-            setup::install_app,
-            setup::uninstall_app,
-            setup::check_install_status,
             is_win11,
             open_file_folder,
             rename_file,
@@ -1184,16 +989,6 @@ pub fn run() {
             save_theme,
             get_system_fonts,
             get_os_type,
-            // Tree-sitter highlighting
-            highlight_code,
-            is_language_supported,
-            get_supported_languages,
-            // Diagram rendering (Rust)
-            render_graphviz_rust,
-            render_svgbob_rust,
-            // PDF generation
-            pdf::prepare_pdf_pages,
-            pdf::merge_pdf_files,
             // Clipboard (upstream)
             clipboard_write_text,
             clipboard_read_text,
@@ -1209,7 +1004,18 @@ pub fn run() {
             fetch_vscode_theme,
             get_saved_vscode_themes,
             read_vscode_theme,
-            delete_vscode_theme
+            delete_vscode_theme,
+            // ---- 本地命令（合并时整块迁入上游 app.rs，spec §6.7/§8.2）----
+            local_commands::highlight_code,
+            local_commands::is_language_supported,
+            local_commands::get_supported_languages,
+            local_commands::render_graphviz_rust,
+            local_commands::render_svgbob_rust,
+            pdf::prepare_pdf_pages,
+            pdf::merge_pdf_files,
+            setup::install_app,
+            setup::uninstall_app,
+            setup::check_install_status
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -1236,42 +1042,6 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
 	use super::*;
-
-	#[test]
-	fn test_graphviz_rust_render() {
-		let dot_code = r#"
-digraph G {
-	rankdir=LR;
-	node [shape=box, style=filled, color=lightblue];
-	A -> B;
-	B -> C;
-}
-"#;
-		let result = render_graphviz_rust(dot_code.to_string());
-		assert!(result.is_ok(), "GraphViz Rust rendering failed: {:?}", result.err());
-		let svg = result.unwrap();
-		assert!(svg.contains("<svg"), "Result should contain SVG element");
-		println!("Generated SVG length: {} bytes", svg.len());
-	}
-
-	#[test]
-	fn test_svgbob_rust_render() {
-		let code = r#"
-  +---+
-  | A |
-  +---+
-    |
-    v
-  +---+
-  | B |
-  +---+
-"#;
-		let result = render_svgbob_rust(code.to_string());
-		assert!(result.is_ok(), "Svgbob Rust rendering failed: {:?}", result.err());
-		let svg = result.unwrap();
-		assert!(svg.contains("<svg"), "Result should contain SVG element");
-		println!("Generated SVG length: {} bytes", svg.len());
-	}
 
 	#[test]
 	fn test_process_latex_delimiters() {
