@@ -25,7 +25,7 @@ import {
 } from '../src/lib/utils/previewWidth.js';
 import { plainAppearance } from './exportFixtures.ts';
 import { installShimDom } from './renderProtocolDom.ts';
-import { functionSource, readSource } from './sourceTree.js';
+import { functionSource, readSource, sliceBetween } from './sourceTree.js';
 
 // The shim has to be in place before `export.ts` is evaluated, so the module is
 // imported dynamically here exactly as it is in `exportRichContent.test.ts`.
@@ -370,14 +370,47 @@ test('a real export is not capped by a stale width in the copied stylesheet', as
 });
 
 test('the exporter is handed the preview\'s own derived width', () => {
-	// The one link in the chain that cannot be executed here: `exportAsHtml`
-	// lives in a `.svelte` component, which the Node test runner cannot import
-	// (see sourceTree.ts). So the field is checked in the source of that one
-	// function — `functionSource` rather than a whole-file match, so a
-	// `contentWidth:` appearing anywhere else in a 3700-line component cannot
-	// satisfy it.
-	const exportCall = functionSource(viewerSource, 'exportAsHtml');
-	assert.match(exportCall, /contentWidth: previewContentWidth,/);
+	// D6 retired the upstream exporter that lived in this component: the fork's
+	// only export path is `exportAsHtml` in `src/lib/export.ts` (a pure module —
+	// its vitest contract tests depend on there being no stores in it), and the
+	// component merely imports it now. So the fork contract reads, in order: the
+	// module entry and the generator both take a `contentWidth` parameter, the
+	// emitted stylesheet interpolates the cap from that parameter alone, and
+	// `handleExport` — the one call site left in the component — hands it the
+	// same derived value the live preview renders with.
+	//
+	// `export.ts` cannot go through `functionSource`: its templates embed
+	// literal `</script>` (the export's own TOC toggle and lightbox scripts),
+	// which ends the wrapper `<script>` svelte's parser wraps bare `.ts` files
+	// in (see sourceTree.ts). Slices anchored on the unique declarations do the
+	// same job — `sliceBetween` fails loudly if an anchor stops existing, which
+	// is the property the AST route was chosen for.
+	const exportSource = readSource(new URL('../src/lib/export.ts', import.meta.url));
+
+	// The module entry takes the width and forwards it — with 900px as the
+	// fallback that keeps the pure function backward compatible when no width
+	// arrives (the PDF routes, where @media print already neutralizes the cap).
+	const exporter = sliceBetween(exportSource, 'export async function exportAsHtml(', 'Export as PDF with smart pagination');
+	assert.match(exporter, /contentWidth: number = 900/);
+	assert.match(exporter, /generateExportHtml\(container, showToc, 'a4', false, defaultFileName, contentWidth\)/);
+
+	assert.match(
+		sliceBetween(exportSource, 'export async function generateExportHtml(', '): Promise<string>'),
+		/contentWidth: number = 900/,
+	);
+	assert.match(exportSource, /function getBaseStyles\(theme: string, contentWidth: number = 900\)/);
+
+	// And no literal 900px survives in the emitted stylesheet: the cap is
+	// interpolated from the parameter, or the matches above are decoration.
+	assert.doesNotMatch(exportSource, /max-width:\s*900px/);
+
+	// `handleExport` passes the preview's own derived width. Full-width mode
+	// derives null and the export side has no `none` form yet, so it falls back
+	// to the module's 900px default via `?? undefined`. `functionSource` here as
+	// before: a `contentWidth` anywhere else in a 3700-line component cannot
+	// satisfy this.
+	const handler = functionSource(viewerSource, 'handleExport');
+	assert.match(handler, /exportAsHtml\(container, settings\.showToc, fileName, previewContentWidth \?\? undefined\)/);
 
 	// And `previewContentWidth` is the same derived value the live preview
 	// renders with, which is what makes "one source of truth" true rather than
