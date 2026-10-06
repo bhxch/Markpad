@@ -11,8 +11,10 @@ import { offsetOf, readSource, sliceBetween } from './sourceTree.js';
  * The branch it took was `src.startsWith('http')` -> `fetch(src)`. Two things
  * are wrong with that:
  *
- * - The app's CSP is `connect-src 'self'`, so a cross-origin `fetch` from the
- *   webview is refused before a request is made. (`img-src ... https:` is a
+ * - The app's CSP keeps `connect-src` closed to app origins only (`'self'`,
+ *   the Tauri IPC bridge, the asset protocol, the loopback dev connector —
+ *   D10), so a cross-origin `fetch` of a remote image from the webview is
+ *   refused before a request is made. (`img-src ... https:` is a
  *   different directive: it governs what an `<img>` may DISPLAY.) The remote
  *   case was therefore unreachable on every platform.
  * - `convertFileSrc` spells a local file's asset URL
@@ -80,9 +82,23 @@ test('a local image is copied on the Rust side', () => {
 });
 
 test('the CSP that makes the remote case impossible is still the one described', () => {
-	// If `connect-src` is ever widened, the comment above stops being true and
-	// a JS download becomes possible again. Fail here rather than leave a
-	// stale explanation in the source.
+	// Upstream pins `connect-src 'self'`. The fork (D10) keeps a wider but
+	// still-closed list; if it is ever widened further, update the explanation
+	// above and this assertion together rather than leave a stale description
+	// in the source.
 	const conf = readSource('src-tauri/tauri.conf.json');
-	assert.match(conf, /"connect-src":\s*"'self'"/);
+	const connectSrc = conf.match(/"connect-src":\s*"([^"]*)"/)?.[1];
+	assert.equal(
+		connectSrc,
+		// Each entry and why it exists:
+		// - `'self'` — the base guarantee; no arbitrary remote origin is reachable,
+		//   so a cross-origin fetch of a remote image is still refused.
+		// - `ipc.localhost` / `http://ipc.localhost` — the Tauri v2 IPC bridge itself.
+		// - `asset:` / `http://asset.localhost` — D10: the export pipeline's
+		//   `convertAssetImagesToDataUri` fetches `convertFileSrc` URLs to inline
+		//   local images (the http spelling is the Windows form).
+		// - `ws://localhost:9555` / `http://localhost:9556` — the dev-connector
+		//   bridge, loopback only.
+		"'self' ipc.localhost http://ipc.localhost asset: http://asset.localhost ws://localhost:9555 http://localhost:9556",
+	);
 });
