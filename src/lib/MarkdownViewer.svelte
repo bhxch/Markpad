@@ -1,2856 +1,5309 @@
 <script lang="ts">
-  import { invoke, convertFileSrc } from '@tauri-apps/api/core';
-  import { listen } from '@tauri-apps/api/event';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { onMount, tick, untrack } from 'svelte';
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
-  import { openUrl } from '@tauri-apps/plugin-opener';
-  import { open, save, ask } from '@tauri-apps/plugin-dialog';
-  import Installer from './Installer.svelte';
-  import Uninstaller from './Uninstaller.svelte';
-  import Settings from './components/Settings.svelte';
-  import TitleBar from './components/TitleBar.svelte';
-  import Editor from './components/Editor.svelte';
-  import Modal from './components/Modal.svelte';
-  import ExportModal from './components/ExportModal.svelte';
-  import Toc from './components/Toc.svelte';
-  import Toast from './components/Toast.svelte';
-  import ZoomOverlay from './components/ZoomOverlay.svelte';
-  import ContextMenu, { type ContextMenuItem } from './components/ContextMenu.svelte';
-  import type { ExportFormat, PdfPageSize } from './export';
-  import { exportAsHtml, exportAsPdf } from './export';
-  import { i18n } from './i18n';
-
-  // Reactive translations
-  let t = $state(i18n.getAll());
-
-  import HomePage from './components/HomePage.svelte';
-  import { tabManager } from './stores/tabs.svelte.js';
-  import { settings } from './stores/settings.svelte.js';
-  import { SUPPORTED_DIAGRAMS } from './kroki';
-
-  const appWindow = getCurrentWindow();
-
-  type MarkdownResponse = {
-    html: string;
-    metadata: string;
-  };
-
-  // syntax highlighting & latex
-  let hljs: any = $state(null);
-  let renderMathInElement: any = $state(null);
-  let katex: any = $state(null);
-  let mermaid: any = $state(null);
-  
-
-  import 'highlight.js/styles/github-dark.css';
-  import 'katex/dist/katex.min.css';
-  // Tree-sitter code highlighting (extracted to pipeline/highlight module)
-  import { initTreeSitterLanguages } from './pipeline/highlight';
-  // Multi-engine diagram pipeline (extracted to pipeline/diagrams module; mermaid single instance, spec D12)
-  import { syncMermaidTheme, ensureMermaidInitialized, getMermaid, setDiagramVersionGate } from './pipeline/diagrams';
-  // Unified render pipeline (highlight/diagrams/katex/copyCode/lightbox steps, spec D5)
-  import { runPipeline, setPipelineVersionSource } from './pipeline';
-  import { setLightboxOpener, getViewableItems } from './pipeline/lightbox';
-
-  let mode = $state<'loading' | 'app' | 'installer' | 'uninstall'>('loading');
-
-  let recentFiles = $state<string[]>([]);
-  let isFocused = $state(true);
-  let markdownBody = $state<HTMLElement | null>(null);
-  let editorPane = $state<{ syncScrollToLine: (line: number, ratio?: number) => void; revealHeader: (text: string) => void } | null>(null);
-  let liveMode = $state(false);
-  
-  let metadata = $state('');
-  let showMetadata = $state(false);
-
-  let isDragging = $state(false);
-  let dragTarget = $state<'editor' | 'preview' | null>(null);
-  let isForceExiting = $state(false);
-  let isProgrammaticScroll = false;
-  let renderVersion = 0; // Render version counter to cancel stale renders
-  // Diagram pipeline stale-render gate (renderVersion stays component-local; injected into pipeline/diagrams)
-  setDiagramVersionGate((v) => v !== renderVersion);
-  // Unified pipeline reads the current render version (captured once per runPipeline)
-  setPipelineVersionSource(() => renderVersion);
-  let contentRendered = $state(0); // reactive signal for Toc: incremented after innerHTML is set
-
-  // Upstream: heading fold state
-  let collapsedHeaders = $state(new Set<string>());
-
-  // Upstream: lightbox for images/diagrams
-  // （打开状态与 ZoomOverlay 模板是组件 UI；DOM 装配在 pipeline/lightbox，经回调桥接）
-  let viewableItems = $state<Array<{ type: 'img' | 'svg'; src?: string; html?: string }>>([]);
-  let lightboxIndex = $state(-1);
-  setLightboxOpener((items, index) => {
-    viewableItems = items;
-    lightboxIndex = index;
-  });
-
-  // Upstream: context menu
-  let docContextMenu = $state<{
-    show: boolean;
-    x: number;
-    y: number;
-    items: ContextMenuItem[];
-  }>({
-    show: false,
-    x: 0,
-    y: 0,
-    items: [],
-  });
-
-  // Upstream: toast notifications
-  let toasts = $state<{ id: string; message: string; type: 'info' | 'error' | 'warning' }[]>([]);
-  function addToast(message: string, type: 'info' | 'error' | 'warning' = 'info') {
-    const id = crypto.randomUUID();
-    toasts.push({ id, message, type });
-  }
-
-  // Scroll history for mouse button 4/5 navigation
-  let scrollHistory: number[] = [];
-  let scrollFuture: number[] = [];
-
-  // Upstream: large file progressive loading
-  let loadingTabs = $state<string[]>([]);
-  let isAtBottom = $state(false);
-  let isScrolling = $state(false);
-  let scrollIdleTimer: ReturnType<typeof setTimeout>;
-
-  function pushScrollHistory() {
-    if (markdownBody) {
-      scrollHistory.push(markdownBody.scrollTop);
-      scrollFuture = [];
-      if (scrollHistory.length > 50) scrollHistory.shift();
-    }
-  }
-
-  // derived from tab manager
-  let activeTab = $derived(tabManager.activeTab);
-  let isEditing = $derived(activeTab?.isEditing ?? false);
-  let rawContent = $derived(activeTab?.rawContent ?? '');
-  let isSplit = $derived(activeTab?.isSplit ?? false);
-
-  // derived from tab manager
-  let currentFile = $derived(tabManager.activeTab?.path ?? '');
-  let editorLanguage = $derived(getLanguage(currentFile));
-  let htmlContent = $derived(tabManager.activeTab?.content ?? '');
-  let scrollTop = $derived(tabManager.activeTab?.scrollTop ?? 0);
-  let isScrolled = $derived(scrollTop > 0);
-  let windowTitle = $derived(tabManager.activeTab?.title ?? 'Markpad');
-  let isScrollSynced = $derived(tabManager.activeTab?.isScrollSynced ?? false);
-
-  let showHome = $state(false);
-  let isFullWidth = $state(localStorage.getItem('isFullWidth') === 'true');
-  let viewerPaneEl = $state<HTMLElement>();
-  let viewerWidth = $state(0);
-  const TOC_WIDTH = 240;
-  let isOverhanging = $derived(isFullWidth || (viewerWidth > 0 && TOC_WIDTH > Math.max(50, (viewerWidth - 780) / 2)));
-
-  $effect(() => {
-    localStorage.setItem('isFullWidth', String(isFullWidth));
-  });
-
-  let showSettings = $state(false);
-
-  // ui state
-  let tooltip = $state({ show: false, text: '', x: 0, y: 0 });
-  let caretEl: HTMLElement;
-  let caretAbsoluteTop = 0;
-  let modalState = $state<{
-    show: boolean;
-    title: string;
-    message: string;
-    kind: 'info' | 'warning' | 'error';
-    showSave: boolean;
-    resolve: ((v: 'save' | 'discard' | 'cancel') => void) | null;
-  }>({
-    show: false,
-    title: '',
-    message: '',
-    kind: 'info',
-    showSave: false,
-    resolve: null,
-  });
-
-  let showExportModal = $state(false);
-  let exportMessage = $state<{ show: boolean; text: string }>({ show: false, text: '' });
-
-  async function handleExport(format: ExportFormat, pageSize: PdfPageSize) {
-    showExportModal = false;
-    
-    const container = document.querySelector('.markdown-container') as HTMLElement;
-    if (!container) return;
-
-    // Get filename without .md extension
-    const rawTitle = tabManager.activeTab?.title || 'document';
-    const fileName = rawTitle.replace(/\.md$/i, '');
-
-    try {
-      if (format === 'html') {
-        const success = await exportAsHtml(container, settings.showToc, fileName);
-        if (success) {
-          exportMessage = { show: true, text: t.exportSuccess };
-          setTimeout(() => { exportMessage = { show: false, text: '' }; }, 3000);
-        }
-      } else {
-        // Use browser print for PDF export
-        const result = await exportAsPdf(container, settings.showToc, pageSize, fileName);
-        exportMessage = { show: true, text: result.message };
-        setTimeout(() => { exportMessage = { show: false, text: '' }; }, 5000);
-      }
-    } catch (e) {
-      console.error('Export failed:', e);
-      exportMessage = { show: true, text: `${t.exportFailed}: ${e}` };
-      setTimeout(() => { exportMessage = { show: false, text: '' }; }, 5000);
-    }
-  }
-
-  function askCustom(message: string, options: { title: string; kind: 'info' | 'warning' | 'error'; showSave?: boolean }): Promise<'save' | 'discard' | 'cancel'> {
-    return new Promise((resolve) => {
-      modalState = {
-        show: true,
-        title: options.title,
-        message,
-        kind: options.kind,
-        showSave: options.showSave ?? false,
-        resolve,
-      };
-    });
-  }
-
-  function handleModalSave() {
-    if (modalState.resolve) modalState.resolve('save');
-    modalState.show = false;
-  }
-
-  async function appExit() {
-    const dirtyTabs = tabManager.tabs.filter((t) => t.isDirty || (t.path === '' && t.rawContent.trim() !== ''));
-    if (dirtyTabs.length > 0) {
-      const response = await askCustom(
-        `You have ${dirtyTabs.length} unsaved file(s). Discard changes and exit?`,
-        { title: t.unsavedChanges, kind: 'warning', showSave: false },
-      );
-      if (response !== 'discard') return;
-    }
-    isForceExiting = true;
-    appWindow.close();
-  }
-
-  function handleModalConfirm() {
-    if (modalState.resolve) modalState.resolve('discard');
-    modalState.show = false;
-  }
-
-  function handleSplitterKeyDown(e: KeyboardEvent) {
-    const activeTab = tabManager.activeTab;
-    if (!activeTab || !tabManager.activeTabId) return;
-
-    if (e.key === 'ArrowLeft') {
-      tabManager.setSplitRatio(tabManager.activeTabId, Math.max(0.1, activeTab.splitRatio - 0.05));
-    } else if (e.key === 'ArrowRight') {
-      tabManager.setSplitRatio(tabManager.activeTabId, Math.min(0.9, activeTab.splitRatio + 0.05));
-    }
-  }
-
-  function handleModalCancel() {
-    if (modalState.resolve) modalState.resolve('cancel');
-    modalState.show = false;
-  }
-
-  function getLanguage(path: string) {
-    if (!path) return 'markdown';
-    const ext = path.split('.').pop()?.toLowerCase();
-    switch (ext) {
-      case 'js':
-      case 'jsx':
-        return 'javascript';
-      case 'ts':
-      case 'tsx':
-        return 'typescript';
-      case 'html':
-        return 'html';
-      case 'css':
-        return 'css';
-      case 'json':
-        return 'json';
-      case 'md':
-      case 'markdown':
-      case 'mdown':
-      case 'mkd':
-        return 'markdown';
-      default:
-        return 'plaintext';
-    }
-  }
-
-  $effect(() => {
-    const _ = tabManager.activeTabId;
-    showHome = false;
-  });
-
-  // Callout alert icons (upstream: expanded set with more types)
-  const alertIcons: Record<string, string> = {
-    note: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>',
-    info: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
-    todo: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>',
-    tip: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>',
-    important: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>',
-    warning: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
-    caution: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>',
-    faq: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
-    question: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
-    example: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>',
-  };
-
-  function processMarkdownHtml(html: string, filePath: string): string {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-
-    // resolve relative image paths
-    for (const img of doc.querySelectorAll('img')) {
-      const src = img.getAttribute('src');
-      let finalSrc = src;
-      if (src && !src.startsWith('http') && !src.startsWith('data:')) {
-        try {
-          const decodedSrc = decodeURIComponent(src);
-          finalSrc = convertFileSrc(resolvePath(filePath, decodedSrc));
-        } catch (e) {
-          finalSrc = convertFileSrc(resolvePath(filePath, src));
-        }
-        img.setAttribute('src', finalSrc);
-      }
-
-      if (src) {
-        const ext = src.split('.').pop()?.toLowerCase();
-        const isVideo = ['mp4', 'webm', 'ogg', 'mov'].includes(ext || '');
-        const isAudio = ['mp3', 'wav', 'aac', 'flac', 'm4a'].includes(ext || '');
-
-        if (isVideo || isAudio) {
-          const media = doc.createElement(isVideo ? 'video' : 'audio');
-          media.setAttribute('controls', '');
-          media.setAttribute('src', finalSrc || '');
-          media.style.maxWidth = '100%';
-
-          if (img.hasAttribute('width')) media.setAttribute('width', img.getAttribute('width')!);
-          if (img.hasAttribute('height')) media.setAttribute('height', img.getAttribute('height')!);
-          if (img.hasAttribute('alt')) media.setAttribute('aria-label', img.getAttribute('alt')!);
-          if (img.hasAttribute('title')) media.setAttribute('title', img.getAttribute('title')!);
-
-          img.replaceWith(media);
-          continue;
-        }
-
-        if (isYoutubeLink(src)) {
-          const videoId = getYoutubeId(src);
-          if (videoId) replaceWithYoutubeEmbed(img, videoId);
-        }
-      }
-    }
-
-    // convert youtube links to embeds
-    for (const a of doc.querySelectorAll('a')) {
-      const href = a.getAttribute('href');
-      if (href && isYoutubeLink(href)) {
-        const parent = a.parentElement;
-        if (parent && (parent.tagName === 'P' || parent.tagName === 'DIV') && parent.childNodes.length === 1) {
-          const videoId = getYoutubeId(href);
-          if (videoId) replaceWithYoutubeEmbed(a, videoId);
-        }
-      }
-    }
-
-    // Helper to strip leading breaks from callout content
-    const stripLeadingBreaks = (node: Node) => {
-      const brs = (node as Element).querySelectorAll('br');
-      for (const br of Array.from(brs)) {
-        let prev = br.previousSibling;
-        let isLeading = true;
-        while (prev) {
-          if (prev.nodeType === 3 && prev.textContent?.replace(/\xA0|\s|&nbsp;/g, '').trim()) {
-            isLeading = false;
-            break;
-          } else if (prev.nodeType === 1) {
-            isLeading = false;
-            break;
-          }
-          prev = prev.previousSibling;
-        }
-        if (isLeading) br.parentElement?.removeChild(br);
-      }
-      while (node.firstChild) {
-        const child = node.firstChild;
-        if (child.nodeType === 3 && child.textContent?.replace(/\xA0|\s|&nbsp;/g, '').trim() === '') {
-          child.parentElement?.removeChild(child);
-        } else if (child.nodeType === 1 && (child as Element).tagName === 'P' && (child as Element).innerHTML.replace(/\xA0|\s|&nbsp;/g, '').trim() === '') {
-          child.parentElement?.removeChild(child);
-        } else {
-          break;
-        }
-      }
-    };
-
-    // parse callouts (upstream: supports [!TYPE +/-] with custom titles, nesting, and folding)
-    for (const bq of Array.from(doc.querySelectorAll('blockquote'))) {
-      const walker = doc.createTreeWalker(bq, NodeFilter.SHOW_TEXT);
-      let textNode: Text | null = null;
-      let matchResult: RegExpMatchArray | null = null;
-
-      let curr: Node | null;
-      while (curr = walker.nextNode()) {
-        const m = curr.nodeValue?.match(/^\s*\[!([a-zA-Z0-9_\-]+)\]([+-]?)\s*/i);
-        if (m) {
-          textNode = curr as Text;
-          matchResult = m;
-          break;
-        }
-      }
-
-      if (textNode && matchResult) {
-        const type = matchResult[1].toLowerCase();
-        const fold = matchResult[2] || '';
-        const isFoldable = fold === '+' || fold === '-';
-
-        textNode.nodeValue = textNode.nodeValue!.slice(matchResult[0].length);
-
-        // Collect custom title nodes (everything on the first line after [!TYPE])
-        const titleNodes: Node[] = [];
-        let currentLineNode: Node | null = textNode;
-        while (currentLineNode) {
-          if (currentLineNode.nodeType === 1 && (currentLineNode as Element).tagName === 'BR') {
-            const br = currentLineNode;
-            currentLineNode = br.nextSibling;
-            br.parentElement?.removeChild(br);
-            break;
-          }
-          const next: Node | null = currentLineNode.nextSibling;
-          titleNodes.push(currentLineNode);
-          currentLineNode = next;
-        }
-
-        const container = doc.createElement('div');
-        container.className = `markdown-alert markdown-alert-${type}${isFoldable ? ' callout-foldable' : ''}`;
-
-        const titleEl = doc.createElement('p');
-        titleEl.className = 'markdown-alert-title';
-        if (isFoldable) titleEl.classList.add('callout-toggle');
-
-        const titleInner = doc.createElement('span');
-        titleInner.className = 'callout-title-inner';
-        for (const tn of titleNodes) titleInner.appendChild(tn);
-
-        // Restore default title if empty
-        if (titleInner.textContent?.trim() === '') {
-          titleInner.textContent = type.charAt(0).toUpperCase() + type.slice(1);
-        }
-
-        // Omit rendering stray <br> in the title
-        for (const br of Array.from(titleInner.querySelectorAll('br'))) {
-          br.parentElement?.removeChild(br);
-        }
-
-        const svgIconHtml = alertIcons[type] || '';
-        if (svgIconHtml) {
-          const temp = doc.createElement('div');
-          temp.innerHTML = svgIconHtml;
-          if (temp.firstChild) titleEl.appendChild(temp.firstChild);
-        }
-        titleEl.appendChild(titleInner);
-
-        if (isFoldable) {
-          const chevron = doc.createElement('div');
-          chevron.innerHTML = `<svg class="callout-fold-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
-          titleEl.appendChild(chevron.firstChild!);
-        }
-        container.appendChild(titleEl);
-
-        const contentWrapper = doc.createElement('div');
-        contentWrapper.className = 'markdown-alert-content';
-        const contentInner = doc.createElement('div');
-        contentInner.className = 'content-inner';
-        contentWrapper.appendChild(contentInner);
-
-        while (bq.firstChild) contentInner.appendChild(bq.firstChild);
-
-        stripLeadingBreaks(contentInner);
-
-        while (contentInner.lastChild) {
-          const child = contentInner.lastChild;
-          if (child.nodeType === 3 && child.textContent?.trim() === '') child.parentElement?.removeChild(child);
-          else if (child.nodeType === 1 && (child as Element).tagName === 'P' && (child as Element).innerHTML.trim() === '') child.parentElement?.removeChild(child);
-          else break;
-        }
-
-        if (contentInner.childNodes.length === 0) {
-          container.classList.add('callout-title-only');
-        } else {
-          if (fold === '-') {
-            contentWrapper.classList.add('is-collapsed');
-            container.classList.add('is-collapsed');
-          }
-          container.appendChild(contentWrapper);
-        }
-        bq.replaceWith(container);
-      }
-    }
-
-    // Heading fold (upstream: wraps content under headings for collapsible sections)
-    const headings = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6'));
-    for (const h of headings) {
-      const chevron = doc.createElement('span');
-      chevron.className = 'header-fold-icon';
-      chevron.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
-      h.insertBefore(chevron, h.firstChild);
-      h.classList.add('foldable-header');
-
-      const wrapper = doc.createElement('div');
-      wrapper.className = 'foldable-content-wrapper';
-      const inner = doc.createElement('div');
-      inner.className = 'content-inner';
-      wrapper.appendChild(inner);
-
-      let current = h.nextElementSibling;
-      const level = parseInt(h.tagName[1], 10);
-      while (current) {
-        const isHeader = /^H[1-6]$/.test(current.tagName);
-        if (isHeader) {
-          const nextLevel = parseInt(current.tagName[1], 10);
-          if (nextLevel <= level) break;
-        }
-        const next = current.nextElementSibling;
-        inner.appendChild(current);
-        current = next;
-      }
-      if (h.parentNode) h.parentNode.insertBefore(wrapper, h.nextSibling);
-
-      const mappingId = 'wrap-' + Math.random().toString(36).substr(2, 9);
-      h.setAttribute('data-fold-target', mappingId);
-      wrapper.id = mappingId;
-
-      const key = h.id || h.textContent?.trim() || '';
-      if (collapsedHeaders.has(key)) {
-        h.classList.add('is-collapsed');
-        wrapper.classList.add('is-collapsed');
-      }
-    }
-
-    // Process task list checkboxes
-    for (const input of Array.from(doc.querySelectorAll('li input[type="checkbox"]'))) {
-      input.setAttribute('data-task-checkbox', '');
-      input.removeAttribute('disabled');
-      (input as HTMLInputElement).style.cursor = 'pointer';
-
-      const li = input.closest('li');
-      if (!li) continue;
-
-      const nodes = Array.from(li.childNodes);
-      const inputIdx = nodes.indexOf(input);
-      const afterInput = nodes.slice(inputIdx + 1);
-
-      const inlineNodes = [];
-      for (const n of afterInput) {
-        if (n.nodeType === 1 && ['P', 'DIV', 'UL', 'OL'].includes((n as Element).tagName)) break;
-        inlineNodes.push(n);
-      }
-
-      if (inlineNodes.length > 0) {
-        const wrapper = doc.createElement('span');
-        wrapper.className = 'task-text';
-        for (const n of inlineNodes) wrapper.appendChild(n);
-        li.insertBefore(wrapper, afterInput[inlineNodes.length] || null);
-      }
-
-      if ((input as HTMLInputElement).checked) {
-        li.classList.add('task-done');
-      }
-    }
-
-    // Clean up empty paragraphs
-    Array.from(doc.querySelectorAll('p')).forEach((p) => {
-      if (p.innerHTML.replace(/&nbsp;|\s/g, '').trim() === '') {
-        p.remove();
-      }
-    });
-
-    return doc.body.innerHTML;
-  }
-
-
-  async function loadMarkdown(filePath: string, options: { navigate?: boolean; skipTabManagement?: boolean; preserveEditState?: boolean } = {}) {
-    showHome = false;
-    try {
-      let isExistingTab = false;
-      if (options.navigate && tabManager.activeTab) {
-        tabManager.navigate(tabManager.activeTab.id, filePath);
-      } else if (!options.skipTabManagement) {
-        const existing = tabManager.tabs.find((t) => t.path === filePath);
-        if (existing) {
-          isExistingTab = true;
-          tabManager.setActive(existing.id);
-        } else if (tabManager.activeTab && tabManager.activeTab.path === '') {
-          tabManager.updateTabPath(tabManager.activeTab.id, filePath);
-        } else {
-          tabManager.addTab(filePath);
-        }
-      }
-      const activeId = tabManager.activeTabId;
-      if (!activeId) return;
-
-      const ext = filePath.split('.').pop()?.toLowerCase();
-      const isMarkdown = ['md', 'markdown', 'mdown', 'mkd'].includes(ext || '');
-      const tab = tabManager.tabs.find((t) => t.id === activeId);
-
-      if (isMarkdown) {
-        // Only set default edit mode if it's a brand new tab or we aren't preserving state
-        if (tab && !options.preserveEditState && !isExistingTab) {
-          tab.isEditing = settings.startInEditor;
-        }
-
-        // Upstream: progressive loading - first load preview with maxBytes limit
-        const [html, content, isFull] = await invoke('open_markdown_preview', { path: filePath, maxBytes: 50000 }) as [string, string, boolean];
-        const processedInfo = processMarkdownHtml(html, filePath);
-        tabManager.updateTabContent(activeId, processedInfo);
-        tabManager.setTabRawContent(activeId, content);
-
-        if (!isFull) {
-          loadingTabs = [...loadingTabs, activeId];
-          tick().then(() => {
-            if (markdownBody) isAtBottom = markdownBody.scrollHeight <= markdownBody.clientHeight + 100;
-          });
-          Promise.all([
-            invoke('open_markdown', { path: filePath }) as Promise<MarkdownResponse>,
-            invoke('read_file_content', { path: filePath }) as Promise<string>
-          ]).then(([fullHtml, fullContent]) => {
-            const applyFull = () => {
-              try {
-                if (isScrolling) {
-                  setTimeout(applyFull, 100);
-                  return;
-                }
-                if (tabManager.tabs.find((t) => t.id === activeId)?.path === filePath) {
-                  const fullProcessed = processMarkdownHtml(fullHtml.html, filePath);
-                  tabManager.updateTabContent(activeId, fullProcessed);
-                  tabManager.setTabRawContent(activeId, fullContent);
-                  loadingTabs = loadingTabs.filter((id) => id !== activeId);
-                  if (tabManager.activeTabId === activeId) {
-                    tick().then(() => {
-                      setTimeout(renderRichContent, 10);
-                    });
-                  }
-                } else {
-                  loadingTabs = loadingTabs.filter((id) => id !== activeId);
-                }
-              } catch (applyErr) {
-                console.error('applyFull error:', applyErr);
-                addToast('Error processing full markdown: ' + String(applyErr), 'error');
-                loadingTabs = loadingTabs.filter((id) => id !== activeId);
-              }
-            };
-            
-            if ('requestIdleCallback' in window) {
-              (window as any).requestIdleCallback(applyFull, { timeout: 2000 });
-            } else {
-              setTimeout(applyFull, 100);
-            }
-          }).catch((e) => {
-            console.error('Promise.all error:', e);
-            addToast('Backend Error loading full markdown: ' + String(e), 'error');
-            loadingTabs = loadingTabs.filter((id) => id !== activeId);
-          });
-        }
-
-        // Also get metadata
-        try {
-          const res = (await invoke('open_markdown', { path: filePath })) as MarkdownResponse;
-          metadata = res.metadata;
-        } catch (e) {
-          // metadata extraction failure is non-fatal
-        }
-      } else {
-        if (tab) tab.isEditing = true;
-        const content = (await invoke('read_file_content', { path: filePath })) as string;
-        tabManager.setTabRawContent(activeId, content);
-      }
-
-      if (liveMode) invoke('watch_file', { path: filePath }).catch(console.error);
-
-      await tick();
-      if (filePath) saveRecentFile(filePath);
-    } catch (error) {
-      console.error('Error loading file:', error);
-      const errStr = String(error);
-      if (errStr.includes('The system cannot find the file specified') || errStr.includes('No such file or directory')) {
-        deleteRecentFile(filePath);
-        if (tabManager.activeTab && tabManager.activeTab.path === filePath) {
-          tabManager.closeTab(tabManager.activeTab.id);
-        }
-      }
-    }
-  }
-
-  async function renderRichContent(version: number) {
-    if (!markdownBody || version !== renderVersion) return;
-
-    try {
-      // 1-5. Diagrams / Code highlighting / Lightbox / Math / Copy buttons
-      // （统一渲染管线 pipeline/index；图表在途取消经 diagrams versionGate，版本源经 setPipelineVersionSource 注入）
-      await runPipeline(markdownBody, undefined);
-    } catch (e) {
-      console.error('Render error:', e);
-    }
-  }
-
-
-  $effect.pre(() => {
-    const _scheme = settings.themeScheme; // 依赖主题变化
-    if (htmlContent && markdownBody && !isEditing && hljs && renderMathInElement && mermaid) {
-      // 1-2. 同步 Mermaid 主题（extracted to pipeline/diagrams; mermaid 单实例，spec D12）
-      syncMermaidTheme();
-
-      // 3. 重置 DOM (因为 renderRichContent 会破坏性修改 DOM，如 mermaid 替换文本为 SVG)
-      markdownBody.innerHTML = htmlContent;
-      
-      // 4. 递增渲染版本，取消之前所有在途渲染
-      renderVersion++;
-      contentRendered = renderVersion;
-
-      // 5. 执行渲染
-      renderRichContent(renderVersion);
-    }
-  });
-
-  $effect(() => {
-    // Depend on the ID and body existence to trigger restore
-    const id = tabManager.activeTabId;
-    const body = markdownBody;
-
-    if (id && body) {
-      untrack(() => {
-        const tab = tabManager.tabs.find((t) => t.id === id);
-        if (tab) {
-          let scrolled = false;
-
-          if (tab.anchorLine > 0) {
-            // Interpolated Restore
-            // Find element containing the anchor line
-            const children = Array.from(body.children) as HTMLElement[];
-            for (const el of children) {
-              const sourcepos = el.dataset.sourcepos;
-              if (sourcepos) {
-                const [start, end] = sourcepos.split('-');
-                const startLine = parseInt(start.split(':')[0]);
-                const endLine = parseInt(end.split(':')[0]);
-
-                if (!isNaN(startLine) && !isNaN(endLine)) {
-                  if (tab.anchorLine >= startLine && tab.anchorLine <= endLine) {
-                    // Found the container
-                    const totalLines = endLine - startLine; // Can be 0 for single line
-                    let ratio = 0;
-                    if (totalLines > 0) {
-                      ratio = (tab.anchorLine - startLine) / totalLines;
-                    }
-
-                    // Calculate target pixel position
-                    // We want the anchor line to be roughly at offset 60
-                    const targetOffset = el.offsetTop + el.offsetHeight * ratio - 60;
-                    body.scrollTop = Math.max(0, targetOffset);
-                    scrolled = true;
-                    break;
-                  }
-                }
-              }
-            }
-          }
-
-          if (!scrolled) {
-            if (body.scrollHeight > body.clientHeight && tab.scrollPercentage > 0) {
-              const targetScroll = tab.scrollPercentage * (body.scrollHeight - body.clientHeight);
-              body.scrollTop = targetScroll;
-            } else {
-              body.scrollTop = tab.scrollTop;
-            }
-          }
-        }
-      });
-    }
-  });
-
-  function scrollToLine(line: number, ratio: number = 0) {
-    if (!markdownBody) return;
-
-    const children = Array.from(markdownBody.children) as HTMLElement[];
-    for (const el of children) {
-      const sourcepos = el.dataset.sourcepos;
-      if (sourcepos) {
-        const [start, end] = sourcepos.split('-');
-        const startLine = parseInt(start.split(':')[0]);
-        const endLine = parseInt(end.split(':')[0]);
-
-        if (!isNaN(startLine) && !isNaN(endLine)) {
-          if (line >= startLine && line <= endLine) {
-            const totalLines = endLine - startLine;
-            let lineRatio = 0;
-            if (totalLines > 0) {
-              lineRatio = (line - startLine) / totalLines;
-            }
-            lineRatio = Math.max(0, Math.min(1, lineRatio));
-
-            const elementTop = el.offsetTop + el.offsetHeight * lineRatio;
-
-            const viewportHeight = markdownBody.clientHeight;
-            const targetScroll = elementTop - viewportHeight * ratio;
-
-            if (Math.abs(markdownBody.scrollTop - targetScroll) > 5) {
-              isProgrammaticScroll = true;
-              markdownBody.scrollTop = Math.max(0, targetScroll);
-            }
+	import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+	import { emitTo, type EventCallback } from '@tauri-apps/api/event';
+	import { getAllWindows, getCurrentWindow } from '@tauri-apps/api/window';
+	import { onMount, tick, untrack } from 'svelte';
+	import { fade, fly, slide } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
+	import { openPath, openUrl } from '@tauri-apps/plugin-opener';
+	import { open, save } from '@tauri-apps/plugin-dialog';
+	import Settings from './components/Settings.svelte';
+	import TitleBar from './components/TitleBar.svelte';
+	import DiffOverlay from './components/DiffOverlay.svelte';
+	import Editor from './components/Editor.svelte';
+	import EditorToolbar from './components/EditorToolbar.svelte';
+	import Modal from './components/Modal.svelte';
+	import UpdateDialog from './components/UpdateDialog.svelte';
+	import { updateStore } from './stores/update.svelte.js';
+	import ContextMenu, { type ContextMenuItem } from './components/ContextMenu.svelte';
+	import Toc from './components/Toc.svelte';
+	import Toast from './components/Toast.svelte';
+	import FindBar from './components/FindBar.svelte';
+	import { reviewDirtyTabs } from './sessions/closeReview.js';
+	import { isHomePath } from './utils/homeTab.js';
+	import { copyableFlavours } from './utils/previewCopy.js';
+	import { hasRealFilePath } from './utils/tabFileActions.js';
+	import { type ViewMode, viewModeOf } from './utils/titlebarToolbar.js';
+	import ZoomOverlay from './components/ZoomOverlay.svelte';
+	// 本地特性回挂（Task 13，spec §6.10.1）：D6 本地 export.ts 是唯一导出入口；
+	// D5 统一渲染管线在上游 blockPatch 富化之后挂接。
+	import ExportModal from './components/ExportModal.svelte';
+	import { exportAsHtml, exportAsPdf, type ExportFormat, type PdfPageSize } from './export';
+	import { i18n } from './i18n';
+	import { runPipeline, setPipelineVersionSource } from './pipeline';
+	import { ensureMermaidInitialized, setDiagramVersionGate, syncMermaidTheme } from './pipeline/diagrams';
+	import { getViewableItems, setLightboxOpener } from './pipeline/lightbox';
+	import { initTreeSitterLanguages } from './pipeline/highlight';
+import { processMarkdownHtml } from './utils/markdown';
+import { MARKDOWN_LINK_EXTENSIONS } from './utils/markdownLinks.js';
+import { sanitizeMarkdownFragment } from './utils/sanitize.js';
+import {
+	resolveMermaidTheme,
+} from './utils/mermaidPrint.js';
+import {
+	renderRichContent as renderRichContentInto,
+} from './utils/richContent.js';
+import { observeFoldLayout, type FoldLayoutObservation } from './utils/foldLayout.js';
+import { patchPreviewBlocks } from './utils/blockPatch.js';
+import {
+	revealFold,
+	toggleFold,
+	toggleFoldFromClick,
+	type FoldHost,
+} from './utils/foldState.js';
+import { dropZoneLabel, routeDroppedFile, type DropPane } from './utils/fileDrop.js';
+import { fontFamilyValue } from './utils/fontFamily.js';
+import { headingReference, preferredReferenceStyle } from './utils/headingReference.js';
+import {
+	findSourceLineRange,
+	getSourceLineAtPreviewOffset,
+	invalidateAnchorMemos,
+	measureAnchorBox,
+	mergeSourceLineRanges,
+	restorePreviewReadingPosition,
+	PREVIEW_ANCHOR_OFFSET,
+	anchorScrollTop,
+	type AnchorBox,
+	type AnchorNode,
+	type LineRange,
+	type OffsetLayoutNode,
+} from './utils/previewAnchor.js';
+import { pointAtSource, sourceAtPoint, type SourceLineReader } from './utils/previewCursor.js';
+import { annotationOf, hitAt, occurrenceRanges, overlapping, rangeOf, type Annotation } from './utils/previewAnnotations.js';
+import {
+	asBufferLine,
+	asRendererLine,
+	lineCoordinates,
+	tabAnchorForEditorTopLine,
+	type BufferLine,
+	type BufferLineRange,
+	type RendererLine,
+} from './utils/lineCoordinates.js';
+import {
+	addFrontMatterListItems,
+	getMarkdownBodyWithoutFrontMatter,
+	getFrontMatterListItems,
+	parseFrontMatter,
+	parseFrontMatterEditableValue,
+	removeFrontMatterListItem,
+	updateFrontMatterListItem,
+	updateFrontMatterField,
+	type FrontMatterField,
+} from './utils/frontMatter.js';
+import {
+	anchorIdCandidates,
+	getMarkdownLinkTarget as getRelativeMarkdownTarget,
+	hasMarkdownLinkExtension,
+	normalizeComparableMarkdownPath,
+	resolveMarkdownTargetPath,
+	type MarkdownLinkTarget as RelativeMarkdownTarget,
+} from './utils/markdownLinks.js';
+import { resolveLocalFileLinkPath } from './utils/localFileLinks.js';
+import { findSeedFromSelection } from './utils/findSeed.js';
+import { normalizeAssetPath } from './utils/exportHtml.js';
+import {
+	dropRecentFile,
+	isRecentFilesStorageEvent,
+	promoteRecentFile,
+	readStoredRecentFiles,
+	renameRecentFile,
+	updateStoredRecentFiles,
+} from './utils/recentFiles.js';
+
+	const appWindow = getCurrentWindow();
+
+	import HomePage from './components/HomePage.svelte';
+	import { pinnedTagFromWindowLabel, pinnedTagHolder, pinnedWindowToken } from './utils/pinnedTagWindow.js';
+import { tabManager, type Tab } from './stores/tabs.svelte.js';
+import { snapshotTab } from './utils/tabTransfer.js';
+import { outgoingTabAnchorLine } from './utils/editorPosition.js';
+import { createPaneSlider, planPaneSlide, type PanesShown } from './utils/paneSlide.js';
+import { adjustPreviewMaxWidth, getPreviewContentWidth } from './utils/previewWidth.js';
+import { isTocOverhanging } from './utils/tocOverlay.js';
+import { splitRatioAfterMove } from './utils/splitPanes.js';
+import { viewerCommandFor, type KeyContext, type ViewerCommand } from './utils/viewerKeymap.js';
+import {
+	getScrollSyncPositionFromPixels,
+	getScrollTopForSyncPosition,
+	type ScrollSyncPosition,
+} from './utils/scrollSync.js';
+import { resolveTheme, settings, TOC_WIDTH_RANGE, wheelZoomFactor } from './stores/settings.svelte.js';
+import { t } from './utils/i18n.js';
+import { formatChord, modifierFor, opensInNewTab } from './utils/shortcuts.js';
+import { jumpScrollBehavior } from './utils/motion.js';
+import { createWindowSession } from './sessions/windowSession.svelte.js';
+import { createDocumentSession, type LoadMarkdownOptions } from './sessions/documentSession.svelte.js';
+
+	import 'highlight.js/styles/github-dark.css';
+	import 'katex/dist/katex.min.css';
+
+	let mode = $state<'loading' | 'app'>('loading');
+	let isDisposed = false;
+
+	let showSettings = $state(false);
+
+	let recentFiles = $state<string[]>([]);
+	let isFocused = $state(true);
+	
+	let markdownBody: HTMLElement | null = $state(null);
+	let layoutContainerEl: HTMLElement | null = $state(null);
+	/**
+	 * One host per tab, holding that tab's rendered document. `blockPatch.ts`
+	 * owns their children, not Svelte: an `{@html}` here would rebuild the
+	 * article on every keystroke.
+	 *
+	 * One per tab so a tab switch patches nothing: the host still holds that
+	 * document, so no nodes are replaced or re-enriched.
+	 *
+	 * Only the active host is patched or observed. A hidden host is
+	 * `display: none`, so everything in it measures 0, and `updateFoldHeights`
+	 * would write that into `--fold-content-height` and collapse its folds. A
+	 * background tab catches up when it is next shown.
+	 */
+	let previewHosts = $state<Record<string, HTMLElement | null>>({});
+	// Filled by `exportAsPdf` for the duration of a print and emptied again;
+	// `@media print` reveals it and hides everything else under `#app`.
+	let printRootEl = $state<HTMLElement | null>(null);
+
+	let previewBlocks = $derived(
+		tabManager.activeTabId ? (previewHosts[tabManager.activeTabId] ?? null) : null,
+	);
+	let foldLayout: FoldLayoutObservation | null = null;
+	
+	const highlightColorMap: Record<string, string> = {
+		default: 'color-mix(in srgb, var(--color-accent-fg) 40%, transparent)',
+		yellow: 'rgba(255, 208, 0, 0.4)',
+		orange: 'rgba(255, 140, 0, 0.4)',
+		red: 'rgba(255, 60, 60, 0.4)',
+		pink: 'rgba(255, 105, 180, 0.4)',
+		purple: 'rgba(164, 108, 244, 0.4)',
+		blue: 'rgba(67, 138, 243, 0.4)',
+		cyan: 'rgba(43, 185, 178, 0.4)',
+		green: 'rgba(77, 177, 88, 0.4)',
+	};
+
+	let editorPane = $state<{ 
+		syncScrollToPosition: (position: ScrollSyncPosition, options?: { cursorIntoView?: boolean }) => void;
+		setCursor: (line: number, column: number) => void;
+		scrollSyncPosition: () => ScrollSyncPosition | null;
+		handleDroppedFile: (path: string, x: number, y: number) => Promise<void>;
+		updateDragCaret: (x: number, y: number) => void;
+		hideDragCaret: () => void;
+		runEditorAction: (actionId: string, payload?: any) => void;
+		undo: () => void;
+		revealHeader: (sourceLine: BufferLine | null, text: string) => void;
+		revealSourceRange: (startLine: number, endLine: number) => void;
+		triggerFind: () => void;
+		flushPositionTo: (tabId: string) => void;
+		// The three the editor's context menu runs, which are the three its
+		// keyboard shortcuts run (#207).
+		cutToClipboard: () => Promise<void>;
+		copyToClipboard: () => Promise<void>;
+		pasteFromClipboard: () => Promise<void>;
+	} | null>(null);
+	let liveMode = $state(false);
+
+	// One decision, asked by the four jumps below and handed to `FindBar` and
+	// `Editor` for theirs. See `utils/motion.ts`.
+	const jumpBehavior = $derived(jumpScrollBehavior(settings.animateJumpScroll));
+
+	let findOpen = $state(false);
+	let findBar = $state<{
+		reapply: () => void;
+		clearHighlights: () => void;
+		focusInput: () => void;
+		setQuery: (value: string) => void;
+	} | null>(null);
+
+	// Decide where Cmd/Ctrl+F should land based on what's visible and where
+	// focus is. The in-window shortcut remains the canonical route on every
+	// platform.
+	function triggerFindAction() {
+		const active = document.activeElement as Node | null;
+		const editorHasFocus = !!editorPaneEl && !!active && editorPaneEl.contains(active);
+		const previewVisible = hasPreviewPane;
+		if (editorHasFocus || !previewVisible) {
+			editorPane?.triggerFind?.();
+		} else if (markdownBody) {
+			// Seed BEFORE opening, so the bar that appears already holds the query.
+			// Nothing to seed leaves the previous query alone, which is what a
+			// repeated Cmd/Ctrl+F expects.
+			const seed = findSeedFromSelection(window.getSelection(), markdownBody);
+			if (seed) findBar?.setQuery(seed);
+			// Focus explicitly: `findOpen = true` is a no-op once open.
+			findOpen = true;
+			findBar?.focusInput();
+		}
+	}
+
+	let isDragging = $state(false);
+	let dragTarget = $state<'editor' | 'preview' | null>(null);
+	let dragPaths = $state<string[]>([]);
+
+	/**
+	 * The reference for a heading of THIS document, in the spelling this
+	 * document is written in. See `headingReference.ts` — the inference falls
+	 * back to what the menu has always produced.
+	 */
+	function copyHeadingReference(text: string, slug: string) {
+		const tab = tabManager.activeTab;
+		const fileName = tab?.path ? tab.path.split(/[/\\]/).pop() || null : null;
+		const reference = headingReference({
+			text,
+			slug,
+			fileName,
+			style: preferredReferenceStyle(tab?.rawContent ?? ''),
+		});
+		invoke('clipboard_write_text', { text: reference });
+	}
+
+	function reportUnsupportedDrop(path: string) {
+		const filename = path.split(/[/\\]/).pop() || 'File';
+		addToast(t('toast.unsupportedFile', settings.language).replace('{{filename}}', filename), 'error');
+	}
+	let editorPaneEl = $state<HTMLElement>();
+	let viewerPaneEl = $state<HTMLElement>();
+	let isProgrammaticScroll = false;
+
+	let toasts = $state<{ id: string; message: string; type: 'info' | 'error' | 'warning' }[]>([]);
+	function addToast(message: string, type: 'info' | 'error' | 'warning' = 'info') {
+		const id = crypto.randomUUID();
+		toasts.push({ id, message, type });
+	}
+
+	// --- Auto-save bookkeeping (see saveContent + auto-save $effect below) ---
+	// Per-tab debounce timers so switching tabs cannot kill another tab's pending save.
+	const autoSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	// Per-tab last-seen rawContent value, used by the auto-save effect to
+	// detect which tab actually changed in this run. JS string `===` is a
+	// value compare, so any edit yields a different value — including
+	// same-length ones (overwriting characters, formatting toggles) that
+	// a length-based tick would miss.
+	const lastContentRefByTab = new Map<string, string>();
+	const AUTO_SAVE_DEBOUNCE_MS = 1500;
+
+	// Cancel a pending auto-save for a tab. Call this only on paths that
+	// COMMIT to a save or discard outcome — never before showing a modal,
+	// because if the user picks Cancel, the timer is gone forever and
+	// background auto-save is silently disabled for that tab until the
+	// next keystroke.
+	//
+	// The *save* half is no longer a call-site duty: `saveContent` cancels the
+	// tab's timer itself, past the point where it can still bail out. Only the
+	// discard path still calls this directly, because nothing saves on its
+	// behalf. Do not re-add a cancel before a `saveContent` — it is redundant,
+	// and reintroduces the question of whether every new entry point remembered.
+	function cancelPendingAutoSave(tabId: string) {
+		const t = autoSaveTimers.get(tabId);
+		if (t) {
+			clearTimeout(t);
+			autoSaveTimers.delete(tabId);
+		}
+	}
+
+	// 本地 lightbox（spec D16：合并后 ZoomOverlay 为本得多图画廊接口 items/initialIndex/onclose）。
+	// 上游的单图 zoomData 形态退役：img / mermaid 点击折算为画廊打开（见 handleLinkClick），
+	// 管线 lightbox 按钮经 setLightboxOpener 回调桥打开同一画廊。
+	let viewableItems = $state<{ type: 'img' | 'svg'; src?: string; html?: string }[]>([]);
+	let lightboxIndex = $state(0);
+
+	setLightboxOpener((items, index) => {
+		viewableItems = items;
+		lightboxIndex = index;
+	});
+
+	function openLightboxForImage(src: string) {
+		const collected = getViewableItems();
+		const index = collected.findIndex((it) => it.type === 'img' && it.src === src);
+		if (index >= 0) {
+			viewableItems = collected;
+			lightboxIndex = index;
+		} else {
+			viewableItems = [{ type: 'img', src }];
+			lightboxIndex = 0;
+		}
+	}
+
+	function openLightboxForSvg(html: string) {
+		viewableItems = [{ type: 'svg', html }];
+		lightboxIndex = 0;
+	}
+
+	// What a document with no tab behind it has folded. Never written to — every
+	// write goes through `foldHost.setFolds`, which needs an active tab.
+	const NO_FOLD_OVERRIDES = new Set<string>();
+
+	let activeTab = $derived(tabManager.activeTab);
+	// Fold state belongs to the document, so it lives on the tab (see
+	// `Tab.foldOverrides`). Reading it through a derived is what makes a tab
+	// switch swap the whole set: the preview render, the table of contents and
+	// find all see the folds of the document on screen and no other document's.
+	let foldOverrides = $derived(activeTab?.foldOverrides ?? NO_FOLD_OVERRIDES);
+	let isEditing = $derived(activeTab?.isEditing ?? false);
+	let rawContent = $derived(activeTab?.rawContent ?? '');
+	let isSplit = $derived(activeTab?.isSplit ?? false);
+	/**
+	 * Is there an editor on screen? The two flags are independent — split
+	 * view is `isSplit` alone when entered from reading mode — so anything
+	 * that hands the reader over to the editor has to ask both. The outline
+	 * asked only `isEditing`, and a click on it in split view moved the
+	 * preview but not the editor beside it (#744).
+	 */
+	let hasEditorPane = $derived(isEditing || isSplit);
+	let hasPreviewPane = $derived(!isEditing || isSplit);
+	let frontMatterInfo = $derived(parseFrontMatter(rawContent));
+
+	let currentFile = $derived(tabManager.activeTab?.path ?? '');
+	let frontMatterPanelKey = $derived(currentFile || tabManager.activeTabId || 'untitled');
+	let frontMatterCollapsedByKey = $state<Record<string, boolean>>({});
+	let frontMatterEditErrors = $state<Record<string, string>>({});
+	let frontMatterTagDrafts = $state<Record<string, string>>({});
+	let frontMatterTagEditIndexes = $state<Record<string, number | null>>({});
+	let frontMatterTagEditDrafts = $state<Record<string, string>>({});
+	let isFrontMatterCollapsed = $derived(frontMatterCollapsedByKey[frontMatterPanelKey] ?? true);
+	let isMarkdown = $derived(hasMarkdownLinkExtension(currentFile));
+	let editorLanguage = $derived(getLanguage(currentFile));
+	let htmlContent = $derived(tabManager.activeTab?.content ?? '');
+	let scrollTop = $derived(tabManager.activeTab?.scrollTop ?? 0);
+	let isScrolled = $derived(scrollTop > 0);
+	let windowTitle = $derived(tabManager.activeTab?.title ?? 'Markpad');
+	let isScrollSynced = $derived(tabManager.activeTab?.isScrollSynced ?? false);
+	let canGoBackInFileHistory = $derived(tabManager.activeTabId ? tabManager.canGoBack(tabManager.activeTabId) : false);
+	let canGoForwardInFileHistory = $derived(tabManager.activeTabId ? tabManager.canGoForward(tabManager.activeTabId) : false);
+
+	let loadingTabs = $state<string[]>([]);
+	let isAtBottom = $state(false);
+
+	let showHome = $state(false);
+	let viewerWidth = $state(0);
+	// The bounds come from TOC_WIDTH_RANGE, the same object settings.setTocWidth
+	// clamps against, so the handle cannot offer a width persistence would shrink.
+	// The keyboard increment stays local: TOC_WIDTH_RANGE.step is 1, the spin-button
+	// granularity of the numeric settings input, and arrow keys move the splitter 16px.
+	const TOC_RESIZE_STEP = 16;
+	let isTocResizing = $state(false);
+	let tocWrapperEl = $state<HTMLElement | null>(null);
+	let tocToggleEl = $state<HTMLElement | null>(null);
+
+	/*
+	 * How tall the editor toolbar currently is, measured rather than assumed.
+	 *
+	 * The floating table-of-contents toggle is absolutely positioned against
+	 * `.layout-container`, and its `top` used to be the literal 48px — the 36px
+	 * title bar plus a 12px inset. That is the right answer only in preview,
+	 * where the title bar is the whole of the chrome above the document. In edit
+	 * mode the toolbar occupies exactly that strip, so the toggle landed on top
+	 * of its first button.
+	 *
+	 * Reading the height keeps one answer to "where does the chrome end": the
+	 * toolbar's own layout. A second literal here would have to be re-derived
+	 * every time its padding, border or font changed, and nothing would fail
+	 * when it was not — the toggle would just start overlapping again.
+	 *
+	 * The `{#if}` around the toolbar is mirrored rather than the height: a
+	 * `clientHeight` binding keeps its last value when the element it measured
+	 * goes away, so the toggle would stay pushed down after the toolbar was
+	 * hidden or the tab returned to preview.
+	 */
+	let editorToolbarHeight = $state(0);
+	let paneTopChrome = $derived(
+		hasEditorPane && settings.showEditorToolbar ? editorToolbarHeight : 0,
+	);
+	let previewContentWidth = $derived(getPreviewContentWidth(settings.previewMaxWidth, settings.previewFullWidth));
+	let previewAppearance = $derived({
+		fontFamily: fontFamilyValue(settings.previewFont, 'sans-serif'),
+		fontSize: settings.previewFontSize,
+		codeFontFamily: fontFamilyValue(settings.codeFont, 'monospace'),
+		codeFontSize: settings.codeFontSize,
+		highlightColor: highlightColorMap[settings.highlightColor] || highlightColorMap.yellow,
+	});
+	let isOverhanging = $derived(
+		isTocOverhanging({
+			isEditing,
+			isSplit,
+			tocSide: settings.tocSide,
+			splitEditorSide: settings.splitEditorSide,
+			isFullWidth: settings.previewFullWidth,
+			viewerWidth,
+			previewContentWidth,
+			tocWidth: settings.tocWidth,
+		}),
+	);
+
+	/**
+	 * Reaching past a floating outline to touch what it is covering is a request
+	 * for it to move. Only while it IS covering something: pinned it is a
+	 * sidebar, and one sitting in the margin is not in anybody's way.
+	 */
+	$effect(() => {
+		if (!settings.showToc || settings.pinnedToc || !isOverhanging) return;
+		const dismiss = (e: PointerEvent) => {
+			const target = e.target as Node | null;
+			if (!target) return;
+			// The toggle button owns its own click; closing here as well would
+			// open and shut the panel in one gesture. Anything inside the panel —
+			// the resize handle included — is use, not dismissal.
+			if (tocWrapperEl?.contains(target) || tocToggleEl?.contains(target)) return;
+			settings.showToc = false;
+		};
+		// Capture, so a handler that stops propagation on its way up cannot leave
+		// the outline stranded over the text.
+		window.addEventListener('pointerdown', dismiss, { passive: true, capture: true });
+		return () => window.removeEventListener('pointerdown', dismiss, { capture: true });
+	});
+
+	import { parseAndApplyVscodeTheme, clearVscodeTheme } from './utils/theme';
+
+	onMount(() => {
+		// Clear the forced background color from app.html
+		document.documentElement.style.removeProperty('background-color');
+		// 本地管线预载（原本地 onMount 行为回挂，Task 13）：tree-sitter 语言清单与
+		// mermaid 单实例（pipeline/diagrams，spec D12）提前就绪，避免首渲染等待。
+		initTreeSitterLanguages();
+		ensureMermaidInitialized();
+	});
+
+	/**
+	 * What Rust should paint the next window's background before any webview
+	 * exists — the appearance, not the theme.
+	 *
+	 * `theme.txt` is read in exactly one place (`app.rs`, at window creation) and
+	 * for exactly one purpose, and its vocabulary there is "dark", "light" and
+	 * "anything else means ask the OS". A `vscode:` name fell into that last
+	 * branch, so choosing a dark VS Code theme on a light desktop flashed a white
+	 * window on every launch. Whether such a theme is dark is knowable only after
+	 * its JSON has been parsed — which happens here — so the resolved answer is
+	 * what gets stored, instead of a name Rust would have to learn to parse.
+	 */
+	function saveStartupAppearance(appearance: 'system' | 'light' | 'dark') {
+		invoke('save_theme', { theme: appearance }).catch(console.error);
+	}
+
+	$effect(() => {
+		// Persistence and cross-window sync belong to the settings store; this
+		// effect is only the part that cannot: applying the theme to the document.
+		const theme = settings.theme;
+
+		// Mermaid bakes its colours into the SVG it produces, so the diagrams have
+		// to be drawn again; `renderRichContent` finds the ones drawn for another
+		// theme. No `roots`, because the whole article is what changed appearance
+		// — including the hosts of tabs that are not on screen, which the reader
+		// switches back to without anything else re-rendering them.
+		//
+		// Called from each branch rather than once at the end, because the
+		// `vscode:` branch does not know its own appearance until
+		// `parseAndApplyVscodeTheme` has published `dataset.themeType`, and that
+		// is what `currentMermaidTheme` reads. Calling here would have re-drawn
+		// every diagram in the theme being replaced.
+		//
+		// `untrack` for the reason #740 established: `renderRichContent` reads
+		// reactive state before its first `await`, so a tracked call makes this
+		// effect re-run on unrelated changes — re-enriching every open tab's
+		// host on top of the pass the patch effect owns.
+		// 本地管线的 mermaid 单实例随主题同步（pipeline/diagrams；上游 mermaid 图重绘仍由
+		// renderRichContent 自己承担，这里只保证本实例的后续渲染取到新主题）。
+		syncMermaidTheme();
+		const recolourDiagrams = () => untrack(() => { if (markdownBody) renderRichContent(); });
+
+		if (theme === 'system' || theme === 'light' || theme === 'dark') {
+			if (theme === 'system') {
+				delete document.documentElement.dataset.theme;
+				delete document.documentElement.dataset.themeType;
+			} else {
+				document.documentElement.dataset.theme = theme;
+				document.documentElement.dataset.themeType = theme;
+			}
+			clearVscodeTheme();
+			saveStartupAppearance(theme);
+			recolourDiagrams();
+			// No Monaco write here. It used to set `vs`/`vs-dark` through the
+			// `monaco` global, and because a child's effects run before its
+			// parent's it landed AFTER `Editor`'s own — stripping the editor of
+			// `app-theme-*` on every theme change. `editorTheme.ts`'s
+			// `monacoThemeName` is the one answer now, and `Editor` is the only
+			// pane that asks it; with no editor mounted there is nothing to
+			// paint, and a later mount reads the theme from the same seam.
+		} else {
+			const name = theme.replace('vscode:', '');
+			invoke('read_vscode_theme', { name }).then(async (json: any) => {
+				await parseAndApplyVscodeTheme(json, name);
+				// `parseAndApplyVscodeTheme` decides dark vs. light from the theme's
+				// own `type` field and publishes it here.
+				saveStartupAppearance(document.documentElement.dataset.themeType === 'dark' ? 'dark' : 'light');
+				recolourDiagrams();
+			}).catch(e => {
+				console.error("Failed to load vscode theme", e);
+				settings.theme = 'system';
+			});
+		}
+	});
+
+	let tooltip = $state({ show: false, text: '', shortcut: '', html: '', isFootnote: false, x: 0, y: 0, align: 'top' as 'top' | 'right' | 'left' | 'below' });
+	let modalState = $state<{
+		show: boolean;
+		title: string;
+		message: string;
+		kind: 'info' | 'warning' | 'error';
+		showSave: boolean;
+		resolve: ((v: 'save' | 'discard' | 'cancel') => void) | null;
+	}>({
+		show: false,
+		title: '',
+		message: '',
+		kind: 'info',
+		showSave: false,
+		resolve: null,
+	});
+
+	// 本地导出入口回挂（Task 13，D6）：TitleBar/Editor 的导出动作与 Mod+Shift+P 快捷键
+	// 都汇入 ExportModal；handleExport 走本地 src/lib/export.ts（唯一导出管线）。
+	let showExportModal = $state(false);
+	let exportMessage = $state<{ show: boolean; text: string }>({ show: false, text: '' });
+
+	async function handleExport(format: ExportFormat, pageSize: PdfPageSize) {
+		showExportModal = false;
+
+		// 上游骨架的预览容器是 .viewer-content（内含 article.markdown-body 与 TOC wrapper），
+		// 与原本地形态 .markdown-container 同角色；export.ts 以 clone.querySelector('.markdown-body')
+		// 取正文，容器必须是其祖先。
+		const container = document.querySelector('.viewer-content') as HTMLElement;
+		if (!container) return;
+
+		// Get filename without .md extension
+		const rawTitle = tabManager.activeTab?.title || 'document';
+		const fileName = rawTitle.replace(/\.md$/i, '');
+
+		// 词条暂走本地 i18n（与 ExportModal 同源；Task 15 随本地组件一起迁移 locales）
+		const messages = i18n.getAll();
+
+		try {
+			if (format === 'html') {
+				const success = await exportAsHtml(container, settings.showToc, fileName);
+				if (success) {
+					exportMessage = { show: true, text: messages.exportSuccess };
+					setTimeout(() => { exportMessage = { show: false, text: '' }; }, 3000);
+				}
+			} else {
+				// Use browser print for PDF export
+				const result = await exportAsPdf(container, settings.showToc, pageSize, fileName);
+				exportMessage = { show: true, text: result.message };
+				setTimeout(() => { exportMessage = { show: false, text: '' }; }, 5000);
+			}
+		} catch (e) {
+			console.error('Export failed:', e);
+			exportMessage = { show: true, text: `${messages.exportFailed}: ${e}` };
+			setTimeout(() => { exportMessage = { show: false, text: '' }; }, 5000);
+		}
+	}
+
+	let docContextMenu = $state<{
+		show: boolean;
+		x: number;
+		y: number;
+		items: ContextMenuItem[];
+	}>({
+		show: false,
+		x: 0,
+		y: 0,
+		items: [],
+	});
+
+	function askCustom(message: string, options: { title: string; kind: 'info' | 'warning' | 'error'; showSave?: boolean }): Promise<'save' | 'discard' | 'cancel'> {
+		// A second question replaces the first dialog, so the first caller is
+		// answered 'cancel' rather than left awaiting a resolver that is about to
+		// be overwritten — a close walk left that way never finished, and the
+		// window could not be closed again. An already-answered one ignores it.
+		modalState.resolve?.('cancel');
+		return new Promise((resolve) => {
+			modalState = {
+				show: true,
+				title: options.title,
+				message,
+				kind: options.kind,
+				showSave: options.showSave ?? false,
+				resolve,
+			};
+		});
+	}
+
+	// window.prompt() is a silent no-op inside the webview (wry does not
+	// implement the native JS dialogs), so text input goes through our own
+	// modal. Resolves with the entered string, or null on cancel.
+	let promptModal = $state<{
+		show: boolean;
+		title: string;
+		message: string;
+		value: string;
+		resolve: ((v: string | null) => void) | null;
+	}>({ show: false, title: '', message: '', value: '', resolve: null });
+
+	function promptCustom(message: string, options: { title: string; initial?: string }): Promise<string | null> {
+		return new Promise((resolve) => {
+			promptModal = {
+				show: true,
+				title: options.title,
+				message,
+				value: options.initial ?? '',
+				resolve,
+			};
+		});
+	}
+
+	function closePrompt(value: string | null) {
+		promptModal.resolve?.(value);
+		promptModal.show = false;
+	}
+
+	function closeModal(choice: 'save' | 'cancel') {
+		modalState.resolve?.(choice);
+		modalState.show = false;
+	}
+
+	// Self-contained rather than closeModal('discard'): menuModalGuards.test.ts
+	// lifts it on its own.
+	function handleModalConfirm() {
+		if (modalState.resolve) modalState.resolve('discard');
+		modalState.show = false;
+	}
+
+	function handleSplitterKeyDown(e: KeyboardEvent) {
+		const activeTab = tabManager.activeTab;
+		if (!activeTab || !tabManager.activeTabId) return;
+
+		// The same step the bar takes under the pointer, in the same units, so
+		// `splitRatioAfterMove` is the only thing that knows which way is wider.
+		const step = e.key === 'ArrowLeft' ? -0.05 : e.key === 'ArrowRight' ? 0.05 : 0;
+		if (step === 0) return;
+
+		tabManager.setSplitRatio(
+			tabManager.activeTabId,
+			splitRatioAfterMove(activeTab.splitRatio, step, settings.splitEditorSide),
+		);
+	}
+
+	function handleTocResizeKeyDown(e: KeyboardEvent) {
+		const keyDelta = e.key === 'ArrowRight' ? TOC_RESIZE_STEP : e.key === 'ArrowLeft' ? -TOC_RESIZE_STEP : 0;
+		if (keyDelta !== 0) {
+			e.preventDefault();
+			const widthDelta = settings.tocSide === 'left' ? keyDelta : -keyDelta;
+			settings.setTocWidth(settings.tocWidth + widthDelta);
+			return;
+		}
+
+		if (e.key === 'Home') {
+			e.preventDefault();
+			settings.setTocWidth(TOC_WIDTH_RANGE.min);
+		} else if (e.key === 'End') {
+			e.preventDefault();
+			settings.setTocWidth(TOC_WIDTH_RANGE.max);
+		}
+	}
+
+	// True while the window-close walk is showing per-tab dialogs; the native
+	// red button is not blocked by the dialog overlay, so this keeps a second
+	// close request from starting a competing walk.
+	let isCloseWalkActive = false;
+	let identifyFlash = $state('');
+	let identifyFlashTimer: ReturnType<typeof setTimeout> | undefined;
+
+	// Old localStorage snapshot keys. The snapshot is written through Rust now;
+	// these are read once for migration and removed after the first Rust write.
+	const WINDOW_STATE_KEY = 'savedTabsDataV2';
+	const LEGACY_STATE_KEY = 'savedTabsData';
+	const RESTORE_IN_PROGRESS_KEY = 'markpad-window-restore-in-progress';
+
+	// Every window shares the one snapshot slot. Only the main window persists
+	// and restores tabs: secondary window labels carry a per-session token, so
+	// their snapshot could never be restored under the same label, and N
+	// writers would leave whichever window closed last.
+	const isMainWindow = appWindow.label === 'main';
+	const windowSession = createWindowSession({
+		isMainWindow,
+		windowStateKey: WINDOW_STATE_KEY,
+		legacyStateKey: LEGACY_STATE_KEY,
+		restoreInProgressKey: RESTORE_IN_PROGRESS_KEY,
+		serializeState: () => {
+			// Same reason as `transferPayload` below, at a different moment: this
+			// runs on window close with the editor still mounted, so the tab being
+			// edited would be persisted at the position it held when the editor
+			// last came down. Only the active tab can be the one the editor holds.
+			if (tabManager.activeTabId) editorPane?.flushPositionTo(tabManager.activeTabId);
+			return tabManager.serializeState();
+		},
+		shouldRestoreState: () => settings.restoreStateOnReopen,
+		isDisposed: () => isDisposed,
+		restoreState: (json) => tabManager.restoreState(json),
+		restoredTabs: () => tabManager.tabs.map((tab) => ({ id: tab.id, path: tab.path })),
+		applyRestoredContent: async (tabId, raw) => {
+			const tab = tabManager.tabs.find((item) => item.id === tabId);
+			if (!tab) return;
+			// Through the store, not by assigning the two buffers here: this is
+			// a whole file read from disk, so it also settles `isTruncated` —
+			// and a tab whose earlier restore attempt was deferred arrives here
+			// carrying `true` from `markTabContentUnavailable`, which would have
+			// gone on refusing every save of a buffer that is now complete.
+			tabManager.setTabRawContent(tabId, raw);
+			const processed = await renderMarkdownPreview(raw, tab.path, tab.foldOverrides);
+			if (isDisposed) return;
+			tabManager.updateTabContent(tab.id, processed);
+		},
+		dropRestoredTab: (tabId) => tabManager.closeTab(tabId),
+		// A partially loaded buffer must never be handed to another window.
+		// The transfer payload has no field for "incomplete" (see
+		// tabTransfer.ts) and the destination rebuilds the tab from the
+		// payload alone, so the arriving copy would look authoritative and its
+		// auto-save would truncate the file. handleDetach and moveTabToWindow
+		// complete the buffer first; these predicates are the backstop.
+		canTransfer: (tabId) => {
+			const tab = tabManager.tabs.find((item) => item.id === tabId);
+			return !isCloseWalkActive && tab !== undefined && !isHomePath(tab.path) && !tab.isTruncated;
+		},
+		canDetach: (tabId) => {
+			const tab = tabManager.tabs.find((item) => item.id === tabId);
+			return !isCloseWalkActive && tab !== undefined && !isHomePath(tab.path) && !tab.isTruncated && tabManager.tabs.length >= 2;
+		},
+		transferPayload: (tabId) => {
+			const tab = tabManager.tabs.find((item) => item.id === tabId);
+			if (!tab) throw new Error('Tab disappeared before transfer');
+			// The snapshot carries the reading position and is taken here,
+			// synchronously, with the editor still mounted — so a tab being
+			// edited would travel with the position from its last teardown, and a
+			// tab opened straight into edit mode with 0. The preview writes its
+			// own fields on every scroll and needs nothing; this is edit mode's
+			// equivalent, and it is a no-op for any tab the editor is not on.
+			editorPane?.flushPositionTo(tabId);
+			// The other half of the same problem: the flush can only speak for
+			// the tab the editor is holding, and any other tab can be sent from
+			// here too — the tab context menu names one, and `mergeSelfInto`
+			// walks all of them. `editorViewState` is what covers a background
+			// edit-mode tab in memory and it is excluded from the payload, so
+			// the anchor is recovered from it before it is dropped.
+			return JSON.stringify({
+				...snapshotTab(tab),
+				anchorLine: outgoingTabAnchorLine(tab, tabManager.activeTabId),
+			});
+		},
+		onTransferClaimed: (tabId) => tabManager.closeTab(tabId),
+		acceptTransferredTab: async (snapshot) => {
+			// The tab has to exist before it can be rendered, which leaves a
+			// window where this side owns a document the source still shows.
+			// Anything that goes wrong from here must undo the insert, or the
+			// same file stays open in both windows with two auto-save timers
+			// writing over each other.
+			const id = tabManager.insertTransferredTab(snapshot);
+			try {
+				const transferred = tabManager.tabs.find((tab) => tab.id === id);
+				if (!transferred) return false;
+				await renderTabPreviewFromRaw(transferred);
+				if (isDisposed) {
+					tabManager.closeTab(id);
+					return false;
+				}
+				// The reading position travels with the tab, and until here nothing
+				// put it back. `insertTransferredTab` activates the tab
+				// synchronously, while its `content` is still `''`; the restore
+				// effect below runs on that activation against a host with no
+				// document in it, finds no anchor and no scroll range, and the
+				// document the reader left arrives afterwards at the top. That effect
+				// cannot cover this by depending on the render — it also runs while
+				// the reader is typing in split view, where a per-render dependency
+				// would drag the preview back on every debounce — so the arrival
+				// asks again, now that `renderTabPreviewFromRaw` has awaited the
+				// patch and the host holds the document.
+				//
+				// Guarded on the tab still being the active one: only the active
+				// host is displayed, and `markdownBody` is the article all of them
+				// share, so scrolling it for a tab the user has since switched away
+				// from would move somebody else's document.
+				if (markdownBody && tabManager.activeTabId === id) {
+					restorePreviewReadingPosition(
+						markdownBody,
+						transferred,
+						getPreviewScrollMax(markdownBody),
+						measurePreviewBox,
+					);
+				}
+				return true;
+			} catch (error) {
+				tabManager.closeTab(id);
+				throw error;
+			}
+		},
+		onError: (message, error) => {
+			console.error(message, error);
+			addToast(`${message}: ${String(error)}`, 'error');
+		},
+		onWarning: (message, error) => console.warn(message, error),
+		// The console line above says the same thing in more detail, but in a
+		// packaged build nobody can open that console: the recovery mechanism
+		// was diagnosing itself and writing the answer where no one could read
+		// it. A document missing its content needs an explanation on screen.
+		onInterrupted: ({ deferredPath }) =>
+			addToast(
+				deferredPath
+					? t('toast.restoreInterruptedDeferred', settings.language).replace('{path}', deferredPath)
+					: t('toast.restoreInterrupted', settings.language),
+				'warning',
+			),
+	});
+
+	$effect(() => {
+		invoke('set_window_meta', {
+			tagName: tabManager.windowTag?.name ?? null,
+			tagColor: tabManager.windowTag?.color ?? null,
+			activeTabTitle: tabManager.activeTab?.title ?? '',
+			tabCount: tabManager.tabs.length,
+		}).catch(() => {});
+	});
+
+	$effect(() => {
+		const tag = tabManager.windowTag;
+		appWindow.setTitle(tag ? `${tag.name} — ${windowTitle}` : windowTitle).catch(() => {});
+	});
+
+	let pinnedTags = $state<Array<{ name: string; color: string; files: string[] }>>([]);
+
+	async function refreshPinnedTags() {
+		pinnedTags = (await invoke('list_pinned_tags')) as typeof pinnedTags;
+	}
+
+	// The files the close review started from. It can close tabs, and the
+	// close it re-triggers settles again, so both saves use this list.
+	let pinFilesAtClose: string[] | null = null;
+
+	function openFilePaths() {
+		return tabManager.tabs.filter((tab) => hasRealFilePath(tab.path)).map((tab) => tab.path);
+	}
+
+	/**
+	 * Every path that ends a window saves the pin before it closes tabs. An
+	 * empty window says nothing about the group, so it never overwrites it.
+	 * It only refreshes the entry: another window may have unpinned the tag.
+	 */
+	async function savePinnedTagIfNeeded() {
+		const tag = tabManager.windowTag;
+		if (!tag?.pinned) return;
+		const files = pinFilesAtClose ?? openFilePaths();
+		if (files.length === 0) return;
+		const pinned = await invoke('update_pinned_tag', { name: tag.name, color: tag.color, files });
+		if (!pinned) tabManager.setWindowTag({ ...tag, pinned: false });
+	}
+
+	async function openPinnedTag(tag: { name: string; color: string; files: string[] }) {
+		// Two windows sharing a tag share one pin entry, and the last to save wins.
+		const holder = await pinnedTagHolder(tag.name, appWindow.label);
+		if (holder) {
+			await invoke('focus_window', { label: holder });
+			return;
+		}
+		// Tabs already here belong to this window's own group. The pinned one
+		// opens in a window of its own, which adopts it from its label.
+		if (tabManager.tabs.some((tab) => !isHomePath(tab.path))) {
+			await invoke('create_transfer_window', { token: pinnedWindowToken(tag.name, Date.now()) });
+			return;
+		}
+		tabManager.setWindowTag({ ...tag, pinned: true });
+		for (const file of tag.files) await loadMarkdown(file);
+		showHome = false;
+	}
+
+	async function unpinTagFromHome(name: string) {
+		await invoke('remove_pinned_tag', { name });
+		if (tabManager.windowTag?.name === name) tabManager.setWindowTag({ ...tabManager.windowTag, pinned: false });
+		await refreshPinnedTags();
+	}
+
+	// Same condition as the template's HomePage gate: an empty window or the
+	// home tab shows Home without `showHome`, which is the cold-start case.
+	// Reading the window tag re-runs this when the title bar pins or unpins it.
+	// The pin's IPC is sent first and sync commands run in order, so the list sees it.
+	$effect(() => {
+		void tabManager.windowTag?.pinned;
+		if (showHome || !tabManager.activeTab || isHomePath(tabManager.activeTab.path)) refreshPinnedTags().catch(console.error);
+	});
+
+	const documentSession = createDocumentSession({
+		setShowHome: (value) => (showHome = value),
+		currentFile: () => currentFile,
+		resetScrollHistory: () => {
+			if (tabManager.activeTabId) tabManager.clearScrollHistory(tabManager.activeTabId);
+		},
+		renderMarkdown: renderMarkdownPreview,
+		afterLoad: tick,
+		saveRecentFile,
+		deleteRecentFile,
+		setLoadingTabs: (tabIds) => (loadingTabs = tabIds),
+		measureInitialViewport: () => {
+			tick().then(() => {
+				if (markdownBody) isAtBottom = markdownBody.scrollHeight <= markdownBody.clientHeight + 100;
+			});
+		},
+		isScrolling: () => isScrolling,
+		renderRichContent,
+		onError: (message, error) => {
+			console.error(message, error);
+			addToast(`${message}: ${String(error)}`, 'error');
+		},
+		onDiskChangedUnderSave: noteExternalChangeConflict,
+		cancelPendingAutoSave,
+		// Two questions, one dialog. With the file untouched, Save means "write
+		// what I typed" and the ordinary wording is right. With the disk moved
+		// under the buffer, Save means "overwrite what somebody else wrote", and
+		// saying "you have unsaved changes" would hide the half that matters.
+		// The changed-on-disk sentence is the same one the conflict bar uses,
+		// because it is the same news.
+		askClose: (title, diskMoved) =>
+			askCustom(
+				diskMoved
+					? t('externalChange.message', settings.language)
+					: t('modal.youHaveUnsavedChanges', settings.language).replace('{title}', title),
+				{
+					title: t('modal.unsavedChanges', settings.language),
+					kind: 'warning',
+					showSave: true,
+				},
+			),
+		onCloseSaveNewerEdits: () => addToast(t('toast.savedNewerEdits', settings.language), 'info'),
+		onCloseAutoSaveFailed: () => addToast(t('toast.autoSaveFailed', settings.language), 'error'),
+		// Not an error: the copy is the way out of a partial buffer, and it was
+		// written. What the reader needs is to know where it stops.
+		onPartialCopySaved: () => addToast(t('toast.partialCopySaved', settings.language), 'info'),
+	});
+
+	// Persisted through Rust, not localStorage: setItem is an async message
+	// to the WebKit storage process that dies in transit when the last
+	// window's close ends the process (reproduced in QA as "close secondary
+	// first, then main → snapshot gone"). An awaited invoke keeps the close
+	// handler — and the process — alive until the bytes are on disk, so one
+	// deterministic write at close replaces any keep-writing-while-running
+	// scheme. The localStorage keys are read once for migration and removed
+	// after the first successful Rust write; a downgraded build then starts
+	// a fresh session instead of misreading anything.
+	async function persistWindowState() {
+		await windowSession.persistState();
+	}
+
+	/**
+	 * Resolve this window's unsaved tabs, then write the restore snapshot: the
+	 * work that has to happen before the window goes away. False when the reader
+	 * cancelled, and nothing has been written.
+	 *
+	 * The close button and the in-app update both run it. An update ends the
+	 * process without closing a window — the Windows updater exits inside
+	 * `downloadAndInstall`, `relaunch()` requests an exit elsewhere — so
+	 * CloseRequested never fires, and both jobs used to go down with it (#761).
+	 */
+	async function settleForExit(): Promise<boolean> {
+		// Unsaved content and session restore are separate concerns: dirty tabs
+		// are resolved FIRST through the per-tab dialogs, then the restore
+		// snapshot records window state only (open files, active tab, edit mode,
+		// split, scroll) — it never carries document content.
+		const dirtyTabs = tabManager.tabs.filter((t) => t.isDirty);
+		if (dirtyTabs.length > 0) {
+			isCloseWalkActive = true;
+			pinFilesAtClose ??= openFilePaths();
+			// The walk's dialogs are in-app modals inside THIS window: with
+			// multiple windows, another window may be covering it and the review
+			// would be invisible. Bring the reviewing window to the front first.
+			invoke('show_window').catch(console.error);
+			try {
+				// Auto-save without confirmation: silently save every dirty tab
+				// that has a real path. Untitled tabs need a Save dialog, so the
+				// walk below handles them. A failed silent save is surfaced and its
+				// tab also goes to the walk. `saveContent` cancels each tab's pending
+				// timer itself, so no writer here can be raced by its own debounce.
+				// A tab whose file changed underneath is refused rather than
+				// overwritten, and the walk asks the changed-on-disk question.
+				if (settings.autoSave) {
+					for (const tab of dirtyTabs.filter((t) => t.path !== '')) {
+						const ok = await saveSilently(tab.id);
+						if (!ok && externalChangeConflicts[tab.id]) continue;
+						if (!ok) {
+							addToast(t('toast.autoSaveFailed', settings.language), 'error');
+							break;
+						}
+					}
+				}
+
+				// Close review (issue #189): walk the remaining dirty tabs one at a
+				// time — activate each and run the same localized unsaved-changes
+				// dialog a single tab close shows. Cancel stops the walk and keeps
+				// the window open. Strict tab-strip order (left to right) so the
+				// sequence is predictable; numbered untitled titles let the dialog
+				// name each tab. Re-find every round — a save can leave a tab dirty
+				// again (TOCTOU) and tabs can change while a dialog is up.
+				const resolved = await reviewDirtyTabs({
+					nextDirtyTab: () => tabManager.tabs.find((t) => t.isDirty),
+					setActive: (id) => tabManager.setActive(id),
+					settle: tick,
+					canCloseTab,
+					closeTab: (id) => tabManager.closeTab(id),
+					// Resolved tabs (saved, or reverted by Don't Save) stay open for
+					// the window-state snapshot when restore is enabled; untitled
+					// tabs have nothing to restore, and with restore off the red
+					// button closes tabs one by one.
+					shouldCloseAfterResolving: (tab) =>
+						!settings.restoreStateOnReopen || tab.path === '',
+				});
+				if (!resolved) {
+					pinFilesAtClose = null;
+					return false;
+				}
+			} finally {
+				isCloseWalkActive = false;
+			}
+		}
+
+		// Session is clean now; record the window state for restore. Awaited:
+		// the caller holds the exit until the Rust write returns, so the process
+		// cannot exit under the snapshot.
+		await savePinnedTagIfNeeded();
+		// The re-triggered close finds nothing to review and uses the list last.
+		if (dirtyTabs.length === 0) pinFilesAtClose = null;
+		if (settings.restoreStateOnReopen) {
+			await persistWindowState();
+		}
+		return true;
+	}
+
+	/**
+	 * The update's settle. No re-triggered close follows it: the process exits,
+	 * or the install fails and the window stays. Either way the review's list
+	 * has been saved, and kept it would outlive a failed install into the next
+	 * last-tab close, merge or Close Tag.
+	 */
+	async function settleForUpdate(): Promise<boolean> {
+		try {
+			return await settleForExit();
+		} finally {
+			pinFilesAtClose = null;
+		}
+	}
+
+	/**
+	 * Quit is the red button applied to every window. Each one runs its own
+	 * `onCloseRequested`: reviews its unsaved tabs, writes its own restore
+	 * snapshot, and closes.
+	 *
+	 * It used to discard the snapshot instead, so ⌘Q and the red button
+	 * disagreed about whether the session came back — and the dialog that
+	 * explained the difference only appeared when a tab was dirty, which is
+	 * not the path most people take (#390). It also closed nothing but the
+	 * focused window, so quitting with two windows open did not quit.
+	 *
+	 * Every other window is asked at once rather than one after another:
+	 * `close()` resolves when the request is sent, not when the window is
+	 * gone, and there is no reply saying whether the reader cancelled. Two
+	 * windows with unsaved work therefore show their own dialogs side by side,
+	 * each still guarding its own buffers.
+	 */
+	async function appExit() {
+		for (const other of await getAllWindows()) {
+			if (other.label !== appWindow.label) await other.close();
+		}
+		await appWindow.close();
+	}
+
+	const EDITOR_LANGUAGES: Record<string, string> = {
+		js: 'javascript',
+		jsx: 'javascript',
+		ts: 'typescript',
+		tsx: 'typescript',
+		html: 'html',
+		css: 'css',
+		json: 'json',
+		md: 'markdown',
+		markdown: 'markdown',
+		mdown: 'markdown',
+		mkd: 'markdown',
+	};
+
+	function getLanguage(path: string) {
+		if (!path) return 'markdown';
+		const ext = path.split('.').pop()?.toLowerCase() ?? '';
+		if (Object.hasOwn(EDITOR_LANGUAGES, ext)) return EDITOR_LANGUAGES[ext];
+		return 'plaintext';
+	}
+
+	/**
+	 * A tab switch must not animate. Switching to a tab in another mode changes
+	 * the values a mode toggle changes, so the outline's shadow and the toggle
+	 * button's position would transition. Add `tab-switching` (transitions off,
+	 * see styles.css), force a style recompute, remove it: the new values commit
+	 * without animating. It must happen here, before the browser recomputes
+	 * style; a `class:` directive would land a flush too late. The pane slide
+	 * skips tab switches itself.
+	 */
+	$effect(() => {
+		const _ = tabManager.activeTabId;
+		const container = untrack(() => layoutContainerEl);
+		if (container) {
+			container.classList.add('tab-switching');
+			void container.offsetHeight;
+			container.classList.remove('tab-switching');
+		}
+		showHome = false;
+		findOpen = false;
+	});
+
+	/*
+	 * A view mode switch slides its panes; `utils/paneSlide.ts` says how. The
+	 * boxes and the editor's content are read before the DOM update, the slide
+	 * starts after it. A tab switch is not a mode switch and does not slide
+	 * (see the effect above).
+	 */
+	const paneSlider = createPaneSlider();
+	let panesShown: { tabId: string | null; shown: PanesShown } | null = null;
+
+	$effect.pre(() => {
+		const now = { tabId: tabManager.activeTabId, shown: { editor: hasEditorPane, viewer: hasPreviewPane } };
+		untrack(() => {
+			const last = panesShown;
+			panesShown = now;
+			if (!last || last.tabId !== now.tabId) return paneSlider.settle();
+			const plan = planPaneSlide(last.shown, now.shown);
+			if (plan && layoutContainerEl && editorPaneEl && viewerPaneEl)
+				paneSlider.capture({ container: layoutContainerEl, editor: editorPaneEl, viewer: viewerPaneEl }, plan);
+		});
+	});
+
+	$effect(() => {
+		void isEditing;
+		void isSplit;
+		untrack(() => {
+			if (layoutContainerEl && editorPaneEl && viewerPaneEl)
+				paneSlider.play({ container: layoutContainerEl, editor: editorPaneEl, viewer: viewerPaneEl });
+		});
+	});
+
+	$effect(() => {
+		if (liveMode && currentFile) {
+			invoke('watch_file', { path: currentFile }).catch(console.error);
+		} else {
+			invoke('unwatch_file').catch(console.error);
+		}
+	});
+
+	// The preview and the export run the same filter in opposite orders, on
+	// purpose. The export sanitizes the renderer output first and processes
+	// afterwards, because the bytes it writes are read by another program and
+	// running the filter over Markpad's own generated markup would let a future
+	// tightening of the policy silently delete parts of the exported file; the
+	// exported document carries a CSP as the second line of defence.
+	//
+	// The preview has no second line: what it produces becomes nodes in the live
+	// application document, so the filter runs last — the processed HTML is
+	// cached in `tab.content` and sanitized at the sink (see the patch effect)
+	// into DOMPurify's own nodes, which `patchPreviewBlocks` moves into the
+	// article. No parse/serialize round trip happens after the sanitizer has
+	// had its say.
+	// Moving the call here instead would inject nodes the sanitizer never saw.
+	//
+	// `folds` is a parameter rather than a read of the active tab because this
+	// renders documents that are NOT on screen: a window restore renders every
+	// restored tab, a cross-window arrival renders itself, the background
+	// completion of a large file lands long after the user may have switched
+	// away, and the first-stage read in `documentSession` resolves after three
+	// awaits a switch can happen inside — the four `previewHosts` lists. Each of
+	// those must fold the document it is rendering, not whichever one happens to
+	// be active when the promise resolves.
+	async function renderMarkdownPreview(raw: string, filePath: string, folds: Set<string>) {
+		const body = getMarkdownBodyWithoutFrontMatter(raw);
+		const html = (await invoke('render_markdown', { content: body })) as string;
+		return processMarkdownHtml(html, filePath, folds);
+	}
+
+	async function renderTabPreviewFromRaw(tab: Tab) {
+		const processed = await renderMarkdownPreview(tab.rawContent, tab.path, tab.foldOverrides);
+		tabManager.updateTabContent(tab.id, processed);
+		tab.previewedRawContent = tab.rawContent;
+		// The patch effect turns the new `tab.content` into DOM and enriches what
+		// it changed, so this only has to wait for the flush. It used to call
+		// `renderRichContent()` here as well, over the whole article — a second
+		// pass that now competes with the first one for the same nodes.
+		await tick();
+	}
+
+	function frontMatterFieldId(key: string) {
+		return `frontmatter-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+	}
+
+	function frontMatterFieldStateKey(field: FrontMatterField) {
+		return `${frontMatterPanelKey}:${field.key}`;
+	}
+
+	function tagsEqual(left: string[], right: string[]) {
+		return left.length === right.length && left.every((value, index) => value === right[index]);
+	}
+
+	function focusAndSelect(node: HTMLInputElement) {
+		requestAnimationFrame(() => {
+			node.focus();
+			node.select();
+		});
+	}
+
+	function setFrontMatterCollapsed(collapsed: boolean) {
+		frontMatterCollapsedByKey[frontMatterPanelKey] = collapsed;
+	}
+
+	function clearFrontMatterEditError(field: FrontMatterField) {
+		delete frontMatterEditErrors[frontMatterFieldStateKey(field)];
+	}
+
+	// `nextValue` runs inside the try so a parse error lands on the field.
+	async function applyFrontMatter(tab: Tab, field: FrontMatterField, nextValue: () => unknown) {
+		try {
+			const nextRaw = updateFrontMatterField(tab.rawContent, field.key, nextValue());
+			tabManager.updateTabRawContent(tab.id, nextRaw);
+			clearFrontMatterEditError(field);
+			await renderTabPreviewFromRaw(tab);
+		} catch (error) {
+			frontMatterEditErrors = {
+				...frontMatterEditErrors,
+				[frontMatterFieldStateKey(field)]: String(error),
+			};
+		}
+	}
+
+	async function handleFrontMatterEdit(field: FrontMatterField, value: string) {
+		const tab = tabManager.activeTab;
+		if (!tab) return;
+		// Front matter is editable from reading mode, which a large file can
+		// reach while its buffer is still the preview slice. Rewriting that
+		// slice and saving it would drop the rest of the document.
+		if (!(await documentSession.ensureFullContent(tab.id))) {
+			addToast(t('toast.partialDocument', settings.language), 'error');
+			return;
+		}
+		await applyFrontMatter(tab, field, () => parseFrontMatterEditableValue(field, value));
+	}
+
+	function getFrontMatterTagDraft(field: FrontMatterField) {
+		return frontMatterTagDrafts[frontMatterFieldStateKey(field)] ?? '';
+	}
+
+	function setFrontMatterTagDraft(field: FrontMatterField, value: string) {
+		frontMatterTagDrafts[frontMatterFieldStateKey(field)] = value;
+		clearFrontMatterEditError(field);
+	}
+
+	function clearFrontMatterTagDraft(field: FrontMatterField) {
+		delete frontMatterTagDrafts[frontMatterFieldStateKey(field)];
+	}
+
+	function getFrontMatterTagEditIndex(field: FrontMatterField) {
+		return frontMatterTagEditIndexes[frontMatterFieldStateKey(field)] ?? null;
+	}
+
+	function getFrontMatterTagEditDraft(field: FrontMatterField, fallback: string) {
+		return frontMatterTagEditDrafts[frontMatterFieldStateKey(field)] ?? fallback;
+	}
+
+	function setFrontMatterTagEditDraft(field: FrontMatterField, value: string) {
+		frontMatterTagEditDrafts[frontMatterFieldStateKey(field)] = value;
+		clearFrontMatterEditError(field);
+	}
+
+	function startFrontMatterTagEdit(field: FrontMatterField, index: number, value: string) {
+		const key = frontMatterFieldStateKey(field);
+		frontMatterTagEditIndexes[key] = index;
+		frontMatterTagEditDrafts[key] = value;
+		clearFrontMatterEditError(field);
+	}
+
+	function clearFrontMatterTagEdit(field: FrontMatterField) {
+		const key = frontMatterFieldStateKey(field);
+		delete frontMatterTagEditIndexes[key];
+		delete frontMatterTagEditDrafts[key];
+	}
+
+	async function handleFrontMatterListChange(field: FrontMatterField, nextItems: string[]) {
+		const tab = tabManager.activeTab;
+		if (!tab) return;
+		// Same partial-buffer guard as handleFrontMatterEdit.
+		if (!(await documentSession.ensureFullContent(tab.id))) {
+			addToast(t('toast.partialDocument', settings.language), 'error');
+			return;
+		}
+		await applyFrontMatter(tab, field, () => nextItems);
+	}
+
+	async function commitFrontMatterTagAdd(field: FrontMatterField) {
+		const draft = getFrontMatterTagDraft(field);
+		if (!draft.trim()) return;
+
+		const currentItems = getFrontMatterListItems(field);
+		const nextItems = addFrontMatterListItems(currentItems, [draft]);
+		if (tagsEqual(currentItems, nextItems)) {
+			clearFrontMatterTagDraft(field);
+			return;
+		}
+
+		await handleFrontMatterListChange(field, nextItems);
+		clearFrontMatterTagDraft(field);
+	}
+
+	async function removeFrontMatterTag(field: FrontMatterField, index: number) {
+		const currentItems = getFrontMatterListItems(field);
+		const nextItems = removeFrontMatterListItem(currentItems, index);
+		if (tagsEqual(currentItems, nextItems)) return;
+
+		await handleFrontMatterListChange(field, nextItems);
+	}
+
+	async function commitFrontMatterTagEdit(field: FrontMatterField, index: number) {
+		if (getFrontMatterTagEditIndex(field) !== index) return;
+
+		const draft = getFrontMatterTagEditDraft(field, '');
+		const currentItems = getFrontMatterListItems(field);
+		const nextItems = updateFrontMatterListItem(currentItems, index, draft);
+
+		clearFrontMatterTagEdit(field);
+		if (tagsEqual(currentItems, nextItems)) return;
+
+		await handleFrontMatterListChange(field, nextItems);
+	}
+
+	function handleFrontMatterTagAddKeydown(event: KeyboardEvent, field: FrontMatterField) {
+		if (event.key === 'Enter' || event.key === ',') {
+			event.preventDefault();
+			void commitFrontMatterTagAdd(field);
+			return;
+		}
+
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			clearFrontMatterTagDraft(field);
+		}
+	}
+
+	function handleFrontMatterTagEditKeydown(event: KeyboardEvent, field: FrontMatterField, index: number) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			void commitFrontMatterTagEdit(field, index);
+			return;
+		}
+
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			clearFrontMatterTagEdit(field);
+		}
+	}
+
+	async function loadMarkdown(filePath: string, options: LoadMarkdownOptions = {}) {
+		return documentSession.loadMarkdown(filePath, options);
+	}
+
+	function currentMermaidTheme() {
+		return resolveMermaidTheme({
+			theme: settings.theme,
+			datasetThemeType: document.documentElement.dataset.themeType,
+			systemPrefersDark: window.matchMedia('(prefers-color-scheme: dark)').matches,
+		});
+	}
+
+	/**
+	 * The preview half of the shared renderer: same function the HTML export
+	 * calls, pointed at the live preview element and given the copy-to-clipboard
+	 * behaviour an exported file cannot have.
+	 *
+	 * `roots` is what the block patch just inserted. Omitting it means the whole
+	 * article, which is what a theme change (Mermaid bakes its colours into the
+	 * SVG) and the pre-export refresh need; passing it is what makes a keystroke
+	 * typeset one paragraph.
+	 */
+	async function renderRichContent(roots?: HTMLElement[]) {
+		if (!markdownBody) return;
+		const targets = roots ?? [markdownBody];
+		if (targets.length === 0) return;
+
+		await renderRichContentInto({
+			roots: targets,
+			mermaidTheme: currentMermaidTheme(),
+			onCopyCode: (code, label) => {
+				invoke('clipboard_write_text', { text: code.replace(/\n$/, '') })
+					.then(() => {
+						const originalContent = label.innerHTML;
+						label.innerHTML = 'Copied!';
+						label.classList.add('copied');
+						setTimeout(() => {
+							label.innerHTML = originalContent;
+							label.classList.remove('copied');
+						}, 1500);
+					})
+					.catch((err) => {
+						console.error('Failed to copy code:', err);
+					});
+			},
+		});
+	}
+
+	/**
+	 * How many documents the preview DOM has been given, as a number anything
+	 * downstream of the render can wait on.
+	 *
+	 * `htmlContent` looks like the same signal and is not. It says a document
+	 * has been *rendered*, and the outline used to take it as saying the article
+	 * now *holds* that document — which is true only if the patch below has
+	 * already run. On a mount it has not: Svelte runs a child component's
+	 * effects before its parent's, so `<Toc>` scanned the article in the same
+	 * flush, one step ahead of the patch that fills it, and found nothing. The
+	 * string does not change again, so nothing asked it to look twice and the
+	 * outline stayed empty until it was unmounted and remounted.
+	 *
+	 * A pinned outline is the one that never gets that remount, which is why it
+	 * was the only place the bug was visible: an overhanging floating outline
+	 * closes itself, and reopening it builds a new component against a DOM that
+	 * is by then complete.
+	 *
+	 * The counter is kept twice on purpose — `previewPatches` is the plain one
+	 * this effect increments, so the `$state` is only ever written here and
+	 * never read, and the effect cannot schedule itself.
+	 */
+	let previewRevision = $state(0);
+	let previewPatches = 0;
+
+	// 本地管线版本源注入（spec D5）。previewRevision 是"预览 DOM 收到过几份文档"的计数，
+	// 与本地 renderVersion 同构（每次 patch 自增）：runPipeline 开始时捕获一次，各版本敏感
+	// 步骤逐块比对，更新 patch 到来即在途旧渲染自取消；diagrams 的在途取消经
+	// setDiagramVersionGate 共用同一计数（注入一次，组件生命周期内有效）。
+	setPipelineVersionSource(() => previewRevision);
+	setDiagramVersionGate((v) => v !== previewRevision);
+
+	/**
+	 * The one place a rendered document becomes preview DOM: patch, then enrich
+	 * only what the patch inserted.
+	 *
+	 * Cold start: the rich-content libraries a document needs are imported by
+	 * its first enrichment, which lands after the first patch, so that one
+	 * restores the reading position again, because KaTeX and Mermaid can push
+	 * the anchor down by hundreds of pixels.
+	 */
+	$effect(() => {
+		const host = previewBlocks;
+		if (!host) {
+			// Still a read, so a document that lands before the element exists
+			// re-runs this rather than being missed.
+			void htmlContent;
+			return;
+		}
+
+		// This document is injected into the app's own document, so it runs the
+		// same policy the export runs — the one place a document is untrusted
+		// must not have its own private copy of the rules. The preview used to
+		// inline a duplicate of the URI pattern and nothing else, which left a
+		// `style` tag (on DOMPurify's default allowlist, CSS unfiltered) live
+		// inside the app's document: an author stylesheet is not scoped to the
+		// article, so it could hide the title bar and beacon out through
+		// `background-image: url(https://…)`, neither of which the app CSP blocks
+		// (`style-src 'unsafe-inline'`, `img-src … https:`). See
+		// ./utils/sanitize.ts for the policy itself, and renderMarkdownPreview
+		// for why this path sanitizes last.
+		//
+		// A host that already holds this document — a tab being re-activated —
+		// is not sanitized and diffed again: every block would compare equal.
+		// The switch did change which host is displayed, which the anchor memos
+		// read, and the patch is what would have invalidated them.
+		const unchanged = patchedHtml.get(host) === htmlContent;
+		patchedHtml.set(host, htmlContent);
+		if (unchanged) invalidateAnchorMemos();
+		const sanitized = unchanged ? null : sanitizeMarkdownFragment(htmlContent);
+		const patch = sanitized ? patchPreviewBlocks(host, sanitized) : { inserted: [] };
+		// Only the new blocks. `ResizeObserver.observe` on a target it is already
+		// watching re-registers it rather than doing nothing, and a fresh
+		// registration delivers an initial observation — so handing it the whole
+		// host would put back exactly the per-keystroke re-measure of every fold
+		// that keeping the observation alive removed.
+		for (const block of patch.inserted) foldLayout?.observe(block);
+		// A host's first enrichment is the cold start above: it waits for
+		// whichever libraries the document needs. A tab being re-activated
+		// patches to nothing, and its host is in the set from that first render.
+		const cold = patch.inserted.length > 0 && !enrichedHosts.has(host);
+		if (cold) enrichedHosts.add(host);
+		// 本地管线挂接（Task 13，spec D5/D7 骨架形态）：上游 richContent 富化完成后，
+		// 在同一 host 上串行跑本地管线（tree-sitter 高亮 → 多引擎图表 → KaTeX → 复制 →
+		// lightbox）。链在 enrichment 之后保证顺序（如 mermaid 块已被上游先消费，本地
+		// 图表步只处理上游不认识的引擎）。
+		// blocks 实参形态说明：patch.inserted 是块级宿主元素（p/pre/ul…），而管线各步骤
+		// 的 blocks 语义是叶子选择器命中集（pre code / img），直接传入会错配——故传
+		// undefined 走全根扫描（各装配步骤均有去重守卫，重复扫描幂等）。
+		// inserted→叶子的 per-block 映射、图表在 richContent diagram 判定处的分发（D12）
+		// 与复制按钮的两侧统一由 Task 14 深化。
+		// 链尾 supersede 检查：本次 run 将要发布的修订号先按普通计数器算出（上游
+		// `previewRevision = ++previewPatches;` 语句形状由 scripts/tocRenderSignal.spec.ts
+		// 守护，保持在 enrichment 启动之后原位）——链尾到达时 revision 已被更新的 patch
+		// 推进则本次管线就地退出；否则 runPipeline 内部经版本源捕获，期间到来的新 patch
+		// 仍可逐块取消本 run。
+		const revisionOfThisRun = previewPatches + 1;
+		const enrichment = renderRichContent(patch.inserted).then(() => {
+			if (previewRevision !== revisionOfThisRun) return; // 已被更新的 patch 取代
+			return runPipeline(host);
+		});
+		if (cold) restoreAfterColdEnrichment(enrichment, tabManager.activeTabId);
+		previewRevision = ++previewPatches;
+	});
+
+	/**
+	 * The hosts whose document has been through `renderRichContent` at least
+	 * once. A `WeakMap`/`WeakSet` keyed on the container for the same reason
+	 * `renderedKeys` in `blockPatch.ts` is: a host that Svelte destroys with its
+	 * tab takes its entry with it, so this cannot drift from the set of live
+	 * tabs the way a hand-kept registry can.
+	 */
+	const enrichedHosts = new WeakSet<HTMLElement>();
+	/** The `htmlContent` each host was last patched with. */
+	const patchedHtml = new WeakMap<HTMLElement, string>();
+
+	/**
+	 * Put the reader back where they were, once, after a cold start's enrichment
+	 * has changed the layout underneath them.
+	 *
+	 * Through `restorePreviewReadingPosition` — the same cascade the restore
+	 * effect runs, in the same order — because two sites consulting a tab's
+	 * three position fields in different orders are two answers for one tab.
+	 * That effect cannot do this itself: giving it a dependency on the render
+	 * would drag the preview back to the anchor on every debounced re-render
+	 * while the reader is typing in split view.
+	 *
+	 * Only for the tab that is still on screen. The enrichment is awaited, a
+	 * switch can happen inside it, and restoring another tab's position into the
+	 * article would move the document the reader is actually looking at.
+	 */
+	async function restoreAfterColdEnrichment(enrichment: Promise<void>, tabId: string | null) {
+		await enrichment;
+		await tick();
+		const body = markdownBody;
+		if (!body || !tabId || tabManager.activeTabId !== tabId) return;
+		const tab = tabManager.tabs.find((t) => t.id === tabId);
+		if (tab) restorePreviewReadingPosition(body, tab, getPreviewScrollMax(body), measurePreviewBox);
+	}
+
+	$effect(() => {
+		const host = previewBlocks;
+		if (!host || !hasPreviewPane) return;
+
+		// Keyed on the visible host only. A keystroke must not re-observe: a fresh
+		// `observe` reports at once and would re-measure every fold. The patch
+		// effect observes new blocks itself. A hidden host is not observed at all,
+		// because its boxes measure 0 (see `previewHosts`).
+		const observation = observeFoldLayout(host);
+		foldLayout = observation;
+
+		return () => {
+			observation.stop();
+			if (foldLayout === observation) foldLayout = null;
+		};
+	});
+
+	// Re-apply find highlights after a render. The patch only replaces the blocks
+	// that changed, so most highlights now survive on their own nodes — but the
+	// ones inside a replaced block do not, and without this they vanish until the
+	// user re-types in the find bar.
+	$effect(() => {
+		const _ = htmlContent;
+		if (!findOpen || !findBar) return;
+		tick().then(() => findBar?.reapply());
+	});
+
+	$effect(() => {
+		// Depend on the ID and body existence to trigger restore
+		const id = tabManager.activeTabId;
+		const body = markdownBody;
+		// ...and on WHICH DOCUMENT that tab holds. Following a link, and
+		// back/forward, keep the tab and swap the document under it, and
+		// `clearReadingPosition` puts the tab at the top of the new one. This
+		// effect is the only thing that moves the preview to a tab's recorded
+		// position, so without this dependency that reset reaches nothing: the
+		// container keeps the pixel offset the reader had in the PREVIOUS
+		// document, and the new document opens part-way down.
+		void currentFile;
+
+		if (id && body) {
+			untrack(() => {
+				const tab = tabManager.tabs.find((t) => t.id === id);
+				// The cascade itself is `restorePreviewReadingPosition` in
+				// previewAnchor.ts, next to the three measurements it runs. It is a
+				// function and not this block because the arrival of a transferred
+				// tab has to run the SAME cascade after its document lands (see
+				// `acceptTransferredTab`), and two copies consulting the same three
+				// fields in different orders would be two answers for one tab.
+				if (tab) restorePreviewReadingPosition(body, tab, getPreviewScrollMax(body), measurePreviewBox);
+			});
+		}
+	});
+
+	$effect(() => {
+		if (markdownBody && !isEditing && tabManager.activeTabId) {
+			tick().then(() => {
+				markdownBody?.focus({ preventScroll: true });
+			});
+		}
+	});
+
+	function getPreviewScrollMax(target: HTMLElement) {
+		return Math.max(0, target.scrollHeight - target.clientHeight);
+	}
+
+	function getPreviewFrontMatterScrollEnd(target: HTMLElement) {
+		const panel = target.querySelector<HTMLElement>('.frontmatter-panel');
+		if (!panel) return 0;
+
+		// In the same space as `target.scrollTop`, which is what it is compared
+		// against — see `measurePreviewBox`.
+		const box = measurePreviewBox(panel);
+		return Math.max(0, Math.min(getPreviewScrollMax(target), box.top + box.height));
+	}
+
+	// Not `element.offsetTop`: that is measured from the element's offset parent,
+	// and the preview is full of them — every `<table>` is the offset parent of
+	// its own rows and cells, and `.code-block-shell` is positioned. See
+	// `measureAnchorBox` for what reading those raw does to the mapping.
+	function measurePreviewBox(node: AnchorNode): AnchorBox {
+		if (!markdownBody) return { top: Number.NaN, height: Number.NaN };
+		return measureAnchorBox(
+			node as unknown as OffsetLayoutNode,
+			markdownBody as unknown as OffsetLayoutNode,
+		);
+	}
+
+	function getPreviewScrollSyncPosition(target: HTMLElement): ScrollSyncPosition {
+		const position = getScrollSyncPositionFromPixels(
+			target.scrollTop,
+			getPreviewScrollMax(target),
+			getPreviewFrontMatterScrollEnd(target),
+		);
+
+		// Front matter is a rendered panel with no source range, so there is no
+		// line to send and the section ratio is the only thing that can carry it.
+		// This is the carve-out `scrollSync.ts` exists for, unchanged.
+		if (position.section !== 'body') return position;
+
+		const line = lineCoords.bufferLineAtPreviewOffset(target, target.scrollTop, measurePreviewBox);
+
+		return line === null ? position : { ...position, line };
+	}
+
+	function scrollPreviewToSyncPosition(position: ScrollSyncPosition) {
+		if (!markdownBody) return;
+
+		const scrollMax = getPreviewScrollMax(markdownBody);
+		let targetScroll: number | null = null;
+
+		if (position.section === 'body' && position.line !== undefined) {
+			const offset = lineCoords.previewOffsetForBufferLine(
+				markdownBody,
+				position.line,
+				measurePreviewBox,
+			);
+			if (offset !== null) targetScroll = offset;
+		}
+
+		if (targetScroll === null) {
+			targetScroll = getScrollTopForSyncPosition(
+				position,
+				scrollMax,
+				getPreviewFrontMatterScrollEnd(markdownBody),
+			);
+		}
+
+		// The line mapping can point past either end — the last block interpolates
+		// beyond the bottom of a preview that has no room left to scroll. Clamping
+		// before the threshold check is what keeps `isProgrammaticScroll` honest:
+		// an unreachable target fires no scroll event, and the flag would then be
+		// spent swallowing the reader's next real scroll instead.
+		targetScroll = Math.max(0, Math.min(scrollMax, targetScroll));
+
+		if (Math.abs(markdownBody.scrollTop - targetScroll) <= 5) return;
+
+		isProgrammaticScroll = true;
+		markdownBody.scrollTop = targetScroll;
+	}
+
+	/**
+	 * The source line the reader is on, for the outline to follow (#169).
+	 *
+	 * BOTH panes answer here, which is the point: the outline used to decide by
+	 * rendered box, and only the preview has those. A source line is something
+	 * either pane can produce — the editor sends one on every scroll (the same
+	 * position scroll sync uses, whether or not sync is on), and the preview
+	 * already computes one for the tab's reading position. One rule then picks
+	 * the entry, so the two panes cannot disagree about which heading is
+	 * current while both are on screen.
+	 */
+	let tocActiveLine = $state<RendererLine | null>(null);
+
+	/**
+	 * The one gate on `tocActiveLine`. With `settings.tocFollows` set to
+	 * 'cursor' and a cursor the reader can see (the editor is on screen, or
+	 * `settings.previewCursor` draws one the reader placed in the preview), only
+	 * the cursor moves the outline, and scrolling either pane leaves it where it
+	 * is. Otherwise the pane that scrolled last decides. In the preview alone
+	 * with `previewCursor` off, the editor's last cursor is kept for Ctrl+E but
+	 * not followed: nothing on screen would say why the outline stopped.
+	 *
+	 * A preview that is not on screen never decides: in the editor alone it is
+	 * still mounted at zero width, and its scroll events report lines from that
+	 * layout, which put the outline on the wrong heading after Ctrl+E (#799).
+	 * Nor does a preview Ctrl+E has just brought back, until
+	 * `restoreAfterLeavingEditor` has placed it: its scroll events before that
+	 * report the first headings.
+	 */
+	function followToc(from: 'cursor' | 'editor' | 'preview', line: RendererLine) {
+		const cursorLeads = settings.tocFollows === 'cursor' && (hasEditorPane || (settings.previewCursor && activeCursor !== null));
+		const previewSettled = hasPreviewPane && !previewPlacing;
+		const accepted = from === 'cursor' ? cursorLeads : !cursorLeads && (from === 'editor' || previewSettled);
+		if (accepted) tocActiveLine = line;
+	}
+
+	/** True from Ctrl+E out of the editor until the preview is placed. */
+	let previewPlacing = false;
+
+	/**
+	 * Each tab's cursor, shared by its two panes (#799): the editor's while it
+	 * is on screen, and with `settings.previewCursor` a click in the preview
+	 * moves it too. With that setting the preview draws it, and Ctrl+E puts the
+	 * editor's cursor on it. A tab only read so far has none.
+	 */
+	let cursorByTab = $state<Record<string, { line: BufferLine; column: number }>>({});
+	let activeCursor = $derived((tabManager.activeTabId && cursorByTab[tabManager.activeTabId]) || null);
+
+	function handleEditorCursor(line: BufferLine, column: number) {
+		if (tabManager.activeTabId) cursorByTab[tabManager.activeTabId] = { line, column };
+		followToc('cursor', lineCoords.toRendererLine(line));
+	}
+
+	let bufferLines = $derived(rawContent.split('\n'));
+	const readRendererLine: SourceLineReader = (line) => bufferLines[lineCoords.toBufferLine(asRendererLine(line)) - 1];
+
+	function placePreviewCursor(e: MouseEvent) {
+		const tabId = tabManager.activeTabId;
+		if (!tabId || !previewBlocks || !settings.previewCursor || e.detail !== 1) return;
+		if (!window.getSelection()?.isCollapsed) return;
+
+		const caret = document.caretRangeFromPoint(e.clientX, e.clientY);
+		const point = caret && sourceAtPoint(previewBlocks, { node: caret.startContainer, offset: caret.startOffset }, readRendererLine);
+		if (!point) return;
+
+		const line = lineCoords.toBufferLine(point.line);
+		cursorByTab[tabId] = { line, column: point.column };
+		followToc('cursor', point.line);
+		if (isSplit) editorPane?.setCursor(line, point.column);
+	}
+
+	/** The drawn cursor, in the article's scroll content; null while it isn't shown. */
+	let previewCursorBox = $state<{ top: number; left: number; height: number } | null>(null);
+
+	/**
+	 * Bumped whenever the document on screen changes size: a rewrap when split
+	 * view narrows the pane, a fold, an image arriving. The drawn cursor is
+	 * measured in that layout, so it has to be measured again.
+	 */
+	let previewLayoutVersion = $state(0);
+
+	$effect(() => {
+		const host = previewBlocks;
+		if (!host) return;
+		const observer = new ResizeObserver(() => previewLayoutVersion++);
+		observer.observe(host);
+		return () => observer.disconnect();
+	});
+
+	$effect(() => {
+		const cursor = activeCursor;
+		const shown = settings.previewCursor && cursor !== null && hasPreviewPane;
+		void htmlContent;
+		void previewLayoutVersion;
+		if (!shown) {
+			previewCursorBox = null;
+			return;
+		}
+		tick().then(() => {
+			previewCursorBox = measurePreviewCursor(cursor);
+		});
+	});
+
+	function measurePreviewCursor(cursor: { line: BufferLine; column: number }) {
+		if (!previewBlocks || !markdownBody) return null;
+		const at = pointAtSource(previewBlocks, { line: lineCoords.toRendererLine(cursor.line), column: cursor.column }, readRendererLine);
+		if (!at) return null;
+
+		const range = document.createRange();
+		range.setStart(at.node, at.offset);
+		const rect = range.getClientRects()[0] ?? (at.node instanceof Element ? at.node : at.node.parentElement)?.getBoundingClientRect();
+		if (!rect || rect.height === 0) return null;
+
+		const body = markdownBody.getBoundingClientRect();
+		return {
+			top: rect.top - body.top + markdownBody.scrollTop,
+			left: rect.left - body.left + markdownBody.scrollLeft,
+			height: rect.height,
+		};
+	}
+
+	/**
+	 * The reader's highlights, per tab, for this session only. Each list is
+	 * tied to the source it was made on: once the text changes its points no
+	 * longer name the same words, so the list is dropped rather than drawn on
+	 * the wrong ones.
+	 */
+	let annotationsByTab = $state.raw<Record<string, { source: string; marks: Annotation[] }>>({});
+	let activeAnnotations = $derived.by(() => {
+		const entry = tabManager.activeTabId ? annotationsByTab[tabManager.activeTabId] : undefined;
+		return settings.previewAnnotations && entry && entry.source === rawContent ? entry.marks : [];
+	});
+	const canAnnotate = typeof CSS !== 'undefined' && 'highlights' in CSS;
+
+	function setAnnotations(marks: Annotation[]) {
+		const tabId = tabManager.activeTabId;
+		if (tabId) annotationsByTab = { ...annotationsByTab, [tabId]: { source: rawContent, marks } };
+	}
+
+	/** The preview selection as source points, or null when it is empty or outside the document. */
+	function selectionAnnotation(): Annotation | null {
+		const selection = window.getSelection();
+		if (!previewBlocks || !selection || selection.isCollapsed || !selection.rangeCount) return null;
+		const range = selection.getRangeAt(0);
+		return previewBlocks.contains(range.commonAncestorContainer) ? annotationOf(previewBlocks, range, readRendererLine) : null;
+	}
+
+	function annotationPointAt(e: MouseEvent) {
+		const caret = previewBlocks && document.caretRangeFromPoint(e.clientX, e.clientY);
+		return caret ? sourceAtPoint(previewBlocks!, { node: caret.startContainer, offset: caret.startOffset }, readRendererLine) : null;
+	}
+
+	/**
+	 * One Highlight per kind, kept and refilled. WebKit repaints when a
+	 * Highlight's ranges change, but not when the registry entry is swapped
+	 * for a new one: a removed highlight stayed on screen until the next click.
+	 */
+	const annotationHighlight = canAnnotate ? new Highlight() : null;
+	const occurrenceHighlight = canAnnotate ? new Highlight() : null;
+	if (annotationHighlight && occurrenceHighlight) {
+		CSS.highlights.set('markpad-annotation', annotationHighlight);
+		CSS.highlights.set('markpad-occurrence', occurrenceHighlight);
+	}
+
+	function refill(highlight: Highlight, ranges: Range[]) {
+		highlight.clear();
+		for (const range of ranges) highlight.add(range);
+	}
+
+	$effect(() => {
+		if (!annotationHighlight) return;
+		const marks = activeAnnotations;
+		const host = previewBlocks;
+		void htmlContent;
+		tick().then(() => {
+			refill(annotationHighlight, host ? marks.map((mark) => rangeOf(host, mark, readRendererLine)).filter((range) => range !== null) : []);
+		});
+	});
+
+	/** Longer selections are passages, not words to look for. */
+	const OCCURRENCE_MAX_LENGTH = 100;
+	const OCCURRENCE_LIMIT = 1000;
+
+	/** The preview selection's text when it is one to look for copies of, else null. */
+	function occurrenceText(): string | null {
+		const selection = window.getSelection();
+		if (!previewBlocks || !selection || selection.isCollapsed || !selection.rangeCount) return null;
+		if (!previewBlocks.contains(selection.getRangeAt(0).commonAncestorContainer)) return null;
+		const text = selection.toString();
+		return text.trim() !== '' && !text.includes('\n') && text.length <= OCCURRENCE_MAX_LENGTH ? text : null;
+	}
+
+	/** Every copy of `text` not already highlighted, as annotations. */
+	function occurrenceAnnotations(text: string): Annotation[] {
+		if (!previewBlocks) return [];
+		const found: Annotation[] = [];
+		for (const range of occurrenceRanges(previewBlocks, text, OCCURRENCE_LIMIT)) {
+			const mark = annotationOf(previewBlocks, range, readRendererLine);
+			if (mark && !overlapping([...activeAnnotations, ...found], mark).length) found.push(mark);
+		}
+		return found;
+	}
+
+	$effect(() => {
+		if (!occurrenceHighlight || !settings.previewOccurrences) return;
+		const update = () => {
+			const text = occurrenceText();
+			refill(occurrenceHighlight, text ? occurrenceRanges(previewBlocks!, text, OCCURRENCE_LIMIT) : []);
+		};
+		document.addEventListener('selectionchange', update);
+		return () => {
+			document.removeEventListener('selectionchange', update);
+			occurrenceHighlight.clear();
+		};
+	});
+
+	function handleEditorScrollSync(position: ScrollSyncPosition) {
+		// The line the tab would record as its reading position, not the line
+		// the viewport cuts in half: `tabAnchorForEditorTopLine` is the one
+		// crossing from a Monaco top line into the outline's numbering (it
+		// counts from the body, and sits `EDITOR_ANCHOR_LINE_OFFSET` lines
+		// down). Handing over the raw top line left the outline one entry
+		// behind whenever a heading was the first line on screen (#744).
+		if (position.line !== undefined) {
+			followToc('editor', tabAnchorForEditorTopLine(lineCoords, asBufferLine(position.line)));
+		}
+
+		if (splitScrollSyncOn()) {
+			scrollPreviewToSyncPosition(position);
+		}
+	}
+
+	/**
+	 * Scroll sync is a split-view feature, and `isScrollSynced` outlives the
+	 * split: it is the tab's remembered choice for the next one. Out of split
+	 * the other pane is still mounted at zero width, so a position mapped
+	 * through it drags the visible pane off the line Ctrl+E put it on (#799).
+	 */
+	function splitScrollSyncOn() {
+		const tab = tabManager.activeTab;
+		return !!tab?.isSplit && tab.isScrollSynced;
+	}
+
+	/**
+	 * The source line to save as this tab's reading position: the one rendered
+	 * `PREVIEW_ANCHOR_OFFSET` below the top of the viewport, which is where the
+	 * restore puts it back.
+	 *
+	 * This used to be its own scan — `querySelectorAll('[data-sourcepos]')` over
+	 * the whole preview, then `offsetTop` and `offsetHeight` on every element it
+	 * returned, on every scroll event. Two things were wrong with that beyond the
+	 * cost (8.3ms per event on a 13,000-line document, measured in Chrome). It
+	 * took the FIRST element covering the offset in document order, which is the
+	 * outermost, while the restore's `findAnchorElement` takes the narrowest — so
+	 * capture and restore disagreed about which block a position belonged to. And
+	 * it had no opinion about `<br>`, which carries a source range and no box, so
+	 * an anchor at the top of the document could resolve to one (#464).
+	 */
+	function getPreviewScrollAnchor(target: HTMLElement): RendererLine | null {
+		const line = getSourceLineAtPreviewOffset(
+			target,
+			target.scrollTop + PREVIEW_ANCHOR_OFFSET,
+			measurePreviewBox,
+		);
+
+		// Straight off `data-sourcepos`, so it is already a renderer line: the
+		// two consumers — the tab's saved reading position and the outline —
+		// both count from the first line of the body.
+		return line === null ? null : asRendererLine(Math.round(line));
+	}
+
+	function syncEditorToPreviewScroll(target: HTMLElement) {
+		if (!splitScrollSyncOn() || !editorPane) return;
+
+		const position = getPreviewScrollSyncPosition(target);
+		editorPane.syncScrollToPosition(position);
+	}
+
+	let isScrolling = $state(false);
+	let scrollIdleTimer: ReturnType<typeof setTimeout>;
+
+	function handleScroll(e: Event) {
+		const target = e.target as HTMLElement;
+
+		isAtBottom = Math.abs(target.scrollHeight - target.scrollTop - target.clientHeight) < 100;
+
+		isScrolling = true;
+		clearTimeout(scrollIdleTimer);
+		scrollIdleTimer = setTimeout(() => {
+			isScrolling = false;
+		}, 300);
+
+		if (tabManager.activeTabId) tabManager.updateTabScroll(tabManager.activeTabId, target.scrollTop);
+
+		if (isProgrammaticScroll) {
+			isProgrammaticScroll = false;
+			return;
+		}
+
+		if (tabManager.activeTabId) {
+			// Percentage fallback
+			if (target.scrollHeight > target.clientHeight) {
+				const percentage = target.scrollTop / (target.scrollHeight - target.clientHeight);
+				tabManager.updateTabScrollPercentage(tabManager.activeTabId, percentage);
+			}
+
+			// One descent, two consumers: the tab's reading position, and the
+			// outline. Both want the line at the top of the preview, and this is
+			// already the only place it is measured.
+			const anchorLine = getPreviewScrollAnchor(target);
+			if (anchorLine !== null) {
+				tabManager.updateTabAnchorLine(tabManager.activeTabId, anchorLine);
+				followToc('preview', anchorLine);
+			}
+		}
+
+		syncEditorToPreviewScroll(target);
+	}
+
+	/**
+	 * What the fold drivers in `foldState.ts` act on: the document on screen,
+	 * and the tab that document belongs to.
+	 *
+	 * The write goes to the tab the user is looking at, which is the document
+	 * the fold is a fold OF — a fold is per document (see `Tab.foldOverrides`),
+	 * and the read above is what makes a tab switch swap the whole set.
+	 */
+	const foldHost: FoldHost = {
+		// The active tab's host, not the article. `foldState` answers both of its
+		// questions with `root.querySelectorAll('[data-fold-key]')`, and the
+		// article holds a host per open tab — so from there a fold key would
+		// resolve against whichever document happened to be earlier in the DOM.
+		get root() {
+			return previewBlocks ?? null;
+		},
+		get folds() {
+			return foldOverrides;
+		},
+		setFolds(next) {
+			if (tabManager.activeTabId) tabManager.setTabFoldOverrides(tabManager.activeTabId, next);
+		},
+	};
+
+	// Looked up in the visible host, not the article. Heading ids are minted per
+	// document, so with a host per open tab the same `#id` exists once per tab
+	// that has that heading; the article would hand back whichever came first in
+	// the DOM, which is not the document on screen.
+	function findAnchorTarget(anchor: string): HTMLElement | null {
+		for (const id of anchorIdCandidates(anchor)) {
+			const el =
+				(previewBlocks?.querySelector(`[id="${CSS.escape(id)}"]`) as HTMLElement | null) ||
+				(previewBlocks?.querySelector(`[name="${CSS.escape(id)}"]`) as HTMLElement | null);
+			if (el) return el;
+		}
+		return null;
+	}
+
+	function scrollToAnchor(anchor: string, options: { pushHistory?: boolean } = {}) {
+		const el = findAnchorTarget(anchor);
+		if (el && markdownBody) {
+			if (options.pushHistory !== false) pushScrollHistory();
+			markdownBody.scrollTo({ top: anchorScrollTop(markdownBody, el), behavior: jumpBehavior });
+			return true;
+		}
+		return false;
+	}
+
+	async function scrollToAnchorWhenReady(anchor: string, options: { pushHistory?: boolean } = {}, expectedFile = currentFile) {
+		const baseAttempts = 20;
+		const maxAttempts = 60;
+		for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+			if (expectedFile && currentFile !== expectedFile) return false;
+			await tick();
+			if (scrollToAnchor(anchor, options)) return true;
+			const isFullDocumentLoading = tabManager.activeTabId ? loadingTabs.includes(tabManager.activeTabId) : false;
+			if (attempt >= baseAttempts && !isFullDocumentLoading) return false;
+			await new Promise((resolve) => setTimeout(resolve, attempt < 5 ? 50 : 250));
+		}
+		return false;
+	}
+
+	async function openRelativeMarkdownTarget(target: RelativeMarkdownTarget) {
+		const resolved = resolveMarkdownTargetPath(currentFile, target);
+		if (!resolved) return;
+		if (normalizeComparableMarkdownPath(resolved, settings.osType) === normalizeComparableMarkdownPath(currentFile, settings.osType)) {
+			if (target.hash) {
+				await scrollToAnchorWhenReady(target.hash);
+			} else if (markdownBody) {
+				pushScrollHistory();
+				markdownBody.scrollTo({ top: 0, behavior: jumpBehavior });
+			}
+			return;
+		}
+		if (tabManager.activeTabId && !(await canCloseTab(tabManager.activeTabId))) return;
+		await loadMarkdown(resolved, { navigate: true });
+		if (target.hash) {
+			await scrollToAnchorWhenReady(target.hash, { pushHistory: false }, resolved);
+		}
+	}
+
+	async function openMarkdownTargetInNewTab(target: RelativeMarkdownTarget) {
+		const resolved = resolveMarkdownTargetPath(currentFile, target);
+		if (!resolved) return;
+
+		tabManager.addTab(resolved);
+		await loadMarkdown(resolved, { skipTabManagement: true });
+		if (target.hash) {
+			await scrollToAnchorWhenReady(target.hash, { pushHistory: false }, resolved);
+		}
+	}
+
+	async function handleLinkClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+
+		// The hover preview describes the element under the cursor, and only
+		// `mouseout` takes it down. A click that replaces the document removes
+		// that element while the cursor is still on it, and removing a node
+		// dispatches no `mouseout` — so the box was left on screen until the
+		// pointer happened to cross another link. Dropping it here, before any
+		// branch, is the same thing a browser does with its own link preview:
+		// the click is the moment the description stops being about anything.
+		tooltip.show = false;
+
+		// Fold toggle: the heading's chevron, or a foldable callout's whole title
+		// bar. One branch for both, because they are one feature — the callout's
+		// own branch used to toggle the classes and stop there, so a folded
+		// callout re-opened on the next render while a folded heading did not.
+		if (toggleFoldFromClick(foldHost, target)) {
+			if (e.detail > 1) e.preventDefault(); // prevent double-click selection
+			e.stopPropagation();
+			return;
+		}
+
+		const a = target.closest('a');
+		if (a) {
+			const href = a.getAttribute('href');
+			if (href?.startsWith('#') && href.length > 1) {
+				e.preventDefault();
+				await scrollToAnchorWhenReady(href.substring(1));
+				return;
+			}
+
+			const relativeMarkdownTarget = href ? getRelativeMarkdownTarget(href) : null;
+			if (relativeMarkdownTarget) {
+				e.preventDefault();
+				e.stopPropagation();
+				// Which of the two this is depends on the setting and the chord
+				// together — the chord means "the other one". Opening a tab goes
+				// through `addTab`, which already resolves a file that is open to
+				// the tab holding it, so one gesture answers both halves of #661:
+				// a new tab, or the one that already has the file.
+				if (opensInNewTab(settings.osType, e, settings.linksOpenInNewTab)) {
+					await openMarkdownTargetInNewTab(relativeMarkdownTarget);
+				} else {
+					await openRelativeMarkdownTarget(relativeMarkdownTarget);
+				}
+				return;
+			}
+
+			// Every other link is opened by `handleDocumentClick` on `document`,
+			// and SvelteKit's router sits in between (on
+			// `document.documentElement`), claiming any same-origin href whose
+			// click nobody else has: `[a](Files/a.pdf)` became a client-side
+			// navigation to a route that does not exist, and its 404 page
+			// replaced the app — including the title bar it draws, which on
+			// Windows is the only way to close the window (#772). The router
+			// bails on `event.defaultPrevented`.
+			e.preventDefault();
+			return;
+		}
+
+        // media zoom handling → 本地 lightbox 画廊（D16；原上游 zoomData 单图形态退役）
+        const img = target.closest('img');
+        if (img) {
+            openLightboxForImage(img.src);
             return;
-          }
         }
-      }
-    }
-  }
 
-  function handleEditorScrollSync(line: number, ratio: number = 0) {
-    if (tabManager.activeTab?.isScrollSynced) {
-      scrollToLine(line, ratio);
-    }
-  }
-
-  function syncEditorToPreviewScroll(target: HTMLElement) {
-    if (!tabManager.activeTab?.isScrollSynced || !editorPane) return;
-
-    const anchorOffset = target.scrollTop + 60;
-    const viewportRatio = target.clientHeight > 0 ? Math.min(1, 60 / target.clientHeight) : 0;
-    const children = Array.from(markdownBody?.children || []);
-
-    for (const child of children) {
-      const el = child as HTMLElement;
-      if (el.offsetTop <= anchorOffset && el.offsetTop + el.offsetHeight > anchorOffset) {
-        const sourcepos = el.dataset.sourcepos;
-        if (!sourcepos) break;
-
-        const [start, end] = sourcepos.split('-');
-        const startLine = parseInt(start.split(':')[0]);
-        const endLine = parseInt(end.split(':')[0]);
-
-        if (!isNaN(startLine) && !isNaN(endLine)) {
-          const relativeOffset = anchorOffset - el.offsetTop;
-          const elementRatio = el.offsetHeight > 0 ? relativeOffset / el.offsetHeight : 0;
-          const totalLines = endLine - startLine;
-          const estimatedLine = startLine + Math.round(totalLines * elementRatio);
-
-          editorPane.syncScrollToLine(estimatedLine, viewportRatio);
-        }
-        break;
-      }
-    }
-  }
-
-  function handleScroll(e: Event) {
-    const target = e.target as HTMLElement;
-
-    // Upstream: track isAtBottom for large file loading
-    isAtBottom = Math.abs(target.scrollHeight - target.scrollTop - target.clientHeight) < 100;
-
-    // Upstream: track scrolling state for deferred operations
-    isScrolling = true;
-    clearTimeout(scrollIdleTimer);
-    scrollIdleTimer = setTimeout(() => {
-      isScrolling = false;
-    }, 300);
-
-    if (isProgrammaticScroll) {
-      isProgrammaticScroll = false;
-      if (tabManager.activeTabId) {
-        tabManager.updateTabScroll(tabManager.activeTabId, target.scrollTop);
-      }
-      return;
-    }
-
-    if (tabManager.activeTabId) {
-      // Update raw scroll pos
-      tabManager.updateTabScroll(tabManager.activeTabId, target.scrollTop);
-
-      // Percentage fallback
-      if (target.scrollHeight > target.clientHeight) {
-        const percentage = target.scrollTop / (target.scrollHeight - target.clientHeight);
-        tabManager.updateTabScrollPercentage(tabManager.activeTabId, percentage);
-      }
-
-      // Interpolated Anchor Calculation
-      const anchorOffset = target.scrollTop + 60;
-      const children = Array.from(markdownBody?.children || []);
-
-      for (const child of children) {
-        const el = child as HTMLElement;
-        // Check intersection
-        if (el.offsetTop <= anchorOffset && el.offsetTop + el.offsetHeight > anchorOffset) {
-          const sourcepos = el.dataset.sourcepos;
-          if (sourcepos) {
-            const [start, end] = sourcepos.split('-');
-            const startLine = parseInt(start.split(':')[0]);
-            const endLine = parseInt(end.split(':')[0]);
-
-            if (!isNaN(startLine) && !isNaN(endLine)) {
-              // Calculate relative position within element
-              const relativeOffset = anchorOffset - el.offsetTop;
-              const ratio = relativeOffset / el.offsetHeight;
-
-              const totalLines = endLine - startLine;
-              const estimatedLine = startLine + Math.round(totalLines * ratio);
-
-              tabManager.updateTabAnchorLine(tabManager.activeTabId, estimatedLine);
+        const mermaidDiv = target.closest('.mermaid-diagram');
+        if (mermaidDiv) {
+            const svg = mermaidDiv.querySelector('svg');
+            if (svg) {
+                // clone and strip fixed dimensions so viewBox governs scaling
+                const clone = svg.cloneNode(true) as SVGElement;
+                clone.removeAttribute('width');
+                clone.removeAttribute('height');
+                clone.style.width = '';
+                clone.style.height = '';
+                openLightboxForSvg(clone.outerHTML);
+                return;
             }
-          }
-          break;
         }
-      }
+
+		placePreviewCursor(e);
     }
 
-    syncEditorToPreviewScroll(target);
-  }
-
-  // Upstream: toggle heading fold
-  function toggleFold(key: string) {
-    const isCurrentlyCollapsed = collapsedHeaders.has(key);
-
-    if (isCurrentlyCollapsed) {
-      const next = new Set(collapsedHeaders);
-      next.delete(key);
-      collapsedHeaders = next;
-    } else {
-      collapsedHeaders = new Set([...collapsedHeaders, key]);
-    }
-
-    if (!markdownBody) return;
-
-    let h = markdownBody.querySelector(`[id="${CSS.escape(key)}"].foldable-header`) as HTMLElement | null;
-    if (!h) {
-      const allHeaders = markdownBody.querySelectorAll('.foldable-header');
-      for (const el of Array.from(allHeaders)) {
-        if ((el.textContent?.trim() || '') === key) {
-          h = el as HTMLElement;
-          break;
-        }
-      }
-    }
-    if (!h) return;
-
-    const wrapId = h.getAttribute('data-fold-target');
-    const wrapper = wrapId ? document.getElementById(wrapId) : null;
-    if (!wrapper) return;
-
-    h.classList.toggle('is-collapsed', !isCurrentlyCollapsed);
-    wrapper.classList.toggle('is-collapsed', !isCurrentlyCollapsed);
-  }
-
-  async function toggleTaskCheckbox(checkbox: HTMLInputElement) {
-    const tab = tabManager.activeTab;
-    if (!tab || !tab.path) return;
-
-    let raw: string;
-    try {
-      raw = (await invoke('read_file_content', { path: tab.path })) as string;
-    } catch (e) {
-      console.error('failed to read file for task toggle', e);
-      return;
-    }
-
-    const allBoxes = Array.from(markdownBody?.querySelectorAll('[data-task-checkbox]') || []);
-    const index = allBoxes.indexOf(checkbox);
-    if (index === -1) return;
-
-    const nowChecked = !checkbox.checked;
-
-    let count = 0;
-    const updated = raw.replace(/^(\s*[-*+] )\[( |x|X)\]/gm, (match, prefix) => {
-      if (count === index) {
-        count++;
-        return `${prefix}[${nowChecked ? 'x' : ' '}]`;
-      }
-      count++;
-      return match;
-    });
-
-    if (updated === raw) return;
-
-    try {
-      await invoke('save_file_content', { path: tab.path, content: updated });
-      tab.rawContent = updated;
-      tab.originalContent = updated;
-    } catch (e) {
-      console.error('failed to save task toggle', e);
-      return;
-    }
-
-    checkbox.checked = nowChecked;
-    const li = checkbox.closest('li');
-    if (li) {
-      li.classList.toggle('task-done', nowChecked);
-    }
-  }
-
-  function saveRecentFile(path: string) {
-    let files = [...recentFiles].filter((f) => f !== path);
-    files.unshift(path);
-    recentFiles = files.slice(0, 9);
-    localStorage.setItem('recent-files', JSON.stringify(recentFiles));
-  }
-
-  function loadRecentFiles() {
-    const stored = localStorage.getItem('recent-files');
-    if (stored) {
-      try {
-        recentFiles = JSON.parse(stored);
-      } catch (e) {
-        console.error('Error parsing recent files:', e);
-      }
-    }
-  }
-
-  function deleteRecentFile(path: string) {
-    recentFiles = recentFiles.filter((f) => f !== path);
-    localStorage.setItem('recent-files', JSON.stringify(recentFiles));
-  }
-
-  function removeRecentFile(path: string, event: MouseEvent) {
-    event.stopPropagation();
-    deleteRecentFile(path);
-    if (currentFile === path) tabManager.closeTab(tabManager.activeTabId!);
-  }
-
-  function resolvePath(basePath: string, relativePath: string) {
-    if (relativePath.match(/^[a-zA-Z]:/) || relativePath.startsWith('/')) return relativePath;
-    const parts = basePath.split(/[/\\]/);
-    parts.pop();
-    for (const p of relativePath.split(/[/\\]/)) {
-      if (p === '.') continue;
-      if (p === '..') parts.pop();
-      else parts.push(p);
-    }
-    return parts.join('/');
-  }
-
-  function isYoutubeLink(url: string) {
-    return url.includes('youtube.com/watch') || url.includes('youtu.be/');
-  }
-
-  function getYoutubeId(url: string) {
-    const match = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/);
-    return match && match[2].length === 11 ? match[2] : null;
-  }
-
-  function replaceWithYoutubeEmbed(element: Element, videoId: string) {
-    const container = element.ownerDocument.createElement('div');
-    container.className = 'video-container';
-    const iframe = element.ownerDocument.createElement('iframe');
-    iframe.src = `https://www.youtube.com/embed/${videoId}`;
-    iframe.title = 'YouTube video player';
-    iframe.frameBorder = '0';
-    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
-    iframe.allowFullscreen = true;
-    container.appendChild(iframe);
-    element.replaceWith(container);
-  }
-
-  async function canCloseTab(tabId: string): Promise<boolean> {
-    const tab = tabManager.tabs.find((t) => t.id === tabId);
-    if (!tab || (!tab.isDirty && tab.path !== '')) return true;
-
-    if (!tab.isDirty) return true;
-
-    const response = await askCustom(`You have unsaved changes in "${tab.title}". Do you want to save them before closing?`, {
-      title: 'Unsaved Changes',
-      kind: 'warning',
-      showSave: true,
-    });
-
-    if (response === 'cancel') return false;
-    if (response === 'save') {
-      return await saveContent();
-    }
-
-    return true; // discard
-  }
-
-  async function toggleEdit(autoSave = false) {
-    const tab = tabManager.activeTab;
-    if (!tab || !tab.path) return;
-
-    if (isEditing) {
-      // Switch back to view
-      if (tab.isDirty) {
-        if (autoSave) {
-          const success = await saveContent();
-          if (!success) return; // If save fails, stay in edit mode?
-        } else {
-          const response = await askCustom('You have unsaved changes. Do you want to save them before returning to view mode?', {
-            title: 'Unsaved Changes',
-            kind: 'warning',
-            showSave: true,
-          });
-
-          if (response === 'cancel') return;
-          if (response === 'save') {
-            const success = await saveContent();
-            if (!success) return;
-          }
-        }
-      }
-      tab.isEditing = false;
-      tab.isDirty = false;
-      // Refresh content (re-parse)
-      if (tab.path) await loadMarkdown(tab.path);
-    } else {
-      // Switch to edit
-      try {
-        const content = (await invoke('read_file_content', { path: tab.path })) as string;
-        tab.rawContent = content;
-        tab.isEditing = true;
-        tab.isDirty = false;
-      } catch (e) {
-        console.error('Failed to read file for editing', e);
-      }
-    }
-  }
-
-  async function saveContent(): Promise<boolean> {
-    const tab = tabManager.activeTab;
-    if (!tab || (!tab.isEditing && !tab.isSplit)) return false;
-
-    let targetPath = tab.path;
-
-    if (!targetPath) {
-      // Special handling for new (untitled) files
-      const selected = await save({
-        filters: [
-          { name: 'Markdown', extensions: ['md'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-      });
-      if (selected) {
-        targetPath = selected;
-      } else {
-        return false; // User cancelled save dialog
-      }
-    }
-
-    try {
-      await invoke('save_file_content', { path: targetPath, content: tab.rawContent });
-      if (tab.path === '') {
-        // We just saved an untitled tab for the first time
-        tabManager.updateTabPath(tab.id, targetPath);
-        saveRecentFile(targetPath);
-      }
-      tab.isDirty = false;
-      return true;
-    } catch (e) {
-      console.error('Failed to save file', e);
-      return false;
-    }
-  }
-
-  async function saveContentAs(): Promise<boolean> {
-    const tab = tabManager.activeTab;
-    if (!tab) return false;
-
-    const selected = await save({
-      filters: [
-        { name: 'Markdown', extensions: ['md'] },
-        { name: 'All Files', extensions: ['*'] },
-      ],
-      defaultPath: tab.path || undefined,
-    });
-
-    if (selected) {
-      try {
-        await invoke('save_file_content', { path: selected, content: tab.rawContent });
-        tabManager.updateTabPath(tab.id, selected);
-        saveRecentFile(selected);
-        tab.isDirty = false;
-        return true;
-      } catch (e) {
-        console.error('Failed to save file as', e);
-        return false;
-      }
-    }
-    return false;
-  }
-
-  function handleNewFile() {
-    tabManager.addNewTab();
-    showHome = false;
-  }
-
-  async function selectFile() {
-    const selected = await open({
-      multiple: false,
-      filters: [
-        { name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd'] },
-        { name: 'All Files', extensions: ['*'] },
-      ],
-    });
-    if (selected && typeof selected === 'string') loadMarkdown(selected);
-  }
-
-  function toggleHome() {
-    showHome = !showHome;
-  }
-
-  async function closeFile() {
-    if (tabManager.activeTabId) {
-      if (await canCloseTab(tabManager.activeTabId)) {
-        tabManager.closeTab(tabManager.activeTabId);
-      }
-    }
-    if (liveMode && tabManager.tabs.length === 0) invoke('unwatch_file').catch(console.error);
-  }
-
-  async function openFileLocation() {
-    if (currentFile) await invoke('open_file_folder', { path: currentFile });
-  }
-
-  async function toggleLiveMode() {
-    liveMode = !liveMode;
-    if (liveMode && currentFile) {
-      await invoke('watch_file', { path: currentFile });
-      if (tabManager.activeTabId) await loadMarkdown(currentFile);
-    } else {
-      await invoke('unwatch_file');
-    }
-  }
-
-  async function saveImageAs(src: string) {
-    let realPath = '';
-    if (src.startsWith('asset:')) {
-      try {
-        const url = new URL(src);
-        realPath = decodeURIComponent(url.pathname);
-        if (realPath.startsWith('/localhost/')) {
-          realPath = realPath.substring(11);
-        } else if (realPath.startsWith('/')) {
-          realPath = realPath.substring(1);
-        }
-      } catch (e) {
-        console.error('Failed to parse asset URL:', e);
-      }
-    } else if (src.startsWith('http')) {
-      try {
-        const response = await fetch(src);
-        const buffer = await response.arrayBuffer();
-        const dest = await save({
-          defaultPath: 'image.png',
-          filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
-        });
-        if (dest) {
-          await invoke('save_file_binary', { path: dest, data: Array.from(new Uint8Array(buffer)) });
-          addToast('Image saved successfully');
-        }
-      } catch (e) {
-        addToast('Failed to save remote image', 'error');
-      }
-      return;
-    }
-
-    if (realPath) {
-      const ext = realPath.split('.').pop() || 'png';
-      const dest = await save({
-        defaultPath: `image.${ext}`,
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] }]
-      });
-      if (dest) {
-        try {
-          await invoke('copy_file', { src: realPath, dest });
-          addToast('Image saved successfully');
-        } catch (e) {
-          addToast(`Failed to save image: ${e}`, 'error');
-        }
-      }
-    }
-  }
-
-  async function saveDiagramAs(container: HTMLElement) {
-    const svg = container.querySelector('svg')?.outerHTML;
-    if (!svg) return;
-    const dest = await save({
-      defaultPath: 'diagram.svg',
-      filters: [{ name: 'SVG Image', extensions: ['svg'] }]
-    });
-    if (dest) {
-      try {
-        await invoke('save_file_content', { path: dest, content: svg });
-        addToast('Diagram saved as SVG');
-      } catch (e) {
-        addToast(`Failed to save diagram: ${e}`, 'error');
-      }
-    }
-  }
-
-  function handleContextMenu(e: MouseEvent) {
-    if (mode !== 'app') return;
-    e.preventDefault();
-
-    const selection = window.getSelection();
-    const hasSelection = selection ? selection.toString().length > 0 : false;
-    const isInsideEditor = (e.target as HTMLElement).closest('.editor-container');
-
-    // detect heading for copy ref
-    const heading = (e.target as HTMLElement).closest('h1, h2, h3, h4, h5, h6');
-    let copyRefItem: ContextMenuItem[] = [];
-    if (heading) {
-      const text = heading.textContent?.trim() || '';
-      const tab = tabManager.activeTab;
-      const filename = tab?.path ? tab.path.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') || '' : '';
-      const ref = filename ? `[[${filename}#${text}]]` : `#${text}`;
-      copyRefItem = [
-        { label: t.copyReference, onClick: () => invoke('clipboard_write_text', { text: ref }) },
-        { separator: true },
-      ];
-    }
-
-    const img = (e.target as HTMLElement).closest('img');
-    let mediaItems: ContextMenuItem[] = [];
-    if (img) {
-      mediaItems = [
-        { label: t.saveImageAs, onClick: () => saveImageAs(img.src) },
-        { separator: true }
-      ];
-    }
-
-    const mermaidDiag = (e.target as HTMLElement).closest('.mermaid-diagram');
-    if (mermaidDiag) {
-      mediaItems = [
-        { label: t.saveDiagramAsSvg, onClick: () => saveDiagramAs(mermaidDiag as HTMLElement) },
-        { separator: true }
-      ];
-    }
-
-    docContextMenu = {
-      show: true,
-      x: e.clientX,
-      y: e.clientY,
-      items: [
-        ...copyRefItem,
-        ...mediaItems,
-        ...(isEditing && isInsideEditor
-          ? [
-              { label: t.undo, shortcut: 'Ctrl+Z', onClick: () => { import('./components/Editor.svelte').then(m => { m.undo(); m.redo; }); } },
-              { label: t.redo, shortcut: 'Ctrl+Y', onClick: () => { import('./components/Editor.svelte').then(m => { m.redo(); }); } },
-              { separator: true }
-            ]
-          : []),
-        ...(hasSelection ? [{ label: t.copy, onClick: () => {
-          const sel = window.getSelection()?.toString();
-          if (sel) invoke('clipboard_write_text', { text: sel });
-        } }] : []),
-        { label: t.selectAll, onClick: () => {
-          if (!markdownBody) return;
-          const range = document.createRange();
-          range.selectNodeContents(markdownBody);
-          const sel = window.getSelection();
-          sel?.removeAllRanges();
-          sel?.addRange(range);
-        } },
-        { separator: true },
-        { label: t.openInFolder, onClick: openFileLocation, disabled: !currentFile },
-        { label: t.editFile, onClick: () => toggleEdit() },
-        { separator: true },
-        { label: t.closeFile, onClick: closeFile },
-      ],
-    };
-  }
-
-  function handleMouseOver(event: MouseEvent) {
-    if (mode !== 'app') return;
-    let target = event.target as HTMLElement;
-    while (target && target.tagName !== 'A' && target !== document.body) target = target.parentElement as HTMLElement;
-    if (target?.tagName === 'A') {
-      const anchor = target as HTMLAnchorElement;
-      if (anchor.href) {
-        const rect = anchor.getBoundingClientRect();
-        tooltip = { show: true, text: anchor.href, x: rect.left + rect.width / 2, y: rect.top - 8 };
-      }
-    }
-  }
-
-  function handleMouseOut(event: MouseEvent) {
-    let target = event.target as HTMLElement;
-    while (target && target.tagName !== 'A' && target !== document.body) target = target.parentElement as HTMLElement;
-    if (target?.tagName === 'A') tooltip.show = false;
-  }
-
-  // Upstream: handle link/heading/callout/zoom clicks inside markdown body
-  function handleLinkClick(e: MouseEvent) {
-    const target = e.target as HTMLElement;
-
-    // task checkbox toggle in read mode
-    if (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'checkbox' && target.hasAttribute('data-task-checkbox')) {
-      e.preventDefault();
-      e.stopPropagation();
-      toggleTaskCheckbox(target as HTMLInputElement);
-      return;
-    }
-
-    // header fold toggle
-    const foldIcon = target.closest('.header-fold-icon');
-    const foldableHeader = foldIcon ? foldIcon.closest('.foldable-header') as HTMLElement : null;
-    if (foldableHeader) {
-      if (e.detail > 1) e.preventDefault(); // prevent double-click selection
-      e.stopPropagation();
-      const key = foldableHeader.id || foldableHeader.textContent?.trim() || '';
-      const wrapId = foldableHeader.getAttribute('data-fold-target');
-      const wrapper = wrapId ? document.getElementById(wrapId) : null;
-      if (wrapper) {
-        const isCollapsed = foldableHeader.classList.toggle('is-collapsed');
-        wrapper.classList.toggle('is-collapsed', isCollapsed);
-        if (isCollapsed) {
-          collapsedHeaders = new Set([...collapsedHeaders, key]);
-        } else {
-          const next = new Set(collapsedHeaders);
-          next.delete(key);
-          collapsedHeaders = next;
-        }
-      }
-      return;
-    }
-
-    // callout fold toggle
-    const calloutToggle = target.closest('.callout-toggle');
-    if (calloutToggle) {
-      if (e.detail > 1) e.preventDefault();
-      e.stopPropagation();
-      const alert = calloutToggle.closest('.callout-foldable');
-      const content = alert?.querySelector('.markdown-alert-content');
-      if (alert && content) {
-        alert.classList.toggle('is-collapsed');
-        content.classList.toggle('is-collapsed');
-      }
-      return;
-    }
-
-    // internal link navigation
-    const a = target.closest('a');
-    if (a) {
-      const href = a.getAttribute('href');
-      if (href?.startsWith('#') && href.length > 1) {
-        e.preventDefault();
-        let id = href.substring(1);
-        if (id.startsWith('^')) id = id.substring(1);
-        const el =
-          (markdownBody?.querySelector(`[id="${CSS.escape(id)}"]`) as HTMLElement | null) ||
-          (markdownBody?.querySelector(`[name="${CSS.escape(id)}"]`) as HTMLElement | null);
-        if (el && markdownBody) {
-          // Use offsetTop (layout coords, unaffected by CSS zoom)
-          const targetScrollTop = el.offsetTop - 60;
-          markdownBody.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
-        }
-      }
-    }
-
-    // media zoom handling — open lightbox on click
-    const img = target.closest('img');
-    if (img && !target.closest('.img-lightbox-btn')) {
-      const src = img.getAttribute('src');
-      if (src) {
-        // 可查看项由 pipeline/lightbox 收集（getViewableItems）；此处仅解析索引并驱动 overlay 状态
-        const items = getViewableItems();
-        const idx = items.findIndex(v => v.type === 'img' && v.src === src);
-        if (idx >= 0) {
-          viewableItems = items;
-          lightboxIndex = idx;
-        } else {
-          // Fallback: single-item lightbox
-          viewableItems = [{ type: 'img', src }];
-          lightboxIndex = 0;
-        }
-      }
-      return;
-    }
-
-    // Diagram wrappers: do NOT open lightbox on click — only hover button triggers it
-    const diagramWrapper = target.closest('.diagram-wrapper');
-    if (diagramWrapper) return;
-  }
-
-  async function handleDocumentClick(event: MouseEvent) {
-    if (mode !== 'app') return;
-    let target = event.target as HTMLElement;
-    while (target && target.tagName !== 'A' && target !== document.body) target = target.parentElement as HTMLElement;
-    if (target?.tagName === 'A') {
-      const anchor = target as HTMLAnchorElement;
-      const rawHref = anchor.getAttribute('href');
-      if (!rawHref) return;
-
-      if (rawHref.startsWith('#')) return;
-      const isMarkdown = ['.md', '.markdown', '.mdown', '.mkd'].some((ext) => {
-        const urlNoHash = rawHref.split('#')[0].split('?')[0];
-        return urlNoHash.toLowerCase().endsWith(ext);
-      });
-
-      if (isMarkdown && !rawHref.match(/^[a-z]+:\/\//i)) {
-        event.preventDefault();
-        const urlNoHash = rawHref.split('#')[0].split('?')[0];
-        const resolved = resolvePath(currentFile, urlNoHash);
-        await loadMarkdown(resolved, { navigate: true });
-        return;
-      }
-
-      if (anchor.href) {
-        event.preventDefault();
-        await openUrl(anchor.href);
-      }
-    }
-  }
-
-  let zoomLevel = $state(parseInt(localStorage.getItem('zoomLevel') || '100', 10));
-
-  $effect(() => {
-    localStorage.setItem('zoomLevel', String(zoomLevel));
-  });
-
-  function handleWheel(e: WheelEvent) {
-    if (e.ctrlKey || e.metaKey) {
-      if (e.deltaY < 0) {
-        zoomLevel = Math.min(zoomLevel + 10, 500);
-      } else {
-        zoomLevel = Math.max(zoomLevel - 10, 25);
-      }
-    }
-  }
-
-  let debounceTimer: number;
-
-  $effect(() => {
-    const tab = tabManager.activeTab;
-    if (tab && tab.isSplit && tab.rawContent !== undefined) {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        invoke('render_markdown', { content: tab.rawContent })
-          .then((res) => {
-            const response = res as MarkdownResponse;
-            const processed = processMarkdownHtml(response.html, tab.path);
-            tabManager.updateTabContent(tab.id, processed);
-            metadata = response.metadata;
-            tick().then(renderRichContent);
-          })
-          .catch(console.error);
-      }, 300);
-    }
-  });
-
-  async function toggleSplitView(tabId: string) {
-    const tab = tabManager.tabs.find((t) => t.id === tabId);
-    if (!tab) return;
-
-    if (!tab.isSplit) {
-      if (!tab.isEditing && !tab.rawContent && tab.path) {
-        try {
-          const content = (await invoke('read_file_content', { path: tab.path })) as string;
-          tab.rawContent = content;
-          tab.originalContent = content;
-        } catch (e) {
-          console.error('Failed to load raw content for split view', e);
-        }
-      }
-      tabManager.setSplitEnabled(tab.id, true);
-      if (liveMode) toggleLiveMode();
-    } else {
-      tab.isSplit = false;
-    }
-  }
-
-  function handleKeyDown(e: KeyboardEvent) {
-    if (mode !== 'app') return;
-
-    const cmdOrCtrl = e.ctrlKey || e.metaKey;
-    const key = e.key.toLowerCase();
-    const code = e.code;
-
-    const isSplit = tabManager.activeTab?.isSplit;
-
-    if (cmdOrCtrl && key === 'w') {
-      e.preventDefault();
-      closeFile();
-    }
-    if (cmdOrCtrl && !e.shiftKey && key === 't') {
-      e.preventDefault();
-      tabManager.addHomeTab();
-    }
-    if (cmdOrCtrl && key === 'h') {
-      e.preventDefault();
-      if (tabManager.activeTabId) toggleSplitView(tabManager.activeTabId);
-    }
-    if (cmdOrCtrl && key === 'e') {
-      e.preventDefault();
-      if (!isSplit) toggleEdit(true);
-    }
-    if (cmdOrCtrl && key === 's') {
-      if (isEditing || isSplit) {
-        e.preventDefault();
-        saveContent();
-      }
-    }
-
-    if (cmdOrCtrl && e.shiftKey && key === 't') {
-      e.preventDefault();
-      handleUndoCloseTab();
-    }
-    if (cmdOrCtrl && code === 'Tab') {
-      e.preventDefault();
-      tabManager.cycleTab(e.shiftKey ? 'prev' : 'next');
-    }
-    if (cmdOrCtrl && (key === '=' || key === '+')) {
-      e.preventDefault();
-      zoomLevel = Math.min(zoomLevel + 10, 500);
-    }
-    if (cmdOrCtrl && key === '-') {
-      e.preventDefault();
-      zoomLevel = Math.max(zoomLevel - 10, 25);
-    }
-    if (cmdOrCtrl && key === '0') {
-      e.preventDefault();
-      zoomLevel = 100;
-    }
-    if (cmdOrCtrl && key === 'q') {
-      e.preventDefault();
-      appExit();
-    }
-  }
-
-  function handleMouseUp(e: MouseEvent) {
-    if (e.button === 3) {
-      // Back: try scroll history first, then tab navigation
-      e.preventDefault();
-      if (scrollHistory.length > 0 && markdownBody) {
-        scrollFuture.push(markdownBody.scrollTop);
-        const pos = scrollHistory.pop()!;
-        markdownBody.scrollTo({ top: pos, behavior: 'smooth' });
-      } else if (tabManager.activeTabId) {
-        const path = tabManager.goBack(tabManager.activeTabId);
-        if (path) loadMarkdown(path, { skipTabManagement: true });
-      }
-    } else if (e.button === 4) {
-      // Forward: try scroll future first, then tab navigation
-      e.preventDefault();
-      if (scrollFuture.length > 0 && markdownBody) {
-        scrollHistory.push(markdownBody.scrollTop);
-        const pos = scrollFuture.pop()!;
-        markdownBody.scrollTo({ top: pos, behavior: 'smooth' });
-      } else if (tabManager.activeTabId) {
-        const path = tabManager.goForward(tabManager.activeTabId);
-        if (path) loadMarkdown(path, { skipTabManagement: true });
-      }
-    }
-  }
-
-  async function handleUndoCloseTab() {
-    const path = tabManager.popRecentlyClosed();
-    if (path) {
-      await loadMarkdown(path);
-    }
-  }
-
-  async function handleDetach(tabId: string) {
-    if (!(await canCloseTab(tabId))) return;
-    const tab = tabManager.tabs.find((t) => t.id === tabId);
-    if (!tab || !tab.path) return;
-
-    const path = tab.path;
-    tabManager.closeTab(tabId);
-
-    const label = 'window-' + Date.now();
-    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-    const webview = new WebviewWindow(label, {
-      url: 'index.html?file=' + encodeURIComponent(path),
-      title: 'Markpad - ' + path.split(/[/\\]/).pop(),
-      width: 1000,
-      height: 800,
-    });
-  }
-
-  function startDrag(e: MouseEvent, tabId: string | null) {
-    if (!tabId) return;
-    e.preventDefault();
-    const startX = e.clientX;
-    const tab = tabManager.tabs.find((t) => t.id === tabId);
-    if (!tab) return;
-
-    const startRatio = tab.splitRatio ?? 0.5;
-    const containerWidth = window.innerWidth;
-
-    const onMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const deltaRatio = deltaX / containerWidth;
-      tabManager.setSplitRatio(tabId, startRatio + deltaRatio);
-    };
-
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      document.body.style.cursor = '';
-    };
-
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    document.body.style.cursor = 'col-resize';
-  }
-
-  function getSplitTransition(node: Element, { isEditing, side }: { isEditing: boolean; side: 'left' | 'right' }) {
-    let shouldAnimate = false;
-    let x = 0;
-
-    if (side === 'left') {
-      if (!isEditing) {
-        shouldAnimate = true;
-        x = -50;
-      }
-    } else {
-      if (isEditing) {
-        shouldAnimate = true;
-        x = 50;
-      }
-    }
-
-    if (shouldAnimate) {
-      return fly(node, { x, duration: 250 });
-    }
-    return { duration: 0 };
-  }
-
-  onMount(() => {
-    loadRecentFiles();
-
-    window.addEventListener('error', (event) => {
-      console.error('[Global Error]', event.error);
-    });
-
-    window.addEventListener('unhandledrejection', (event) => {
-      console.error('[Unhandled Promise Rejection]', event.reason);
-    });
-
-    // @ts-ignore
-    Promise.all([import('highlight.js'), import('katex'), import('katex/dist/contrib/auto-render'), ensureMermaidInitialized()]).then(
-      ([hljsModule, katexModule, autoRenderModule]) => {
-        hljs = hljsModule.default;
-        katex = katexModule.default;
-        renderMathInElement = autoRenderModule.default;
-        mermaid = getMermaid(); // mermaid 单实例来自 pipeline/diagrams（spec D12）；赋值 $state 以触发首次渲染
-
-        // Initialize tree-sitter supported languages
-        initTreeSitterLanguages();
-      },
-    );
-
-    let unlisteners: (() => void)[] = [];
-
-    invoke('show_window').catch(console.error);
-
-    const init = async () => {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      const appWindow = getCurrentWindow();
-      const appMode = (await invoke('get_app_mode')) as any;
-
-      const urlParams = new URLSearchParams(window.location.search);
-      const fileParam = urlParams.get('file');
-      if (fileParam) {
-        const decodedPath = decodeURIComponent(fileParam);
-        await loadMarkdown(decodedPath);
-      }
-
-      unlisteners.push(
-        await appWindow.onFocusChanged(({ payload: focused }) => {
-          isFocused = focused;
-        }),
-      );
-      unlisteners.push(
-        await listen('file-changed', () => {
-          if (liveMode && currentFile) loadMarkdown(currentFile);
-        }),
-      );
-
-      unlisteners.push(
-        await listen('file-path', (event) => {
-          const filePath = event.payload as string;
-          if (filePath) loadMarkdown(filePath);
-        }),
-      );
-      unlisteners.push(
-        await listen('menu-close-file', () => {
-          closeFile();
-        }),
-      );
-      unlisteners.push(
-        await listen('menu-edit-file', () => {
-          toggleEdit();
-        }),
-      );
-      unlisteners.push(
-        await listen('menu-tab-rename', async (event) => {
-          const tabId = event.payload as string;
-          const tab = tabManager.tabs.find((t) => t.id === tabId);
-          if (!tab || !tab.path) return;
-
-          const newName = window.prompt('Rename file:', tab.title);
-          if (newName && newName !== tab.title) {
-            const oldPath = tab.path;
-            const newPath = oldPath.replace(/[/\\][^/\\]+$/, (m) => m.charAt(0) + newName);
-            try {
-              await invoke('rename_file', { oldPath, newPath });
-              tabManager.renameTab(tabId, newPath);
-              // Update recent files if needed
-              recentFiles = recentFiles.map((f) => (f === oldPath ? newPath : f));
-              localStorage.setItem('recent-files', JSON.stringify(recentFiles));
-            } catch (e) {
-              console.error('Failed to rename file', e);
-              await askCustom(`Failed to rename file: ${e}`, { title: 'Error', kind: 'error' });
-            }
-          }
-        }),
-      );
-      unlisteners.push(
-        await listen('menu-tab-new', () => {
-          tabManager.addNewTab();
-        }),
-      );
-      unlisteners.push(
-        await listen('menu-tab-undo', () => {
-          console.log('Received menu-tab-undo event');
-          handleUndoCloseTab();
-        }),
-      );
-      unlisteners.push(
-        await listen('menu-tab-close', async (event) => {
-          const tabId = event.payload as string;
-          if (await canCloseTab(tabId)) {
-            tabManager.closeTab(tabId);
-          }
-        }),
-      );
-      unlisteners.push(
-        await listen('menu-tab-close-others', (event) => {
-          const tabId = event.payload as string;
-          const tabsToClose = tabManager.tabs.filter((t) => t.id !== tabId).map((t) => t.id);
-          tabsToClose.forEach((id) => tabManager.closeTab(id));
-        }),
-      );
-      unlisteners.push(
-        await listen('menu-tab-close-right', (event) => {
-          const tabId = event.payload as string;
-          const index = tabManager.tabs.findIndex((t) => t.id === tabId);
-          if (index !== -1) {
-            const tabsToClose = tabManager.tabs.slice(index + 1).map((t) => t.id);
-            tabsToClose.forEach((id) => tabManager.closeTab(id));
-          }
-        }),
-      );
-      unlisteners.push(
-        await appWindow.onCloseRequested(async (event) => {
-          if (isForceExiting) return;
-          const dirtyTabs = tabManager.tabs.filter((t) => t.isDirty);
-          if (dirtyTabs.length > 0) {
-            console.log('Preventing default close');
-            event.preventDefault();
-            const response = await askCustom(`You have ${dirtyTabs.length} unsaved file(s). Do you want to save your changes?`, {
-              title: 'Unsaved Changes',
-              kind: 'warning',
-              showSave: true,
-            });
-
-            if (response === 'save') {
-              // Attempt to save all dirty tabs
-              for (const tab of dirtyTabs) {
-                tabManager.setActive(tab.id);
-                await tick();
-                const saved = await saveContent();
-                if (!saved) return; // Cancelled or failed
-              }
-              // If all saved successfully, close the app
-              appWindow.close();
-            } else if (response === 'discard') {
-              // Force close by removing this listener or skipping check?
-              // Since we are inside the event handler, we can't easily remove "this" listener specifically
-              // without refactoring how unlisteners are stored/accessed relative to this callback.
-              // However, if we just want to exit, we can use exit() from rust or just appWindow.destroy()?
-              // WebviewWindow.close() triggers this event again.
-              // Solution: invoke a command to exit forcefully or set a flag.
-              // The simplest might be to just clear the dirty flags and close.
-              tabManager.tabs.forEach((t) => (t.isDirty = false));
-              appWindow.close();
-            }
-          }
-        }),
-      );
-
-      unlisteners.push(
-        await appWindow.onDragDropEvent((event) => {
-          if (isEditing) {
-            isDragging = false;
-            dragTarget = null;
-            return;
-          }
-
-          if (event.payload.type === 'enter' || event.payload.type === 'over') {
-            isDragging = true;
-            const { position } = event.payload;
-            const x = position?.x ?? 0;
-            const y = position?.y ?? 0;
-
-            if (viewerPaneEl) {
-              const vRect = viewerPaneEl.getBoundingClientRect();
-              if (x >= vRect.left && x <= vRect.right && y >= vRect.top && y <= vRect.bottom) {
-                dragTarget = 'preview';
-              } else {
-                dragTarget = null;
-              }
-            }
-          } else if (event.payload.type === 'drop') {
-            isDragging = false;
-            dragTarget = null;
-            event.payload.paths.forEach((path) => {
-              const ext = path.split('.').pop()?.toLowerCase();
-              if (ext && ['md', 'markdown', 'txt'].includes(ext)) {
-                loadMarkdown(path);
-              }
-            });
-          } else {
-            isDragging = false;
-            dragTarget = null;
-          }
-        }),
-      );
-
-      try {
-        const args: string[] = await invoke('send_markdown_path');
-        if (args?.length > 0) {
-          await loadMarkdown(args[0]);
-        }
-      } catch (error) {
-        console.error('Error receiving Markdown file path:', error);
-      }
-
-      mode = appMode;
-    };
-
-    init();
-
-    return () => {
-      unlisteners.forEach((u) => u());
-    };
-  });
+	async function handleTaskCheckboxChange(event: Event) {
+		const checkbox = event.target as HTMLInputElement;
+		if (checkbox.tagName !== 'INPUT' || checkbox.type !== 'checkbox' || !checkbox.hasAttribute('data-task-checkbox')) return;
+
+		const nowChecked = checkbox.checked;
+		if (!(await toggleTaskCheckbox(checkbox, nowChecked))) {
+			checkbox.checked = !nowChecked;
+		}
+	}
+
+	async function toggleTaskCheckbox(checkbox: HTMLInputElement, nowChecked: boolean): Promise<boolean> {
+		const sourcePosition = checkbox.closest('li')?.getAttribute('data-sourcepos');
+		const sourceLine = Number(sourcePosition?.match(/^(\d+):/)?.[1]);
+		if (!Number.isInteger(sourceLine) || sourceLine < 1) return false;
+		if (!(await documentSession.toggleTaskCheckbox(sourceLine, nowChecked))) return false;
+		const li = checkbox.closest('li');
+		if (li) {
+			li.classList.toggle('task-done', nowChecked);
+		}
+		return true;
+	}
+
+
+
+	/*
+	 * All three mutations go through `updateStoredRecentFiles`, which re-reads
+	 * the stored list first. Writing `JSON.stringify(recentFiles)` from this
+	 * window's copy published a snapshot from whenever this window last looked,
+	 * so with two windows open the later write erased the other's entries.
+	 */
+	function saveRecentFile(path: string) {
+		recentFiles = updateStoredRecentFiles((current) => promoteRecentFile(current, path));
+	}
+
+	function loadRecentFiles() {
+		recentFiles = readStoredRecentFiles();
+	}
+
+	function deleteRecentFile(path: string) {
+		recentFiles = updateStoredRecentFiles((current) => dropRecentFile(current, path));
+	}
+
+	/*
+	 * localStorage fires `storage` in every *other* same-origin document, so
+	 * this is how a window learns that a sibling opened or removed a file. Home
+	 * screens in other windows used to keep showing a stale list until restart,
+	 * and — worse — that stale list was what their next write published.
+	 */
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		const onStorage = (event: StorageEvent) => {
+			if (isRecentFilesStorageEvent(event)) recentFiles = readStoredRecentFiles();
+		};
+		window.addEventListener('storage', onStorage);
+		return () => window.removeEventListener('storage', onStorage);
+	});
+
+	function removeRecentFile(path: string, event: MouseEvent) {
+		event.stopPropagation();
+		deleteRecentFile(path);
+		if (currentFile === path) tabManager.closeTab(tabManager.activeTabId!);
+	}
+
+	async function canCloseTab(tabId: string): Promise<boolean> {
+		return documentSession.canCloseTab(tabId);
+	}
+
+	/**
+	 * The last auto-save a tab gets before it stops being auto-saveable.
+	 *
+	 * Shared by the two ways out of an editable pane (leaving edit mode,
+	 * closing split view). It is NOT a condition of the switch: the view
+	 * changes whether or not the write succeeds, and nothing here asks the
+	 * user anything. The only reason it exists is that the background debounce
+	 * requires `isEditing || isSplit` (see the auto-save effect), so the tab is
+	 * about to lose its scheduled writer while still dirty — a user who asked
+	 * for "save automatically" would otherwise be left with edits that no timer
+	 * is going to flush.
+	 *
+	 * Untitled tabs are excluded on purpose: `saveContent` would open the Save
+	 * dialog for them, which is exactly the forced save decision this stopped
+	 * making.
+	 */
+	async function flushBeforeLeavingEditableMode(tab: Tab) {
+		if (!tab.isDirty || tab.path === '') return;
+		// Auto-save off means edits are kept until the user saves them, so
+		// leaving the pane must not write either — the close dialog asks.
+		if (!settings.autoSave) return;
+
+		const success = await saveSilently(tab.id);
+		if (!success) {
+			// Refused because the file changed underneath: the edit stays in
+			// the buffer and the conflict bar is already asking about it.
+			if (externalChangeConflicts[tab.id]) return;
+			// Reported, not obeyed. A file that cannot be written — read-only
+			// path, a buffer the lossy-decode guard refuses — used to trap the
+			// user in the editor with no way to look at their own text.
+			addToast(t('toast.autoSaveFailed', settings.language), 'error');
+			return;
+		}
+		if (tab.isDirty) {
+			// TOCTOU: the user typed during the await, so the file is one
+			// revision behind and the debounce is about to be dropped. The
+			// preview shows those newest edits, so nothing is lost or wrong on
+			// screen; the disk is what the user should hear about.
+			addToast(t('toast.savedNewerEdits', settings.language), 'info');
+		}
+	}
+
+	/**
+	 * Reading mode's HTML, rendered from the tab's own buffer and its own path.
+	 * Writes through the tab id, so a tab switch during the render cannot land
+	 * one document's HTML on another — and, unlike the `loadMarkdown` call this
+	 * replaces, it neither activates the tab nor re-reads the file.
+	 */
+	async function renderPreviewLeavingEditableMode(tab: Tab) {
+		try {
+			await renderTabPreviewFromRaw(tab);
+		} catch (e) {
+			console.error('Failed to render markdown', e);
+		}
+	}
+
+	/**
+	 * Move the active tab between reading and editing. Just the mode — where
+	 * the reader LANDS is `editSourceRange`'s business, and `toggleEditView`
+	 * is what decides which of the two a ⌘E means.
+	 */
+	async function toggleEdit() {
+		const tab = tabManager.activeTab;
+		if (!tab) return;
+
+		if (isEditing) {
+			// Back to reading. The preview renders the buffer, not the file, so no
+			// save is needed (#168). The tab stays dirty, and closing it or the
+			// window (`settleForExit`) still asks.
+			await flushBeforeLeavingEditableMode(tab);
+			// Ctrl+E lands on the line the other pane was showing, mapped the way
+			// split view maps it (#799).
+			const position = editorPane?.scrollSyncPosition() ?? null;
+			previewPlacing = position !== null;
+			tab.isEditing = false;
+			await renderPreviewLeavingEditableMode(tab);
+			if (position) void restoreAfterLeavingEditor(tab.id, position);
+		} else {
+			// Switch to edit
+			const position = markdownBody ? getPreviewScrollSyncPosition(markdownBody) : null;
+			if (tab.path !== '') {
+				if (tab.isDirty) {
+					// Unsaved edits are already in memory (made in reading
+					// mode, or kept when leaving the editor with auto-save
+					// off). Reading from disk would overwrite them, so only
+					// switch.
+					tab.isEditing = true;
+				} else {
+					try {
+						// This buffer is about to be handed to the editor, and
+						// the editor arms auto-save. The checked command is what
+						// says whether the decode was lossy, so the tab carries
+						// its own verdict instead of relying on the one
+						// `loadMarkdown` left behind — a file can be converted
+						// to UTF-8 (or away from it) between the two reads.
+						const [content, lossy, encoding] = (await invoke('read_file_content_checked', { path: tab.path })) as [string, boolean, string];
+						tabManager.setTabDecodedLossy(tab.id, lossy);
+						tabManager.setTabEncoding(tab.id, encoding);
+						// Goes through the store so a tab that held only the
+						// large-file preview slice stops being flagged partial.
+						tabManager.setTabRawContent(tab.id, content);
+						tab.isEditing = true;
+					} catch (e) {
+						console.error('Failed to read file for editing', e);
+					}
+				}
+			} else {
+				tab.isEditing = true;
+			}
+			if (position && tab.isEditing) {
+				await tick();
+				editorPane?.syncScrollToPosition(position, { cursorIntoView: settings.tocFollows === 'cursor' });
+			}
+		}
+	}
+
+	/**
+	 * The preview half of #799. The restore effect cannot do it: the article
+	 * stays mounted at zero width in edit mode, so nothing it depends on changes
+	 * with the mode. The pane takes its real width in the same frame (its slide
+	 * is a `transform`, see `utils/paneSlide.ts`), so the line is placed right
+	 * after the render, before the old position is ever painted.
+	 */
+	async function restoreAfterLeavingEditor(tabId: string, position: ScrollSyncPosition) {
+		await tick();
+		previewPlacing = false;
+		const body = markdownBody;
+		if (!body || tabManager.activeTab?.id !== tabId || tabManager.activeTab.isEditing) return;
+		scrollPreviewToSyncPosition(position);
+		// That scroll is marked programmatic, so the tab's anchor and the
+		// outline's current entry are written here.
+		const anchorLine = getPreviewScrollAnchor(body);
+		if (anchorLine !== null) {
+			tabManager.updateTabAnchorLine(tabId, anchorLine);
+			followToc('preview', anchorLine);
+		}
+	}
+
+	/**
+	 * A jump the editor has not been asked for yet, because it does not exist
+	 * yet: `toggleEdit` only flips a flag, and the `Editor` it mounts — and the
+	 * `editorPane` binding that reaches it — arrive on the next render. The
+	 * effect below spends it the moment they do, and immediately when the
+	 * editor is already on screen (split view).
+	 */
+	let pendingEditReveal = $state<BufferLineRange | null>(null);
+
+	$effect(() => {
+		const range = pendingEditReveal;
+		if (!range || !editorPane) return;
+
+		pendingEditReveal = null;
+		editorPane.revealSourceRange(range.startLine, range.endLine);
+	});
+
+	/**
+	 * Which source lines the reader means by right-clicking here (#90).
+	 *
+	 * The selection when there is one, so a range spanning several blocks opens
+	 * the editor on all of them; a caret or a click with nothing selected falls
+	 * through to whatever is under the pointer, which is how a click on an
+	 * image lands on the image.
+	 *
+	 * `null` when nothing under the pointer came from the document: the front
+	 * matter panel, the outline, the window chrome. The caller then leaves the
+	 * "Edit" entry doing exactly what it did before.
+	 */
+	function getContextMenuSourceRange(e: MouseEvent): LineRange | null {
+		return getSelectionSourceRange() ?? findSourceLineRange(e.target as Node | null);
+	}
+
+	/**
+	 * The source lines the reader has selected in the preview, or null when
+	 * nothing is selected or the selection came from outside the document.
+	 *
+	 * Both ends resolve independently and are merged, so a selection spanning
+	 * several blocks answers with all of them, and one end landing somewhere
+	 * with no range (the front matter panel, the outline) leaves the other end
+	 * in charge. Direction-independent: `startContainer` is the range's start,
+	 * not the point the drag began at.
+	 */
+	function getSelectionSourceRange(): LineRange | null {
+		const selection = window.getSelection();
+		if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+		return mergeSourceLineRanges(
+			findSourceLineRange(selection.getRangeAt(0).startContainer),
+			findSourceLineRange(selection.getRangeAt(selection.rangeCount - 1).endContainer),
+		);
+	}
+
+	/**
+	 * What ⌘E means, from every entry point that offers it — the hotkey, the
+	 * toolbar, the title bar, and Monaco's own command.
+	 *
+	 * One function so the chord cannot mean two things depending on where the
+	 * caret happens to be (`formatShortcutKeymap.test.ts` holds the two layers
+	 * together), and so "take me to the editor" behaves the same whether the
+	 * reader asked for it with a key or with a menu item.
+	 */
+	async function toggleEditView() {
+		const selected = getSelectionSourceRange();
+
+		if (!hasPreviewPane) {
+			// The editor is already the whole window: nowhere further to take
+			// the reader, so this is the toggle back out.
+			await toggleEdit();
+			return;
+		}
+
+		if (isSplit && !selected) {
+			// Deliberately nothing.
+			//
+			// What ⌘E is asked for is the ability to edit, and split view
+			// already grants it — the editor is on screen. With no selection
+			// there is no fragment to travel to either, so every remaining
+			// reading of the chord is a LAYOUT change nobody asked for: closing
+			// the preview on a mistyped ⌘E costs the reader the pane and a
+			// second keystroke to get it back, while doing nothing costs
+			// nothing. ⌘\ opens and closes the split, and stays the only way.
+			return;
+		}
+
+		// Reading, or split with a selection: same as the context menu's "Edit".
+		await editSourceRange(selected);
+	}
+
+	/**
+	 * Open the editor on `range`. Toggles into edit mode when `isEditing` is
+	 * false, including split view entered from reading mode.
+	 */
+	async function editSourceRange(range: LineRange | null) {
+		if (!isEditing) await toggleEdit();
+		// `toggleEdit` swallows a failed read and stays in reading mode. Arming
+		// the jump anyway would fire it at whatever document is edited next.
+		if (range && tabManager.activeTab?.isEditing) pendingEditReveal = lineCoords.toBufferRange(range);
+	}
+
+	/**
+	 * This document's two line numberings, and the only thing that converts
+	 * between them.
+	 *
+	 * `data-sourcepos` counts from the first line of the BODY, because that is
+	 * what `renderMarkdownPreview` hands comrak — front matter is stripped
+	 * first. The editor holds the whole file. The shift between the two used to
+	 * be spelled out by hand at each of the five places they meet, and a place
+	 * that forgot it landed every jump that many lines early — which the outline
+	 * did for as long as it existed. `lineCoordinates.ts` owns the shift now,
+	 * and the two numberings are different TYPES, so a crossing that forgets to
+	 * convert no longer compiles.
+	 *
+	 * Derived from `rawContent`, which is the buffer: measuring the render would
+	 * answer 0 forever, since the render is what the front matter was stripped
+	 * out of.
+	 */
+	let lineCoords = $derived(lineCoordinates(rawContent));
+
+	async function saveContent(tabId?: string): Promise<boolean> {
+		const id = tabId ?? tabManager.activeTabId ?? '';
+		// Only the saves the user asked for come here — Cmd+S, the menu and
+		// title bar Save. Saves nobody asked for go through `saveSilently`.
+		// So a save that lands here IS the answer "keep my version": it both
+		// authorises the write the session would otherwise refuse, and leaves
+		// the bar with nothing to ask.
+		//
+		// Without the first half the bar became a trap: the disk really has
+		// changed, so the guard in `saveContent` refuses, so the bar goes back
+		// up, and Cmd+S can never get the user out of it.
+		if (externalChangeConflicts[id]) documentSession.allowOverwriteOnce(id);
+		return saveSilently(id);
+	}
+
+	/**
+	 * A save nobody asked for: the debounce, leaving an editable pane, the
+	 * exit's auto-save. It never authorises overwriting a changed file, so on
+	 * a conflicted tab the session's guard refuses it and the bar stays up.
+	 */
+	async function saveSilently(tabId: string): Promise<boolean> {
+		const saved = await documentSession.saveContent(tabId);
+		if (saved) clearExternalChangeConflict(tabId);
+		return saved;
+	}
+
+	async function saveContentAs(): Promise<boolean> {
+		return documentSession.saveContentAs();
+	}
+
+	// --- External change conflicts ---
+	// A file changed on disk while the tab holding it had unsaved edits. The
+	// reload is NOT performed: `setTabRawContent` replaces originalContent
+	// too, so an automatic reload would erase the edits and the fact that
+	// there were any. The tab is flagged instead and the user picks.
+	let externalChangeConflicts = $state<Record<string, true>>({});
+	let activeExternalChangeConflict = $derived(
+		tabManager.activeTabId ? externalChangeConflicts[tabManager.activeTabId] === true : false,
+	);
+
+	function noteExternalChangeConflict(tabId: string) {
+		externalChangeConflicts[tabId] = true;
+	}
+
+	function clearExternalChangeConflict(tabId: string) {
+		delete externalChangeConflicts[tabId];
+	}
+
+	/** "Reload": the user chose the disk version over their own edits. */
+	async function resolveExternalChangeByReloading() {
+		const tab = tabManager.activeTab;
+		if (!tab?.path) return;
+		comparison = null;
+		clearExternalChangeConflict(tab.id);
+		await loadMarkdown(tab.path, {
+			preserveEditState: true,
+			skipTabManagement: true,
+			resetScrollHistory: true,
+			// The user answered "the file changed under your edits" with the
+			// disk version. Every other caller of loadMarkdown is an OPEN and
+			// must leave an edited buffer alone; this one is the revert, and
+			// says so rather than leaving the session to infer it.
+			discardUnsavedBuffer: true,
+		});
+	}
+
+	/**
+	 * The two versions the conflict bar is asking about, once the user has
+	 * asked to see them.
+	 *
+	 * Read on demand rather than kept alongside the flag: the bar can stand for
+	 * a while, and what matters is what the file says when the question is
+	 * actually being answered, not what it said when it was raised.
+	 */
+	let comparison = $state<{ onDisk: string; mine: string; language: string } | null>(null);
+
+	/** "Compare": show what Reload would replace, before it is irreversible. */
+	async function compareExternalChange() {
+		const tab = tabManager.activeTab;
+		if (!tab?.path) return;
+		try {
+			const [onDisk] = (await invoke('read_file_content_checked', { path: tab.path })) as [string, boolean, string];
+			comparison = {
+				onDisk,
+				mine: tab.rawContent,
+				language: getLanguage(tab.path),
+			};
+		} catch (error) {
+			console.error('Failed to read the file for comparison', error);
+			addToast(`${t('externalChange.compare', settings.language)}: ${String(error)}`, 'error');
+		}
+	}
+
+	/** "Keep my version": dismiss. The buffer stays dirty and saveable. */
+	function resolveExternalChangeByKeepingBuffer() {
+		const id = tabManager.activeTabId;
+		if (!id) return;
+		// The answer is about a write, not about a bar: the next save has to be
+		// allowed past the guard that would otherwise refuse to overwrite the
+		// changed file. One save only — a third program writing a minute later
+		// is a new question, and the user has not answered that one.
+		documentSession.allowOverwriteOnce(id);
+		comparison = null;
+		clearExternalChangeConflict(id);
+	}
+
+	/**
+	 * Auto-save effect.
+	 *
+	 * Watches every tab in the tab manager. For each tab that is dirty, has a
+	 * non-empty path (untitled files require an explicit Save dialog), and is
+	 * currently editable (edit-mode or split-mode), arms a per-tab debounce
+	 * timer that calls saveSilently(tabId) when the typing pause exceeds
+	 * AUTO_SAVE_DEBOUNCE_MS.
+	 *
+	 * Per-tab timers (instead of a single timer keyed off the active tab) mean
+	 * a dirty background tab can still be flushed without the user revisiting
+	 * it — typical scenario when you switch tabs mid-edit.
+	 *
+	 * If `settings.autoSave` flips to false at runtime, all pending timers are
+	 * cancelled and a manual Cmd+S becomes the only path again.
+	 */
+	$effect(() => {
+		// With auto-save off, only Cmd+S and the close dialog save, so drop
+		// every armed timer.
+		if (!settings.autoSave) {
+			untrack(() => {
+				for (const t of autoSaveTimers.values()) clearTimeout(t);
+				autoSaveTimers.clear();
+				lastContentRefByTab.clear();
+			});
+			return;
+		}
+
+		// Reactive reads — every keystroke flows through updateTabRawContent,
+		// which assigns a new immutable string to `tab.rawContent`. Capturing
+		// the reference here triggers re-runs on any edit (including
+		// same-length ones like overwrite or formatting toggles).
+		const snapshot = tabManager.tabs.map((tab) => ({
+			id: tab.id,
+			path: tab.path,
+			isDirty: tab.isDirty,
+			editable: tab.isEditing || tab.isSplit,
+			contentRef: tab.rawContent,
+			// Reactive too: clearing a conflict re-arms the timer on the next
+			// keystroke, so answering the bar resumes normal auto-save.
+			hasPendingConflict: externalChangeConflicts[tab.id] === true,
+			// Reactive as well, and that is the point: "Save As" to a new file
+			// clears the flag, so the tab becomes eligible again on the next
+			// pass without anything having to remember to re-arm it.
+			decodedLossily: tab.hasReplacementChars,
+		}));
+
+		untrack(() => {
+			const seenIds = new Set<string>();
+			for (const s of snapshot) {
+				seenIds.add(s.id);
+				// A tab with an unanswered external-change conflict is NOT
+				// eligible: the debounce would fire while the bar is still
+				// asking "reload or keep mine", write the buffer, and destroy
+				// the disk version the question was about — leaving the user to
+				// answer a question whose "reload" branch no longer exists.
+				// Only this background timer is held back. Cmd+S and the close
+				// dialog's Save still write, because that answer means "keep
+				// mine".
+				// A tab whose buffer was decoded lossily is dropped once the
+				// guard has refused it and said why. The first attempt is what
+				// produces that explanation, so it is deliberately allowed
+				// through; re-arming after it would only reach the same refusal
+				// every 1.5s for as long as the user keeps typing.
+				const eligible = s.isDirty && s.path !== '' && s.editable && !s.hasPendingConflict
+					&& !(s.decodedLossily && documentSession.isLossySaveRefused(s.id));
+				const prevRef = lastContentRefByTab.get(s.id);
+				const refChanged = prevRef !== s.contentRef;
+
+				if (!eligible) {
+					// Tab is no longer dirty / editable / has a path — drop
+					// any pending timer and forget its tick.
+					const existing = autoSaveTimers.get(s.id);
+					if (existing) {
+						clearTimeout(existing);
+						autoSaveTimers.delete(s.id);
+					}
+					lastContentRefByTab.delete(s.id);
+					continue;
+				}
+
+				if (!refChanged && autoSaveTimers.has(s.id)) {
+					// Eligible but no new edit AND a timer is already armed —
+					// leave it alone so background tabs don't get their
+					// debounce reset by foreground typing.
+					continue;
+				}
+
+				// Either content changed, or the tab just became eligible
+				// (e.g. user pressed Save As). (Re)arm the debounce.
+				const existing = autoSaveTimers.get(s.id);
+				if (existing) clearTimeout(existing);
+				lastContentRefByTab.set(s.id, s.contentRef);
+				const timer = setTimeout(() => {
+					autoSaveTimers.delete(s.id);
+					// `saveSilently` resolves false on failure instead of
+					// rejecting, so failures are surfaced here.
+					saveSilently(s.id).then(
+						(ok) => {
+							if (!ok) {
+								console.error('Auto-save failed for tab', s.id);
+								// A refusal already explained itself, naming the
+								// file and the way out. "Auto-save failed" on top
+								// of that says nothing new.
+								if (documentSession.isLossySaveRefused(s.id)) return;
+								// Same reasoning for the other refusal: the disk
+								// moved under the write, and the conflict bar is
+								// already on screen saying so and offering both
+								// ways out.
+								if (externalChangeConflicts[s.id]) return;
+								addToast(
+									t('toast.autoSaveFailed', settings.language),
+									'error',
+								);
+							}
+						},
+						(e) => {
+							console.error('Auto-save threw for tab', s.id, e);
+							addToast(
+								t('toast.autoSaveFailed', settings.language),
+								'error',
+							);
+						},
+					);
+				}, AUTO_SAVE_DEBOUNCE_MS);
+				autoSaveTimers.set(s.id, timer);
+			}
+			// Tabs that were closed: drop their timers and tick records.
+			for (const id of [...autoSaveTimers.keys()]) {
+				if (!seenIds.has(id)) {
+					clearTimeout(autoSaveTimers.get(id)!);
+					autoSaveTimers.delete(id);
+				}
+			}
+			for (const id of [...lastContentRefByTab.keys()]) {
+				if (!seenIds.has(id)) lastContentRefByTab.delete(id);
+			}
+		});
+	});
+
+	// 上游 exportAsHtml/exportAsPdf（utils/export 通路）随 D6 退役：本地 src/lib/export.ts
+	// 是唯一导出入口（handleExport → ExportModal），上游导出快捷键改为打开 ExportModal。
+	// 上游 #print-root 印刷根保留（printRootEl 绑定仍在，inert 标记，Task 14 评估去留）。
+
+	function handleNewFile() {
+		tabManager.addNewTab();
+		showHome = false;
+	}
+
+	async function selectFile() {
+		const selected = await open({
+			multiple: true,
+			filters: [
+				// The one list every other part of the app already treats as a
+				// Markpad document — including `.txt`, which loads, renders and
+				// saves like any other note (#535). Hardcoding a shorter list here
+				// only hid those files behind "All Files".
+				{ name: 'Markdown', extensions: MARKDOWN_LINK_EXTENSIONS },
+				{ name: 'All Files', extensions: ['*'] },
+			],
+		});
+		if (!selected) return;
+		const paths = Array.isArray(selected) ? selected : [selected];
+		for (const path of paths) await loadMarkdown(path);
+	}
+
+	async function reloadFromDisk() {
+		const activeId = tabManager.activeTabId;
+		const tab = tabManager.activeTab;
+		if (!activeId || !tab?.path) return;
+		if (!(await canCloseTab(activeId))) return;
+
+		await loadMarkdown(tab.path, {
+			preserveEditState: true,
+			skipTabManagement: true,
+			resetScrollHistory: true,
+			// canCloseTab has already resolved the buffer, so normally there is
+			// nothing left to discard — but the user can type during that await,
+			// and a reload that silently did nothing would be worse than one
+			// that does what its menu item says.
+			discardUnsavedBuffer: true,
+		});
+		addToast(t('toast.reloadedFromDisk', settings.language), 'info');
+	}
+
+	function toggleHome() {
+		showHome = !showHome;
+	}
+
+	async function closeFile() {
+		if (!tabManager.activeTabId) {
+			await destroyWindowAfterTabsClosed();
+			return;
+		}
+
+		await closeTabAndWindowIfLast(tabManager.activeTabId);
+	}
+
+	async function closeTabAndWindowIfLast(tabId: string) {
+		if (!(await canCloseTab(tabId))) return;
+
+		if (tabManager.tabs.length === 1) await savePinnedTagIfNeeded();
+		tabManager.closeTab(tabId);
+		if (tabManager.tabs.length > 0) return;
+
+		if (liveMode) invoke('unwatch_file').catch(console.error);
+		// Off, the empty window stays and renders Home.
+		if (settings.closeWindowWithLastTab) await destroyWindowAfterTabsClosed();
+	}
+
+	async function closeTabsWithConfirmation(tabIds: string[]) {
+		for (const tabId of tabIds) {
+			if (!(await canCloseTab(tabId))) return;
+			tabManager.closeTab(tabId);
+		}
+	}
+
+	/**
+	 * Close the tag's files and leave an empty window on Home. The pin is saved
+	 * first, so a pinned tag keeps its files and can be reopened from Home or
+	 * the app menu. A dirty tab the user keeps open keeps the tag too.
+	 */
+	async function closeWindowTag() {
+		await savePinnedTagIfNeeded();
+		await closeTabsWithConfirmation(tabManager.tabs.map((tab) => tab.id));
+		if (tabManager.tabs.length === 0) tabManager.setWindowTag(null);
+	}
+
+	async function destroyWindowAfterTabsClosed() {
+		if (settings.restoreStateOnReopen) {
+			await persistWindowState();
+		}
+
+		await appWindow.destroy();
+	}
+
+	async function openFileLocation() {
+		if (currentFile) await invoke('open_file_folder', { path: currentFile });
+	}
+
+	function toggleLiveMode() {
+		liveMode = !liveMode;
+	}
+
+	/**
+	 * `img.src` is an asset URL, a remote URL or a `data:` URL.
+	 * `normalizeAssetPath` recognises both asset URL forms (Windows
+	 * `http://asset.localhost/…`, others `asset://localhost/…`) and rejects
+	 * lookalike hosts (#363).
+	 */
+	async function saveImageAs(src: string) {
+		const realPath = normalizeAssetPath(src) ?? '';
+
+		if (!realPath) {
+			// The webview cannot fetch the bytes of a remote image at all: the
+			// app's CSP is `connect-src 'self'`, so a cross-origin `fetch` is
+			// refused before it leaves the page. (`img-src ... https:` is a
+			// different directive; it only governs what an `<img>` may
+			// display.) The download has to happen in Rust, and there is no
+			// command for it yet, so say that rather than reporting a network
+			// failure that never happened.
+			addToast(t('toast.remoteImageNotSupported', settings.language), 'error');
+			return;
+		}
+
+		const ext = realPath.split('.').pop() || 'png';
+		const dest = await save({
+			defaultPath: `image.${ext}`,
+			filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] }]
+		});
+		if (dest) {
+			try {
+				await invoke('copy_file', { src: realPath, dest });
+				addToast(t('toast.imageSavedSuccessfully', settings.language));
+			} catch (e) {
+				addToast(`${t('toast.failedToSaveImage', settings.language)}: ${e}`, 'error');
+			}
+		}
+	}
+
+	async function saveDiagramAs(container: HTMLElement) {
+		const svg = container.querySelector('svg')?.outerHTML;
+		if (!svg) return;
+		const dest = await save({ 
+			defaultPath: 'diagram.svg',
+			filters: [{ name: 'SVG Image', extensions: ['svg'] }]
+		});
+		if (dest) {
+			try {
+				await invoke('save_file_content', { path: dest, content: svg, encoding: 'UTF-8' });
+				addToast(t('toast.diagramSavedAsSVG', settings.language));
+			} catch (e) {
+				addToast(`${t('toast.failedToSaveDiagram', settings.language)}: ${e}`, 'error');
+			}
+		}
+	}
+
+	/**
+	 * Cut, Copy and Paste for the editor pane.
+	 *
+	 * Markpad draws this rather than letting Monaco draw its own, because
+	 * Monaco's Paste reads the clipboard through the webview and cannot work
+	 * here (#207) — see `contextmenu: false` in Editor.svelte for the whole of
+	 * that reasoning. Each item runs the same function its keyboard shortcut
+	 * runs, so there is one implementation per operation rather than one per
+	 * entry point.
+	 *
+	 * Cut and Copy are always enabled: with nothing selected they take the
+	 * current line, which is what ⌘X and ⌘C already do here.
+	 */
+	function showEditorContextMenu(e: MouseEvent) {
+		if (!editorPane) return;
+		e.preventDefault();
+
+		// Chords only for the two items people learn the shortcut from.
+		const chord = (c: string) => formatChord(c, modifierFor(settings.osType));
+
+		docContextMenu = {
+			show: true,
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{ label: t('menu.cut', settings.language), onClick: () => editorPane?.cutToClipboard() },
+				{ label: t('menu.copy', settings.language), onClick: () => editorPane?.copyToClipboard() },
+				{ label: t('menu.paste', settings.language), onClick: () => editorPane?.pasteFromClipboard() },
+				{ separator: true },
+				// Monaco's other items need a language provider Markdown lacks.
+				{
+					label: t('menu.commandPalette', settings.language),
+					shortcut: 'F1',
+					onClick: () => editorPane?.runEditorAction('editor.action.quickCommand'),
+				},
+				{
+					label: t('menu.changeAllOccurrences', settings.language),
+					shortcut: chord('Mod+F2'),
+					onClick: () => editorPane?.runEditorAction('editor.action.changeAll'),
+				},
+			],
+		};
+	}
+
+	/**
+	 * The preview's copy: plain text plus HTML, from `copyableFlavours`.
+	 * Cancelling the native copy stops WebKit from also writing a WebArchive,
+	 * which measured 19 MB under `tauri dev` (#549). Text fields and Monaco's
+	 * hidden textarea are skipped: `getSelection()` cannot read their
+	 * selection, so cancelling there would copy an empty string.
+	 */
+	function handleCopy(e: ClipboardEvent) {
+		const active = document.activeElement;
+		if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+		const selection = window.getSelection();
+		if (!selection || selection.isCollapsed || !selection.rangeCount || !e.clipboardData) return;
+		// Rendered content keeps its formatting when copied (#674), as in a
+		// browser or VS Code's Markdown preview.
+		const { text, html } = copyableFlavours(selection, currentFile);
+		e.clipboardData.setData('text/plain', text);
+		e.clipboardData.setData('text/html', html);
+		e.preventDefault();
+	}
+
+	function handleContextMenu(e: MouseEvent) {
+		if (modalState.show) return;
+		if (mode !== 'app') return;
+		// The editor gets its own menu, and this branch has to come first:
+		// Monaco takes input through a hidden `<textarea>`, so the text-field
+		// carve-out below would otherwise claim every right-click in it.
+		if ((e.target as HTMLElement).closest('.editor-container')) {
+			showEditorContextMenu(e);
+			return;
+		}
+		// Text fields keep the webview's own editing menu (Cut/Copy/Paste);
+		// the document menu below is about the rendered preview and has no
+		// edit items, so swallowing the native one leaves no way to paste.
+		if ((e.target as HTMLElement).closest('input, textarea, [contenteditable="true"]')) return;
+		e.preventDefault();
+
+		const selection = window.getSelection();
+		const hasSelection = selection ? selection.toString().length > 0 : false;
+		const link = (e.target as HTMLElement).closest('a') as HTMLAnchorElement | null;
+		const linkTarget = link ? getRelativeMarkdownTarget(link.getAttribute('href') || '') : null;
+		const linkItems: ContextMenuItem[] =
+			linkTarget && resolveMarkdownTargetPath(currentFile, linkTarget)
+				? [
+						{ label: t('menu.openInNewTab', settings.language), onClick: () => openMarkdownTargetInNewTab(linkTarget) },
+						{ separator: true },
+					]
+				: [];
+
+		const heading = (e.target as HTMLElement).closest('h1, h2, h3, h4, h5, h6');
+		let copyRefItem: any[] = [];
+		if (heading) {
+			const text = heading.textContent?.trim() || '';
+			// The rendered id, straight off the element: comrak wrote it, and
+			// the outline reads it the same way — it can be on an anchor comrak
+			// nests inside the heading rather than on the heading itself.
+			const slug = heading.id || heading.querySelector('a.anchor')?.id || '';
+			copyRefItem = [
+				{ label: t('menu.copyReference', settings.language), onClick: () => copyHeadingReference(text, slug) },
+				{ separator: true },
+			];
+		}
+
+		const img = (e.target as HTMLElement).closest('img');
+		let mediaItems: any[] = [];
+		if (img) {
+			mediaItems = [
+				{ label: t('menu.saveImageAs', settings.language), onClick: () => saveImageAs(img.src) },
+				{ separator: true }
+			];
+		}
+
+		// Resolved now rather than inside the "Edit" handler: by the time that
+		// runs the reader has clicked a menu item, and a click is how a
+		// selection goes away.
+		const editSourceTarget = getContextMenuSourceRange(e);
+
+		// Read now for the same reason: the click on the item clears the selection.
+		const selected = canAnnotate && settings.previewAnnotations ? selectionAnnotation() : null;
+		const selectedText = selected ? occurrenceText() : null;
+		const hit = !canAnnotate || !settings.previewAnnotations ? [] : selected ? overlapping(activeAnnotations, selected) : (() => {
+			const at = annotationPointAt(e);
+			return at ? hitAt(activeAnnotations, at) : [];
+		})();
+		// The highlights reading the same as the one clicked, when there is more than it.
+		const textOf = (mark: Annotation) => (previewBlocks && rangeOf(previewBlocks, mark, readRendererLine)?.toString()) ?? null;
+		const hitText = hit.length === 1 ? textOf(hit[0]) : null;
+		const sameText = hitText ? activeAnnotations.filter((mark) => textOf(mark) === hitText) : [];
+		const annotationItems: ContextMenuItem[] = hit.length
+			? [{ label: t('menu.removeTemporaryHighlight', settings.language), onClick: () => {
+				setAnnotations(activeAnnotations.filter((mark) => !hit.includes(mark)));
+				window.getSelection()?.removeAllRanges();
+			} }, ...(sameText.length > 1 ? [{ label: t('menu.removeTemporaryHighlightAll', settings.language), onClick: () => {
+				setAnnotations(activeAnnotations.filter((mark) => !sameText.includes(mark)));
+				window.getSelection()?.removeAllRanges();
+			} }] : [])]
+			: selected
+				? [{ label: t('menu.temporaryHighlight', settings.language), onClick: () => {
+					setAnnotations([...activeAnnotations, selected]);
+					window.getSelection()?.removeAllRanges();
+				} }, ...(selectedText ? [{ label: t('menu.temporaryHighlightAll', settings.language), onClick: () => {
+					setAnnotations([...activeAnnotations, ...occurrenceAnnotations(selectedText)]);
+					window.getSelection()?.removeAllRanges();
+				} }] : [])]
+				: [];
+
+		const mermaidDiag = (e.target as HTMLElement).closest('.mermaid-diagram');
+		if (mermaidDiag) {
+			mediaItems = [
+				{ label: t('menu.saveDiagramAsSvg', settings.language), onClick: () => saveDiagramAs(mermaidDiag as HTMLElement) },
+				{ separator: true }
+			];
+		}
+
+		docContextMenu = {
+			show: true,
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				...linkItems,
+				...copyRefItem,
+				...mediaItems,
+				...(hasSelection ? [{ label: t('menu.copy', settings.language), onClick: () => {
+					const selection = window.getSelection()?.toString();
+					if (selection) invoke('clipboard_write_text', { text: selection });
+				} }] : []),
+				...annotationItems,
+				{ label: t('menu.selectAll', settings.language), onClick: () => {
+					// The document on screen. Selecting the article would select
+					// every open tab's text, including the hosts that are hidden.
+					if (!previewBlocks) return;
+					const range = document.createRange();
+					range.selectNodeContents(previewBlocks);
+					const selection = window.getSelection();
+					selection?.removeAllRanges();
+					selection?.addRange(range);
+				} },
+				{ separator: true },
+				{ label: t('menu.openLocation', settings.language), onClick: openFileLocation, disabled: !currentFile },
+				{ label: t('menu.edit', settings.language), onClick: () => editSourceRange(editSourceTarget) },
+				{ separator: true },
+				{ label: t('menu.closeFile', settings.language), onClick: closeFile },
+			],
+		};
+	}
+
+	// HTML links only: an SVG `<a>` (inside a diagram) is not handled.
+	function linkAt(target: EventTarget | null): HTMLAnchorElement | null {
+		const link = target instanceof Element ? target.closest('a') : null;
+		return link instanceof HTMLAnchorElement ? link : null;
+	}
+
+	function handleMouseOver(event: MouseEvent) {
+		if (mode !== 'app') return;
+		const anchor = linkAt(event.target);
+		if (anchor) {
+			const rawHref = anchor.getAttribute('href') || '';
+
+			// tooltip for same-page anchor links: show text of target header
+			if (rawHref.startsWith('#')) {
+				const el = findAnchorTarget(rawHref.substring(1));
+				if (el) {
+					// Use data-label if it's a block anchor, otherwise use textContent
+					let text = el.getAttribute('data-label') || el.textContent || '';
+					text = text.replace(/↩.*$/, '').trim(); // remove backrefs if any
+					if (text) {
+						const rect = anchor.getBoundingClientRect();
+						tooltip = { show: true, text, shortcut: '', html: '', isFootnote: false, x: rect.left + rect.width / 2, y: rect.top - 8, align: 'top' };
+						return;
+					}
+				}
+				return;
+			}
+
+			// footnote references: show footnote content instead of URL
+			if (anchor.hasAttribute('data-footnote-ref') || anchor.closest('[data-footnote-ref]') || rawHref.match(/#fn-|#fnref-|#user-content-fn/)) {
+				const fnId = rawHref.replace(/^#/, '');
+				const fnLi = previewBlocks?.querySelector(`#${CSS.escape(fnId)}`) ||
+				              previewBlocks?.querySelector(`li#${CSS.escape(fnId)}`);
+				if (fnLi) {
+					// clone to remove backref arrow from tooltip
+					const clone = fnLi.cloneNode(true) as HTMLElement;
+					const backrefs = clone.querySelectorAll('.footnote-backref, a[href^="#fnref-"]');
+					backrefs.forEach(b => b.remove());
+					
+					let fnHtml = clone.innerHTML.trim();
+					if (fnHtml) {
+						const rect = anchor.getBoundingClientRect();
+						tooltip = { show: true, text: '', shortcut: '', html: fnHtml, isFootnote: true, x: rect.left + rect.width / 2, y: rect.top - 8, align: 'top' };
+						return;
+					}
+				}
+			}
+
+			// The raw href. The DOM-resolved one starts with `tauri://localhost`.
+			if (rawHref) {
+				const rect = anchor.getBoundingClientRect();
+				tooltip = { show: true, text: rawHref, shortcut: '', html: '', isFootnote: false, x: rect.left + rect.width / 2, y: rect.top - 8, align: 'top' };
+			}
+		}
+	}
+
+	function handleMouseOut(event: MouseEvent) {
+		if (linkAt(event.target)) tooltip.show = false;
+	}
+
+	async function handleDocumentClick(event: MouseEvent) {
+		if (mode !== 'app') return;
+		const anchor = linkAt(event.target);
+		if (anchor) {
+			const rawHref = anchor.getAttribute('href');
+			if (!rawHref) return;
+
+			if (rawHref.startsWith('#')) return;
+
+			const relativeMarkdownTarget = getRelativeMarkdownTarget(rawHref);
+			if (relativeMarkdownTarget) {
+				event.preventDefault();
+				await openRelativeMarkdownTarget(relativeMarkdownTarget);
+				return;
+			}
+
+			// A link to a local non-markdown file (`[data](./data.csv)`) is a
+			// path, and `anchor.href` is not: the DOM resolved it against the
+			// webview origin. Hand the OS the resolved disk path instead.
+			const localFilePath = resolveLocalFileLinkPath(rawHref, currentFile);
+			if (localFilePath) {
+				event.preventDefault();
+				try {
+					// The OS default handler runs a program (`./setup.command`,
+					// `Calculator.app`, `x.exe`) rather than showing it, so one
+					// click on a document's link would launch it. Reveal it instead.
+					if (await invoke<boolean>('is_launchable_path', { path: localFilePath })) {
+						await invoke('open_file_folder', { path: localFilePath });
+						addToast(
+							t('toast.launchableLinkRevealed', settings.language).replace('{{target}}', localFilePath),
+							'info',
+						);
+						return;
+					}
+					await openPath(localFilePath);
+				} catch (error) {
+					console.error('Failed to open local file link', localFilePath, error);
+					addToast(
+						t('toast.openFailed', settings.language).replace('{{target}}', localFilePath),
+						'error',
+					);
+				}
+				return;
+			}
+
+			if (anchor.href) {
+				event.preventDefault();
+				// `openUrl` rejects anything outside the opener plugin's scope
+				// (`mailto:`, `tel:`, `http://*`, `https://*`). Without this the
+				// rejection was unhandled: the click did nothing, said nothing,
+				// and left an uncaught promise rejection behind.
+				try {
+					await openUrl(anchor.href);
+				} catch (error) {
+					console.error('Failed to open link', anchor.href, error);
+					addToast(t('toast.openFailed', settings.language).replace('{{target}}', rawHref), 'error');
+				}
+			}
+		}
+	}
+
+	function handleWheel(e: WheelEvent) {
+		if (e.ctrlKey || e.metaKey) {
+			settings.zoomBy(wheelZoomFactor(e.deltaY));
+		}
+	}
+
+	let previewRenderRevision = 0;
+
+	$effect(() => {
+		const tab = tabManager.activeTab;
+		const renderRevision = ++previewRenderRevision;
+		if (tab && (tab.isSplit || (isEditing && settings.showToc)) && tab.rawContent !== undefined) {
+			const tabId = tab.id;
+			const rawContent = tab.rawContent;
+			if (tab.previewedRawContent === rawContent) return;
+
+			// 120ms: above the gap between keys in a fast burst (60-80ms), so a
+			// word costs one render, and below the pause before a reader looks at
+			// the preview.
+			const timer = setTimeout(() => {
+				renderMarkdownPreview(rawContent, tab.path, tab.foldOverrides)
+					.then((processed) => {
+						const currentTab = tabManager.activeTab;
+						if (
+							previewRenderRevision !== renderRevision ||
+							tabManager.activeTabId !== tabId ||
+							currentTab?.rawContent !== rawContent
+						) return;
+						tabManager.updateTabContent(tabId, processed);
+						currentTab.previewedRawContent = rawContent;
+						// No `tick().then(renderRichContent)`: the new content is a
+						// dependency of the patch effect, which patches the blocks
+						// that changed and enriches exactly those. Calling it from
+						// here as well would re-run the whole document — the work
+						// this path exists to stop doing.
+					})
+					.catch(console.error);
+			}, 120);
+
+			return () => clearTimeout(timer);
+		}
+	});
+
+	async function toggleSplitView(tabId: string) {
+		const tab = tabManager.tabs.find((t) => t.id === tabId);
+		if (!tab) return;
+
+		if (!tab.isSplit) {
+			// Split view is an editor, and its first keystroke arms auto-save.
+			// The buffer must be complete first (not empty, not a large file's
+			// partial read), or auto-save writes a truncated file.
+			if (tab.path && !tab.isEditing && !tab.rawContent) {
+				try {
+					// Checked, like every other read that fills an editable
+					// buffer: split view is an editor, so this tab must carry
+					// the fidelity of its own decode rather than inherit one.
+					const [content, lossy, encoding] = (await invoke('read_file_content_checked', { path: tab.path })) as [string, boolean, string];
+					tabManager.setTabDecodedLossy(tab.id, lossy);
+					tabManager.setTabEncoding(tab.id, encoding);
+					tabManager.setTabRawContent(tab.id, content);
+				} catch (e) {
+					console.error('Failed to load raw content for split view', e);
+				}
+			}
+			if (!(await documentSession.ensureFullContent(tab.id))) {
+				addToast(t('toast.partialDocument', settings.language), 'error');
+				return;
+			}
+			tabManager.setSplitEnabled(tab.id, true);
+		} else {
+			// Like leaving edit mode: the surviving pane renders the buffer, so
+			// nothing is saved or asked.
+			await flushBeforeLeavingEditableMode(tab);
+			tabManager.setSplitEnabled(tab.id, false);
+			await renderPreviewLeavingEditableMode(tab);
+		}
+	}
+
+	/** The title bar's three mode buttons (#806): go straight to one, from any. */
+	async function setViewMode(target: ViewMode) {
+		const tab = tabManager.activeTab;
+		if (!tab || viewModeOf(tab) === target) return;
+		if (target === 'split') return toggleSplitView(tab.id);
+		if (!tab.isSplit) return target === 'edit' ? toggleEditView() : toggleEdit();
+		// Leaving split: the editor is already on screen and holds the full
+		// buffer, so Edit only drops the preview. Preview goes through the
+		// normal close, which flushes and renders.
+		if (target === 'edit') {
+			tab.isEditing = true;
+			tabManager.setSplitEnabled(tab.id, false);
+			return;
+		}
+		tab.isEditing = false;
+		await toggleSplitView(tab.id);
+	}
+
+	/*
+	 * `viewerKeymap.ts` decides which command a keystroke means. This maps each
+	 * command to the function that runs it. Every command is preventDefaulted
+	 * here. An unbound chord, macOS ⌘Q, or Mod+F inside Monaco comes back null
+	 * and is not prevented.
+	 */
+	function keyContext(): KeyContext {
+		const active = document.activeElement as Node | null;
+		return {
+			mode,
+			osType: settings.osType,
+			isSplit: !!tabManager.activeTab?.isSplit,
+			overlayOpen: showSettings || modalState.show || promptModal.show || showHome,
+			dialogOpen: modalState.show || promptModal.show,
+			isEditing,
+			editorHasFocus: !!editorPaneEl && !!active && editorPaneEl.contains(active),
+		};
+	}
+
+	function runViewerCommand(command: ViewerCommand) {
+		switch (command) {
+			case 'preview-width-narrower':
+			case 'preview-width-wider':
+				settings.previewFullWidth = false;
+				settings.previewMaxWidth = adjustPreviewMaxWidth(
+					settings.previewMaxWidth,
+					command === 'preview-width-narrower' ? -40 : 40,
+				);
+				return;
+			case 'reload-from-disk':
+				return void reloadFromDisk();
+			case 'move-tab-to-next-window':
+				return void carryActiveTabToNextWindow();
+			case 'close-file':
+				return void closeFile();
+			case 'new-file':
+				return void handleNewFile();
+			case 'open-file':
+				return void selectFile();
+			case 'app-exit':
+				return void appExit();
+			case 'toggle-split-view':
+				if (tabManager.activeTabId) toggleSplitView(tabManager.activeTabId);
+				return;
+			case 'toggle-live-mode':
+				return void toggleLiveMode();
+			case 'toggle-zen-mode':
+				return settings.toggleZenMode();
+			case 'toggle-edit-view':
+				return void toggleEditView();
+			case 'save-as':
+				return void saveContentAs();
+			case 'save': {
+				// Save from any mode. An untitled buffer has content to write. A
+				// clean saved file is a no-op, so its mtime does not wake the watcher.
+				const saveTarget = tabManager.activeTab;
+				if (saveTarget && (saveTarget.isDirty || saveTarget.path === '')) saveContent();
+				return;
+			}
+			case 'undo-close-tab':
+				return void handleUndoCloseTab();
+			case 'next-tab':
+				return tabManager.cycleTab('next');
+			case 'previous-tab':
+				return tabManager.cycleTab('prev');
+			case 'history-back':
+				return void navigateFileHistory('back');
+			case 'history-forward':
+				return void navigateFileHistory('forward');
+			case 'zoom-in':
+				return settings.zoomIn();
+			case 'zoom-out':
+				return settings.zoomOut();
+			case 'zoom-reset':
+				return settings.resetZoom();
+			case 'open-settings':
+				showSettings = true;
+				return;
+			case 'toggle-home':
+				return toggleHome();
+			case 'export-pdf':
+				// D6：上游直连 utils/export 的 PDF 导出退役，快捷键改为打开本地 ExportModal
+				showExportModal = true;
+				return;
+			case 'find':
+				return triggerFindAction();
+		}
+	}
+
+	function handleKeyDown(e: KeyboardEvent) {
+		const command = viewerCommandFor(e, keyContext());
+		if (!command) return;
+		e.preventDefault();
+		runViewerCommand(command);
+	}
+
+	async function navigateFileHistory(direction: 'back' | 'forward') {
+		const activeTabId = tabManager.activeTabId;
+		if (!activeTabId) return;
+		if (!(await canCloseTab(activeTabId))) return;
+
+		const path = direction === 'back'
+			? tabManager.goBack(activeTabId)
+			: tabManager.goForward(activeTabId);
+
+		if (path) {
+			// No `resetScrollHistory` here, and none in `openMarkdownTargetInNewTab`
+			// either: goBack/goForward repoint the tab, so `clearReadingPosition`
+			// has already dropped its in-page stacks along with the rest of the
+			// position, and a tab opened by `addTab` never had any.
+			await loadMarkdown(path, { skipTabManagement: true });
+		}
+	}
+
+	// The in-page jump stacks belong to the tab the offsets were measured in —
+	// see `Tab.scrollHistory`. These three wrappers exist only to name that tab
+	// and to read the offset off the preview, which the store cannot see.
+	function pushScrollHistory() {
+		if (markdownBody && tabManager.activeTabId) {
+			tabManager.pushScrollHistory(tabManager.activeTabId, markdownBody.scrollTop);
+		}
+	}
+
+	/**
+	 * Where an in-page back/forward would land, or null if this tab has no jump
+	 * to walk — the caller then falls through to the FILE history.
+	 */
+	function popScrollHistory(direction: 'back' | 'forward'): number | null {
+		if (!markdownBody || !tabManager.activeTabId) return null;
+		return direction === 'back'
+			? tabManager.popScrollHistoryBack(tabManager.activeTabId, markdownBody.scrollTop)
+			: tabManager.popScrollHistoryForward(tabManager.activeTabId, markdownBody.scrollTop);
+	}
+
+	async function handleMouseUp(e: MouseEvent) {
+		if (e.button !== 3 && e.button !== 4) return;
+		const direction = e.button === 3 ? 'back' : 'forward';
+		e.preventDefault();
+		// In-page scroll history first; only a tab with no jump left to undo
+		// moves to another document.
+		const pos = popScrollHistory(direction);
+		if (pos !== null && markdownBody) {
+			isProgrammaticScroll = true;
+			markdownBody.scrollTo({ top: pos, behavior: jumpBehavior });
+		} else {
+			await navigateFileHistory(direction);
+		}
+	}
+
+	async function handleUndoCloseTab() {
+		const path = tabManager.popRecentlyClosed();
+		if (path) {
+			await loadMarkdown(path);
+		}
+	}
+
+	// Moving a tab to a new window preserves its state as-is — dirty content,
+	// edit/split mode, history — so there is deliberately no canCloseTab()
+	// save prompt here: movement is not closing. The content travels through
+	// the Rust broker (never disk, never localStorage), and the source tab is
+	// deleted only after the destination confirms the claim, so any failure —
+	// window creation error, timeout — leaves the tab exactly where it was.
+	// A large file may still be holding only its preview slice. The receiving
+	// window cannot tell, so the buffer is completed here, before the payload
+	// is built — otherwise the document arrives short and gets written back
+	// that way.
+	async function handleDetach(tabId: string) {
+		if (!(await documentSession.ensureFullContent(tabId))) {
+			addToast(t('toast.partialDocument', settings.language), 'error');
+			return false;
+		}
+		return windowSession.detach(tabId);
+	}
+
+	async function moveTabToWindow(tabId: string, targetLabel: string, focusAfter = false) {
+		if (!(await documentSession.ensureFullContent(tabId))) {
+			addToast(t('toast.partialDocument', settings.language), 'error');
+			return false;
+		}
+		const moved = await windowSession.transfer(tabId, (token) => invoke('offer_tab_to_window', { targetLabel, token }));
+		if (moved && focusAfter) await invoke('focus_window', { label: targetLabel });
+		return moved;
+	}
+
+	async function carryActiveTabToNextWindow() {
+		const activeId = tabManager.activeTabId;
+		if (!activeId) return;
+		const windows = (await invoke('list_viewer_windows')) as Array<{ label: string; number: number }>;
+		const ordered = windows.slice().sort((a, b) => a.number - b.number);
+		const selfIndex = ordered.findIndex((window) => window.label === appWindow.label);
+		if (selfIndex === -1 || ordered.length === 1) {
+			await handleDetach(activeId);
+			return;
+		}
+		await moveTabToWindow(activeId, ordered[(selfIndex + 1) % ordered.length].label, true);
+	}
+
+	async function mergeAllWindowsHere() {
+		const windows = (await invoke('list_viewer_windows')) as Array<{ label: string }>;
+		const others = windows.filter((window) => window.label !== appWindow.label);
+		if (others.length === 0) {
+			addToast(t('toast.noOtherWindows', settings.language), 'info');
+			return;
+		}
+		await Promise.all(others.map((window) => emitTo(window.label, 'merge-into', appWindow.label)));
+	}
+
+	async function mergeSelfInto(targetLabel: string) {
+		if (isCloseWalkActive) return;
+		await savePinnedTagIfNeeded();
+		for (const tab of [...tabManager.tabs]) {
+			if (isHomePath(tab.path)) {
+				tabManager.closeTab(tab.id);
+				continue;
+			}
+			await moveTabToWindow(tab.id, targetLabel);
+		}
+		if (tabManager.tabs.length === 0) await appWindow.destroy();
+	}
+
+	function startDrag(e: MouseEvent, tabId: string | null) {
+		if (!tabId) return;
+		e.preventDefault();
+		const startX = e.clientX;
+		const tab = tabManager.tabs.find((t) => t.id === tabId);
+		if (!tab) return;
+
+		const startRatio = tab.splitRatio ?? 0.5;
+		const containerWidth = window.innerWidth;
+
+		const onMove = (moveEvent: MouseEvent) => {
+			const deltaX = moveEvent.clientX - startX;
+			tabManager.setSplitRatio(
+				tabId,
+				splitRatioAfterMove(startRatio, deltaX / containerWidth, settings.splitEditorSide),
+			);
+		};
+
+		const onUp = () => {
+			window.removeEventListener('mousemove', onMove);
+			window.removeEventListener('mouseup', onUp);
+			document.body.style.cursor = '';
+		};
+
+		window.addEventListener('mousemove', onMove);
+		window.addEventListener('mouseup', onUp);
+		document.body.style.cursor = 'col-resize';
+	}
+
+	function startTocResize(e: PointerEvent) {
+		e.preventDefault();
+		const target = e.currentTarget as HTMLElement;
+		target.setPointerCapture?.(e.pointerId);
+
+		const startX = e.clientX;
+		const startWidth = settings.tocWidth;
+		const side = settings.tocSide;
+		isTocResizing = true;
+		document.body.style.cursor = 'col-resize';
+		document.body.style.userSelect = 'none';
+
+		const onMove = (moveEvent: PointerEvent) => {
+			const deltaX = moveEvent.clientX - startX;
+			const widthDelta = side === 'left' ? deltaX : -deltaX;
+			settings.setTocWidth(startWidth + widthDelta);
+		};
+
+		const onUp = (upEvent: PointerEvent) => {
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', onUp);
+			window.removeEventListener('pointercancel', onUp);
+			try {
+				target.releasePointerCapture?.(upEvent.pointerId);
+			} catch {
+				// Pointer capture may already be gone after a cancel path.
+			}
+			document.body.style.cursor = '';
+			document.body.style.userSelect = '';
+			isTocResizing = false;
+		};
+
+		window.addEventListener('pointermove', onMove);
+		window.addEventListener('pointerup', onUp);
+		window.addEventListener('pointercancel', onUp);
+	}
+
+	onMount(() => {
+		loadRecentFiles();
+		isDisposed = false;
+
+		let unlisteners: (() => void)[] = [];
+
+			invoke('show_window').catch(console.error);
+
+			const init = async () => {
+				const appWindow = getCurrentWindow();
+				if (isDisposed) return;
+
+			await windowSession.restore();
+			if (isDisposed) return;
+			const pinnedName = pinnedTagFromWindowLabel(appWindow.label);
+			if (pinnedName === null) await windowSession.claimTransferredTab();
+			else {
+				const tags = (await invoke('list_pinned_tags')) as typeof pinnedTags;
+				const tag = tags.find((pinned) => pinned.name === pinnedName);
+				if (tag) await openPinnedTag(tag);
+			}
+			if (isDisposed) return;
+
+			const urlParams = new URLSearchParams(window.location.search);
+
+			const fileParam = urlParams.get('file');
+			if (fileParam) {
+				const decodedPath = decodeURIComponent(fileParam);
+				if (isDisposed) return;
+				await loadMarkdown(decodedPath);
+				if (isDisposed) return;
+			}
+
+			unlisteners.push(
+				await appWindow.onFocusChanged(({ payload: focused }) => {
+					isFocused = focused;
+				}),
+			);
+			unlisteners.push(
+				await appWindow.listen('file-changed', async (event) => {
+					const changedPath = event.payload as string;
+					if (!liveMode) return;
+					// The event names the changed file. Which tab that touches —
+					// and whether it may be reloaded at all — is decided by the
+					// session: it owns the self-write grace window (so our own
+					// auto-save does not bounce back) and it refuses to reload a
+					// tab with unsaved edits.
+					const outcome = await documentSession.resolveExternalChange(changedPath);
+					if (outcome.action === 'ignore') return;
+					if (outcome.action === 'conflict') {
+						noteExternalChangeConflict(outcome.tabId);
+						return;
+					}
+					loadMarkdown(outcome.path);
+				}),
+			);
+
+			const listeners: [string, EventCallback<any>][] = [
+				['file-path', (event) => {
+					const filePath = event.payload as string;
+					if (filePath) loadMarkdown(filePath);
+				}],
+				['menu-close-file', () => {
+					closeFile();
+				}],
+				['menu-tab-rename', async (event) => {
+					const tabId = event.payload as string;
+					const tab = tabManager.tabs.find((t) => t.id === tabId);
+					if (!tab || !tab.path) return;
+
+					const newName = await promptCustom(t('menu.renameFile', settings.language), {
+						title: t('menu.rename', settings.language),
+						initial: tab.title,
+					});
+					if (newName && newName !== tab.title) {
+						const oldPath = tab.path;
+						const newPath = oldPath.replace(/[/\\][^/\\]+$/, (m) => m.charAt(0) + newName);
+						try {
+							await invoke('rename_file', { oldPath, newPath });
+							tabManager.renameTab(tabId, newPath);
+							recentFiles = updateStoredRecentFiles((current) => renameRecentFile(current, oldPath, newPath));
+						} catch (e) {
+							console.error('Failed to rename file', e);
+							await askCustom(`Failed to rename file: ${e}`, { title: 'Error', kind: 'error' });
+						}
+					}
+				}],
+				['menu-tab-new', () => {
+					tabManager.addNewTab();
+				}],
+				['menu-tab-undo', () => {
+					handleUndoCloseTab();
+				}],
+				['menu-tab-close', async (event) => {
+					const tabId = event.payload as string;
+					await closeTabAndWindowIfLast(tabId);
+				}],
+				['menu-tab-detach', (event) => {
+					handleDetach(event.payload as string);
+				}],
+				['menu-tab-move', (event) => {
+					const { tabId, targetLabel } = event.payload as { tabId: string; targetLabel: string };
+					moveTabToWindow(tabId, targetLabel).catch((error) => console.error('Failed to move tab', error));
+				}],
+				['tab-transfer-offer', (event) => {
+					if (isCloseWalkActive) return;
+					windowSession.acceptOfferedTransfer(event.payload);
+				}],
+				['merge-into', (event) => {
+					mergeSelfInto(event.payload).catch((error) => console.error('Failed to merge window', error));
+				}],
+				['window-identify', (event) => {
+					identifyFlash = event.payload;
+					clearTimeout(identifyFlashTimer);
+					identifyFlashTimer = setTimeout(() => (identifyFlash = ''), 700);
+				}],
+				['menu-tab-close-others', async (event) => {
+					const tabId = event.payload as string;
+					const tabsToClose = tabManager.tabs.filter((t) => t.id !== tabId).map((t) => t.id);
+					await closeTabsWithConfirmation(tabsToClose);
+				}],
+				['menu-tab-close-right', async (event) => {
+					const tabId = event.payload as string;
+					const index = tabManager.tabs.findIndex((t) => t.id === tabId);
+					if (index !== -1) {
+						const tabsToClose = tabManager.tabs.slice(index + 1).map((t) => t.id);
+						await closeTabsWithConfirmation(tabsToClose);
+					}
+				}],
+			];
+			for (const [event, handler] of listeners) unlisteners.push(await appWindow.listen(event, handler));
+			unlisteners.push(
+				await appWindow.listen('menu-app-settings', () => {
+					showSettings = true;
+				}),
+			);
+			unlisteners.push(
+				await appWindow.listen('menu-check-updates', () => {
+					updateStore.openDialog();
+				}),
+			);
+			// Native macOS application menu only owns application-level actions.
+			unlisteners.push(await appWindow.listen('menu-app-quit',         () => appExit()));
+			unlisteners.push(
+				await appWindow.onCloseRequested(async (event) => {
+					// The red button is a native control, so it is NOT blocked
+					// by the in-app dialog overlay: a second click while the
+					// walk below is showing a dialog would re-enter this handler
+					// and start a competing walk whose setActive calls fight the
+					// first one — the highlighted tab stops matching the dialog.
+					// One walk at a time.
+					if (isCloseWalkActive) {
+						event.preventDefault();
+						return;
+					}
+
+					// With tabs to review the close is held open while their
+					// dialogs are up, then re-triggered: the handler re-enters,
+					// finds nothing dirty, and the close proceeds.
+					const hadDirtyTabs = tabManager.tabs.some((t) => t.isDirty);
+					if (hadDirtyTabs) event.preventDefault();
+					if (!(await settleForExit())) return;
+					if (hadDirtyTabs) appWindow.close();
+				}),
+			);
+
+			unlisteners.push(
+				await appWindow.onDragDropEvent((event) => {
+					if (event.payload.type === 'enter' || event.payload.type === 'over') {
+						const { x, y } = event.payload.position;
+						isDragging = true;
+						// Only `enter` carries the paths; `over` repeats the position.
+						if (event.payload.type === 'enter') dragPaths = event.payload.paths;
+						
+						const contains = (el: HTMLElement) => {
+							const rect = el.getBoundingClientRect();
+							return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+						};
+						if (editorPaneEl) {
+							if (contains(editorPaneEl)) {
+								dragTarget = 'editor';
+								if (editorPane) editorPane.updateDragCaret(x, y);
+							} else {
+								dragTarget = viewerPaneEl && contains(viewerPaneEl) ? 'preview' : null;
+								if (editorPane) editorPane.hideDragCaret();
+							}
+						}
+					} else if (event.payload.type === 'drop') {
+						const { x, y } = event.payload.position;
+						const paths = event.payload.paths;
+						const currentEditor = editorPane;
+						if (currentEditor) currentEditor.hideDragCaret();
+						// Both panes route through `routeDroppedFile`. The editor's
+						// branch used to look for an image and silently discard
+						// everything else, so a `.md` dropped there did nothing at
+						// all while the same drop on the preview opened it.
+						const pane: DropPane | null =
+							dragTarget === 'editor' && currentEditor
+								? 'editor'
+								: dragTarget === 'preview' || (!isSplit && !isEditing)
+									? 'preview'
+									: null;
+
+						if (pane) {
+							paths.forEach(path => {
+								switch (routeDroppedFile(path, pane)) {
+									case 'insert':
+										currentEditor?.handleDroppedFile(path, x, y);
+										break;
+									case 'open':
+										loadMarkdown(path);
+										break;
+									case 'unsupported':
+										reportUnsupportedDrop(path);
+										break;
+								}
+							});
+						}
+						
+						isDragging = false;
+						dragTarget = null;
+					} else if (event.payload.type === 'leave') {
+						isDragging = false;
+						dragTarget = null;
+						if (editorPane) editorPane.hideDragCaret();
+					}
+				}),
+			);
+
+			if (isDisposed) {
+				unlisteners.forEach((unlisten) => unlisten());
+				return;
+			}
+
+			// Startup-file delivery (argv / macOS Opened-before-ready stash) is
+			// a boot-time channel that belongs to the FIRST window only. It is
+			// process-global state: letting every window consume it meant each
+			// detached window re-opened the file the app was launched with.
+			if (isMainWindow) {
+				try {
+					const args: string[] = await invoke('send_markdown_path');
+					if (!isDisposed && args?.length > 0) {
+						for (const path of args) await loadMarkdown(path);
+					}
+				} catch (error) {
+					console.error('Error receiving Markdown file path:', error);
+				}
+			}
+
+			if (!isDisposed) mode = 'app';
+		};
+
+		init();
+
+		return () => {
+			isDisposed = true;
+			clearTimeout(identifyFlashTimer);
+			unlisteners.forEach((u) => u());
+		};
+	});
 </script>
 
 <svelte:document
-  onclick={handleDocumentClick}
-  oncontextmenu={handleContextMenu}
-  onmouseover={handleMouseOver}
-  onmouseout={handleMouseOut}
-  onkeydown={handleKeyDown}
-  onmouseup={handleMouseUp} />
+	onclick={handleDocumentClick}
+	oncopy={handleCopy}
+	oncontextmenu={handleContextMenu}
+	onmouseover={handleMouseOver}
+	onmouseout={handleMouseOut}
+	onkeydown={handleKeyDown}
+	onmouseup={handleMouseUp} />
 
 {#if mode === 'loading'}
-  <TitleBar
-    {isFocused}
-    isScrolled={false}
-    currentFile={''}
-    {liveMode}
-    windowTitle="Markpad"
-    showHome={false}
-    {zoomLevel}
-    onselectFile={selectFile}
-    onnewFile={handleNewFile}
-    onopenFile={selectFile}
-    onsaveFile={saveContent}
-    onsaveFileAs={saveContentAs}
-    onexit={appExit}
-    ontoggleHome={toggleHome}
-    ononpenFileLocation={openFileLocation}
-    ontoggleLiveMode={toggleLiveMode}
-    ontoggleEdit={() => toggleEdit()}
-    ontoggleSplit={() => tabManager.activeTabId && toggleSplitView(tabManager.activeTabId)}
-    {isEditing}
-    ondetach={handleDetach}
-    ontabclick={() => (showHome = false)}
-    onresetZoom={() => (zoomLevel = 100)}
-    {isFullWidth}
-    ontoggleFullWidth={() => (isFullWidth = !isFullWidth)}
-    onopenSettings={() => (showSettings = true)}
-    onexport={() => (showExportModal = true)}
-    oncloseTab={(id) => {
-      canCloseTab(id).then((can) => {
-        if (can) tabManager.closeTab(id);
-      });
-    }} />
-  <div class="loading-screen">
-    <svg class="spinner" viewBox="0 0 50 50">
-      <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>
-    </svg>
-  </div>
-{:else if mode === 'installer'}
-  <Installer />
-{:else if mode === 'uninstall'}
-  <Uninstaller />
+	<TitleBar
+		{isFocused}
+		isScrolled={false}
+		currentFile={''}
+		{liveMode}
+		windowTitle="Markpad"
+		showHome={false}
+		zoomLevel={settings.zoomLevel}
+		onnewFile={handleNewFile}
+		onopenFile={selectFile}
+		onmergeAllWindows={mergeAllWindowsHere}
+		onclosetag={closeWindowTag}
+		onsaveFile={saveContent}
+		onsaveFileAs={saveContentAs}
+		onreloadFromDisk={reloadFromDisk}
+		onexport={() => (showExportModal = true)}
+		onexit={appExit}
+		ontoggleHome={toggleHome}
+		ononpenFileLocation={openFileLocation}
+		ontoggleLiveMode={toggleLiveMode}
+		onsetViewMode={setViewMode}
+		onswapPanes={() => settings.toggleSplitEditorSide()}
+		{isEditing}
+		ontabclick={() => (showHome = false)}
+		onresetZoom={() => settings.resetZoom()}
+		isFullWidth={settings.previewFullWidth}
+		ontoggleFullWidth={() => { settings.previewFullWidth = !settings.previewFullWidth; }}
+		theme={settings.theme}
+		onSetTheme={(t: string) => (settings.theme = resolveTheme(t))}
+		onopenSettings={() => (showSettings = true)}
+		onfind={triggerFindAction}
+		oncloseTab={closeTabAndWindowIfLast} />
+	<div class="loading-screen">
+		<svg class="spinner" viewBox="0 0 50 50">
+			<circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>
+		</svg>
+	</div>
 {:else}
-  <TitleBar
-    {isFocused}
-    {isScrolled}
-    {currentFile}
-    {liveMode}
-    {windowTitle}
-    {showHome}
-    {zoomLevel}
-    onselectFile={selectFile}
-    onnewFile={handleNewFile}
-    onopenFile={selectFile}
-    onsaveFile={saveContent}
-    onsaveFileAs={saveContentAs}
-    onexit={appExit}
-    ontoggleHome={toggleHome}
-    ononpenFileLocation={openFileLocation}
-    ontoggleLiveMode={toggleLiveMode}
-    ontoggleEdit={() => toggleEdit()}
-    ontoggleSplit={() => tabManager.activeTabId && toggleSplitView(tabManager.activeTabId)}
-    {isEditing}
-    ondetach={handleDetach}
-    ontabclick={() => (showHome = false)}
-    onresetZoom={() => (zoomLevel = 100)}
-    {isFullWidth}
-    ontoggleFullWidth={() => (isFullWidth = !isFullWidth)}
-    onopenSettings={() => (showSettings = true)}
-    onexport={() => (showExportModal = true)}
-    oncloseTab={(id) => {
-      canCloseTab(id).then((can) => {
-        if (can) tabManager.closeTab(id);
-      });
-    }}
-    {isScrollSynced}
-    ontoggleSync={() => tabManager.activeTabId && tabManager.toggleScrollSync(tabManager.activeTabId)}
-    ontoggleMetadata={() => (showMetadata = !showMetadata)}
-    {showMetadata}
-    hasMetadata={!!metadata}
-    ontoggleToc={() => settings.toggleToc()}
-    showToc={settings.showToc} />
+	<TitleBar
+		{isFocused}
+		{isScrolled}
+		{currentFile}
+		{liveMode}
+		{windowTitle}
+		{showHome}
+		zoomLevel={settings.zoomLevel}
+		onnewFile={handleNewFile}
+		onopenFile={selectFile}
+		onmergeAllWindows={mergeAllWindowsHere}
+		onclosetag={closeWindowTag}
+		onsaveFile={saveContent}
+		onsaveFileAs={saveContentAs}
+		onreloadFromDisk={reloadFromDisk}
+		onexport={() => (showExportModal = true)}
+		onexit={appExit}
+		ontoggleHome={toggleHome}
+		ononpenFileLocation={openFileLocation}
+		ontoggleLiveMode={toggleLiveMode}
+		ontoggleEditorToolbar={() => { settings.showEditorToolbar = !settings.showEditorToolbar; }}
+		onsetViewMode={setViewMode}
+		onswapPanes={() => settings.toggleSplitEditorSide()}
+		{isEditing}
+		ontabclick={() => (showHome = false)}
+		onresetZoom={() => settings.resetZoom()}
+		{isScrollSynced}
+		ontoggleSync={() => tabManager.activeTabId && tabManager.toggleScrollSync(tabManager.activeTabId)}
+		isFullWidth={settings.previewFullWidth}
+		ontoggleFullWidth={() => { settings.previewFullWidth = !settings.previewFullWidth; }}
+		theme={settings.theme}
+		onSetTheme={(t: string) => (settings.theme = resolveTheme(t))}
+		onopenSettings={() => (showSettings = true)}
+		onfind={triggerFindAction}
+		canGoBack={canGoBackInFileHistory}
+		canGoForward={canGoForwardInFileHistory}
+		onback={() => navigateFileHistory('back')}
+		onforward={() => navigateFileHistory('forward')}
+		oncloseTab={closeTabAndWindowIfLast} />
 
-  {#if tabManager.activeTab && (tabManager.activeTab.path !== '' || tabManager.activeTab.title !== 'Recents') && !showHome}
-  {#key tabManager.activeTabId}
-  <div class="markdown-container" style="zoom: {isEditing && !isSplit ? 1 : zoomLevel / 100}" onwheel={handleWheel} role="presentation">
-  <div class="layout-container" class:split={isSplit} class:editing={isEditing} class:has-pinned-toc={settings.pinnedToc && settings.showToc} class:toc-on-left={settings.tocSide === 'left'} class:toc-on-right={settings.tocSide === 'right'}>
+	<Settings show={showSettings} theme={settings.theme} onSetTheme={(t) => (settings.theme = t)} onclose={() => (showSettings = false)} />
 
-  <!-- Editor Pane -->
-          <div class="pane editor-pane" class:active={isEditing || isSplit} style="flex: {isSplit ? tabManager.activeTab.splitRatio : isEditing ? 1 : 0}">
-            {#if isEditing || isSplit}
-              <Editor
-                bind:this={editorPane}
-                bind:value={tabManager.activeTab.rawContent}
-                language={editorLanguage}
-                onsave={saveContent}
-                bind:zoomLevel
-                onnew={handleNewFile}
-                onopen={selectFile}
-                onclose={closeFile}
-                onreveal={openFileLocation}
-                ontoggleEdit={() => toggleEdit()}
-                ontoggleLive={toggleLiveMode}
-                ontoggleSplit={() => tabManager.activeTabId && toggleSplitView(tabManager.activeTabId)}
-                onhome={() => (showHome = true)}
-                onnextTab={() => tabManager.cycleTab('next')}
-                onprevTab={() => tabManager.cycleTab('prev')}
-                onundoClose={handleUndoCloseTab}
-                onscrollsync={handleEditorScrollSync} />
-            {/if}
-          </div>
+	{#if activeExternalChangeConflict && !showHome}
+		<div class="external-change-bar" role="status">
+			<span class="external-change-text">{t('externalChange.message', settings.language)}</span>
+			<button class="external-change-action" onclick={compareExternalChange}>
+				{t('externalChange.compare', settings.language)}
+			</button>
+			<button class="external-change-action" onclick={resolveExternalChangeByReloading}>
+				{t('externalChange.reload', settings.language)}
+			</button>
+			<button class="external-change-action primary" onclick={resolveExternalChangeByKeepingBuffer}>
+				{t('externalChange.keepMine', settings.language)}
+			</button>
+		</div>
+	{/if}
 
-          <!-- Splitter -->
-          {#if isSplit}
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
-            <div class="split-bar" onmousedown={(e) => startDrag(e, tabManager.activeTabId)} onkeydown={handleSplitterKeyDown} role="separator" aria-orientation="vertical" tabindex="0"></div>
-          {/if}
+	<DiffOverlay
+		show={comparison !== null}
+		onDisk={comparison?.onDisk ?? ''}
+		mine={comparison?.mine ?? ''}
+		language={comparison?.language ?? 'markdown'}
+		labels={{
+			onDisk: t('externalChange.onDisk', settings.language),
+			mine: t('externalChange.mine', settings.language),
+			reload: t('externalChange.reload', settings.language),
+			keepMine: t('externalChange.keepMine', settings.language),
+			close: t('externalChange.close', settings.language),
+		}}
+		onclose={() => (comparison = null)}
+		onreload={resolveExternalChangeByReloading}
+		onkeep={resolveExternalChangeByKeepingBuffer} />
 
-          <!-- Viewer Pane -->
-          <div bind:this={viewerPaneEl} bind:clientWidth={viewerWidth} class="pane viewer-pane" class:active={!isEditing || isSplit} style="flex: {isSplit ? 1 - tabManager.activeTab.splitRatio : !isEditing ? 1 : 0}">
-          <div class="viewer-content">
-            <article bind:this={markdownBody} contenteditable="false" class="markdown-body" class:full-width={isFullWidth} onscroll={handleScroll} onclick={handleLinkClick} tabindex="-1" style="outline: none;"></article>
-                {#if tabManager.activeTabId && loadingTabs.includes(tabManager.activeTabId) && isAtBottom}
-                  <div class="loading-chip" transition:fly={{ y: 20, duration: 300, easing: cubicOut }}>
-                    <div class="loading-spinner"></div>
-                    <span>Loading full document...</span>
-                  </div>
-                {/if}
-              </div>
-            </div>
+	{#if tabManager.activeTab && !isHomePath(tabManager.activeTab.path) && !showHome}
+			<div
+				class="markdown-container"
+				style="zoom: {hasPreviewPane ? settings.zoomLevel / 100 : 1}; --code-font: {previewAppearance.codeFontFamily}; --code-font-size: {previewAppearance.codeFontSize}px; --highlight-color: {previewAppearance.highlightColor};"
+				onwheel={handleWheel}
+				role="presentation">
+				<div class="layout-container" 
+					bind:this={layoutContainerEl}
+					class:split={isSplit} 
+					class:editor-on-right={isSplit && settings.splitEditorSide === 'right'} 
+					class:editing={isEditing} 
+					class:has-pinned-toc={isMarkdown && settings.pinnedToc && settings.showToc}
+					class:toc-on-left={isMarkdown && settings.tocSide === 'left'}
+					class:toc-on-right={isMarkdown && settings.tocSide === 'right'}
+					class:toc-resizing={isTocResizing}
+					style="--toc-width: {settings.tocWidth}px; --pane-top-chrome: {paneTopChrome}px;">
+					<!-- Editor Pane -->
+					<div bind:this={editorPaneEl} class="pane editor-pane" style:flex={isSplit ? tabManager.activeTab.splitRatio : null}>
+						{#if hasEditorPane}
+							{#if settings.showEditorToolbar}
+								<div bind:clientHeight={editorToolbarHeight} transition:slide={{ duration: 150 }}>
+									<EditorToolbar
+										modifier={modifierFor(settings.osType)}
+										toolbarOrder={settings.editorToolbarOrder}
+										toolbarHidden={settings.editorToolbarHidden}
+										onaction={(actionId, payload) => editorPane?.runEditorAction(actionId, payload)}
+										ontoggleHide={() => { settings.showEditorToolbar = !settings.showEditorToolbar; }}
+										onshowTooltip={(e, text, shortcut, align) => {
+											const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+											tooltip = {
+												show: true,
+												text,
+												shortcut: shortcut || '',
+												html: '',
+												isFootnote: false,
+												x: align === 'right' ? rect.right + 8 : (align === 'left' ? rect.left - 8 : rect.left + rect.width / 2),
+												y: align === 'below' ? rect.bottom + 8 : rect.top - 8,
+												align: (align as any) || 'below'
+											};
+										}}
+										onhideTooltip={() => (tooltip.show = false)} />
+								</div>
+							{/if}
+							<Editor
+								bind:this={editorPane}
+								value={tabManager.activeTab.rawContent}
+								language={editorLanguage}
+								theme={settings.theme}
+								onsave={saveContent}
+								zoomLevel={settings.zoomLevel}
+								onnew={handleNewFile}
+								onopen={selectFile}
+								onclose={closeFile}
+								onreveal={openFileLocation}
+								onexportPdf={() => (showExportModal = true)}
+								ontoggleEdit={() => toggleEditView()}
+								ontoggleLive={toggleLiveMode}
+								ontoggleSplit={() => tabManager.activeTabId && toggleSplitView(tabManager.activeTabId)}
+								onhome={toggleHome}
+								onnextTab={() => tabManager.cycleTab('next')}
+								onprevTab={() => tabManager.cycleTab('prev')}
+								onundoClose={handleUndoCloseTab}
+								onscrollsync={handleEditorScrollSync}
+								oncursor={handleEditorCursor}
+								sharedCursor={settings.previewCursor ? activeCursor : null} />
+						{/if}
+					</div>
 
-            <!-- Upstream: Floating TOC Support -->
-            <button
-              class="toc-toggle-floating {settings.showToc ? 'expanded' : ''}"
-              class:on-right={settings.tocSide === 'right'}
-              class:in-edit-mode={isEditing && !settings.showToc}
-              onclick={() => settings.toggleToc()}
-              aria-label={settings.showToc ? 'Hide table of contents' : 'Show table of contents'}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="9 18 15 12 9 6"></polyline>
-              </svg>
-            </button>
+					<!-- Splitter -->
+					{#if isSplit}
+						<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+						<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+						<div class="split-bar" onmousedown={(e) => startDrag(e, tabManager.activeTabId)} onkeydown={handleSplitterKeyDown} role="separator" aria-orientation="vertical" tabindex="0"></div>
+					{/if}
 
-            {#if settings.showToc}
-              <div
-                transition:fly={{ x: settings.tocSide === 'left' ? -240 : 240, duration: 300, opacity: 1, easing: cubicOut }}
-                class="toc-overlay-wrapper"
-                class:is-overhanging={isOverhanging}
-                class:is-pinned={settings.pinnedToc}
-                class:on-right={settings.tocSide === 'right'}>
-                <Toc
-                  {markdownBody}
-                  htmlContent={htmlContent}
-                  {contentRendered}
-                  {collapsedHeaders}
-                  ontoggleFold={toggleFold}
-                  onBeforeJump={pushScrollHistory}
-                  onjump={(id: string, text: string) => {
-                    if (isEditing && editorPane) {
-                      editorPane.revealHeader(text);
-                    }
-                  }}
-                  oncopyref={(text: string) => {
-                    invoke('clipboard_write_text', { text: `#${text}` });
-                  }}
-                  oncontext={(e: MouseEvent, item: { text: string }) => {
-                    e.preventDefault();
-                    invoke('clipboard_write_text', { text: `#${item.text}` });
-                  }} />
-              </div>
-            {/if}
-          </div>
-        
-        {#if showMetadata && metadata}
-          <div class="metadata-popup" transition:fly={{ y: -10, duration: 200 }}>
-            <div class="metadata-content">
-              {#if hljs}
-                <pre><code class="language-yaml">{@html hljs.highlight(metadata, { language: 'yaml' }).value}</code></pre>
-              {:else}
-                <pre>{metadata}</pre>
-              {/if}
-            </div>
-          </div>
-        {/if}
-      </div>
-    {/key}
-  {:else}
-    <HomePage {recentFiles} onselectFile={selectFile} onloadFile={loadMarkdown} onremoveRecentFile={removeRecentFile} onnewFile={handleNewFile} />
-  {/if}
+					<!-- Viewer Pane -->
+					<div 
+						bind:this={viewerPaneEl} 
+						bind:clientWidth={viewerWidth}
+						class="pane viewer-pane" 
+						style:flex={isSplit ? 1 - tabManager.activeTab.splitRatio : null}>
 
-  {#if isDragging && !isEditing}
-    <div class="drag-overlay" role="presentation">
-      <div class="drag-zones">
-        <div class="drag-zone viewer-zone" class:active={dragTarget === 'preview'}>
-          <div class="drag-message">
-            <span>Drop to open file</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  {/if}
+						<FindBar
+							bind:this={findBar}
+							bind:open={findOpen}
+							contentRoot={previewBlocks}
+							onunfold={(key: string) => revealFold(foldHost, key)}
+							language={settings.language} />
 
-  {#if tooltip.show}
-    <div class="tooltip" style="left: {tooltip.x}px; top: {tooltip.y}px;">
-      {tooltip.text}
-    </div>
-  {/if}
+							<div class="viewer-content">
+								<article
+									bind:this={markdownBody}
+									contenteditable="false"
+									class="markdown-body {settings.previewFullWidth ? 'full-width' : ''}"
+									class:toc-in-gutter={settings.showToc && !settings.pinnedToc && !isOverhanging}
+									onscroll={handleScroll}
+									onclick={handleLinkClick}
+									onchange={handleTaskCheckboxChange}
+									onkeydown={(e) => {
+										const target = e.target as HTMLElement;
+										if (target.closest('.frontmatter-panel')) return;
+										if(e.key === 'Enter' || e.key === ' ') handleLinkClick(e as unknown as MouseEvent);
+									}}
+									tabindex="-1"
+									style="outline: none; font-family: {previewAppearance.fontFamily}; font-size: {previewAppearance.fontSize}px; flex: 1; --preview-max-width: {previewContentWidth === null ? '100%' : `${previewContentWidth}px`};">
+									{#if frontMatterInfo.exists}
+										<details
+											class="frontmatter-panel"
+											class:is-collapsed={isFrontMatterCollapsed}
+											open={!isFrontMatterCollapsed}
+											ontoggle={(e) => setFrontMatterCollapsed(!(e.currentTarget as HTMLDetailsElement).open)}>
+											<summary class="frontmatter-summary">
+												<span class="frontmatter-chevron" aria-hidden="true">›</span>
+												<span class="frontmatter-title">{t('frontMatter.properties', settings.language)}</span>
+												<span class="frontmatter-count">{frontMatterInfo.valid ? frontMatterInfo.fields.length : 0}</span>
+											</summary>
 
-  <Modal
-    show={modalState.show}
-    title={modalState.title}
-    message={modalState.message}
-    kind={modalState.kind}
-    showSave={modalState.showSave}
-    onconfirm={handleModalConfirm}
-    onsave={handleModalSave}
-    oncancel={handleModalCancel} />
+											{#if frontMatterInfo.valid}
+												<div class="frontmatter-grid">
+													{#each frontMatterInfo.fields as field (field.key)}
+														<label class="frontmatter-key" for={frontMatterFieldId(field.key)}>{field.key}</label>
+														<div class="frontmatter-value">
+															{#if field.editable}
+																{#if field.kind === 'boolean'}
+																	<select
+																		id={frontMatterFieldId(field.key)}
+																		value={String(field.value)}
+																		onchange={(e) => handleFrontMatterEdit(field, (e.currentTarget as HTMLSelectElement).value)}>
+																		<option value="true">true</option>
+																		<option value="false">false</option>
+																	</select>
+																{:else if field.kind === 'list'}
+																	<div class="frontmatter-tags">
+																		<div class="frontmatter-tag-list" role="list" aria-label={t('frontMatter.tagList', settings.language).replace('{{field}}', field.key)}>
+																			{#each getFrontMatterListItems(field) as tag, index (`${tag}-${index}`)}
+																				<span class="frontmatter-tag" role="listitem">
+																					{#if getFrontMatterTagEditIndex(field) === index}
+																						<input
+																							class="frontmatter-tag-edit-input"
+																							type="text"
+																							value={getFrontMatterTagEditDraft(field, tag)}
+																							aria-label={t('frontMatter.editTag', settings.language).replace('{{field}}', field.key).replace('{{tag}}', tag)}
+																							use:focusAndSelect
+																							oninput={(e) => setFrontMatterTagEditDraft(field, (e.currentTarget as HTMLInputElement).value)}
+																							onkeydown={(e) => handleFrontMatterTagEditKeydown(e, field, index)}
+																							onblur={() => commitFrontMatterTagEdit(field, index)} />
+																					{:else}
+																						<button
+																							class="frontmatter-tag-text"
+																							type="button"
+																							aria-label={t('frontMatter.editTag', settings.language).replace('{{field}}', field.key).replace('{{tag}}', tag)}
+																							onclick={() => startFrontMatterTagEdit(field, index, tag)}>
+																							{tag}
+																						</button>
+																						<button
+																							class="frontmatter-tag-remove"
+																							type="button"
+																							aria-label={t('frontMatter.removeTag', settings.language).replace('{{field}}', field.key).replace('{{tag}}', tag)}
+																							onclick={() => removeFrontMatterTag(field, index)}>
+																							×
+																						</button>
+																					{/if}
+																				</span>
+																			{/each}
+																		</div>
+																		<div class="frontmatter-tag-add">
+																			<input
+																				id={frontMatterFieldId(field.key)}
+																				type="text"
+																				value={getFrontMatterTagDraft(field)}
+																				placeholder={t('frontMatter.addTag', settings.language)}
+																				autocomplete="off"
+																				enterkeyhint="done"
+																				oninput={(e) => setFrontMatterTagDraft(field, (e.currentTarget as HTMLInputElement).value)}
+																				onkeydown={(e) => handleFrontMatterTagAddKeydown(e, field)} />
+																			<button
+																				class="frontmatter-tag-add-button"
+																				type="button"
+																				aria-label={t('frontMatter.addTagTo', settings.language).replace('{{field}}', field.key)}
+																				onclick={() => commitFrontMatterTagAdd(field)}>
+																				+
+																			</button>
+																		</div>
+																	</div>
+																{:else}
+																	<input
+																		id={frontMatterFieldId(field.key)}
+																		type={field.kind === 'number' ? 'number' : 'text'}
+																		value={field.displayValue}
+																		onchange={(e) => handleFrontMatterEdit(field, (e.currentTarget as HTMLInputElement).value)} />
+																{/if}
+															{:else}
+																<code>{field.displayValue}</code>
+															{/if}
+															{#if frontMatterEditErrors[frontMatterFieldStateKey(field)]}
+																<div class="frontmatter-field-error" role="status">{frontMatterEditErrors[frontMatterFieldStateKey(field)]}</div>
+															{/if}
+														</div>
+													{/each}
+												</div>
+											{:else}
+												<div class="frontmatter-error" role="status">{frontMatterInfo.error}</div>
+											{/if}
 
-  <ExportModal
-    show={showExportModal}
-    onexport={handleExport}
-    oncancel={() => (showExportModal = false)} />
+										</details>
+									{/if}
+									<!--
+										One host per tab, all mounted, only the active one displayed:
+										see `previewHosts`. The children are filled by the block patch,
+										not by Svelte.
 
-  {#if exportMessage.show}
-    <div class="export-message">
-      <span>{exportMessage.text}</span>
-      <button class="close-btn" onclick={() => { exportMessage = { show: false, text: '' }; }}>×</button>
-    </div>
-  {/if}
+										`display`, not `visibility` or a zero height: a hidden host must
+										cost no layout.
+									-->
+									{#each tabManager.tabs as tab (tab.id)}
+										<div
+											class="markdown-blocks"
+											style:display={tab.id === tabManager.activeTabId ? null : 'none'}
+											bind:this={previewHosts[tab.id]}></div>
+									{/each}
+									{#if previewCursorBox}
+										<div class="preview-cursor" aria-hidden="true" style:top="{previewCursorBox.top}px" style:height="{previewCursorBox.height}px">
+											{#if settings.renderLineHighlight === 'line'}
+												<div class="preview-cursor-line"></div>
+											{/if}
+											<div class="preview-cursor-caret" style:left="{previewCursorBox.left}px"></div>
+										</div>
+									{/if}
+								</article>
+								{#if tabManager.activeTabId && loadingTabs.includes(tabManager.activeTabId) && isAtBottom}
+								<div class="loading-chip" transition:fly={{ y: 20, duration: 300, easing: cubicOut }}>
+									<div class="loading-spinner"></div>
+									<span>{t('common.loadingFullDocument', settings.language)}</span>
+								</div>
+							{/if}
+						</div>
+					</div>
 
-  {#if isDragging && !isEditing}
-    <div class="drag-overlay" role="presentation">
-      <div class="drag-message">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="48"
-          height="48"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="17 8 12 3 7 8" />
-          <line x1="12" y1="3" x2="12" y2="15" />
-        </svg>
-        <span>Drop to open Markdown files</span>
-      </div>
-    </div>
-  {/if}
+					<!-- Unified TOC Support -->
+					{#if isMarkdown && !showHome}
+						<div class="top-fade-mask" style="{settings.tocSide === 'left' ? 'left: 0;' : 'right: 0; left: auto;'}"></div>
+						<button
+							bind:this={tocToggleEl}
+							class="toc-toggle-floating {settings.showToc ? 'expanded' : ''}"
+							class:on-right={settings.tocSide === 'right'}
+								onclick={() => { settings.showToc = !settings.showToc; }}
+							aria-label={settings.showToc ? t('tooltip.hideTableOfContents', settings.language) : t('tooltip.showTableOfContents', settings.language)}
+							onmouseenter={(e) => {
+								const rect = e.currentTarget.getBoundingClientRect();
+								tooltip = { 
+									show: true, 
+									text: settings.showToc ? t('tooltip.hideTableOfContents', settings.language) : t('tooltip.showTableOfContents', settings.language), 
+									shortcut: '',
+									html: '', 
+									isFootnote: false, 
+									x: settings.tocSide === 'left' ? rect.right + 8 : rect.left - 8, 
+									y: rect.top + rect.height / 2,
+									align: settings.tocSide === 'left' ? 'right' : 'left'
+								};
+							}}
+							onmouseleave={() => tooltip.show = false}>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+								<polyline points="9 18 15 12 9 6"></polyline>
+							</svg>
+						</button>
+
+						{#if settings.showToc}
+							<div
+								bind:this={tocWrapperEl}
+								transition:fly={{ x: settings.tocSide === 'left' ? -settings.tocWidth : settings.tocWidth, duration: 300, opacity: 1, easing: cubicOut }}
+								class="toc-overlay-wrapper"
+								class:is-overhanging={isOverhanging} 
+								class:is-pinned={settings.pinnedToc}
+								class:is-resizing={isTocResizing}
+								class:on-right={settings.tocSide === 'right'}>
+								<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+								<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+								<div
+									class="toc-resize-handle"
+									class:on-right={settings.tocSide === 'right'}
+									role="separator"
+									aria-label={t('toc.resizeTableOfContents', settings.language)}
+									aria-orientation="vertical"
+									aria-valuemin={TOC_WIDTH_RANGE.min}
+									aria-valuemax={TOC_WIDTH_RANGE.max}
+									aria-valuenow={settings.tocWidth}
+									tabindex="0"
+									onpointerdown={startTocResize}
+									onkeydown={handleTocResizeKeyDown}></div>
+								<Toc
+									activeLine={tocActiveLine} 
+										{markdownBody} 
+										contentRoot={previewBlocks}
+										{previewRevision}
+										onBeforeJump={pushScrollHistory} 
+										{foldOverrides} 
+										ontoggleFold={(key: string) => toggleFold(foldHost, key)} 
+										oncopyref={(text: string, slug: string) => copyHeadingReference(text, slug)}
+										onjump={(id: string, text: string, sourceLine: RendererLine | null) => {
+											// A floating outline that is covering the text has done its
+											// job the moment you pick an entry: it exists to be called
+											// up, used once and dismissed. Pinned it is a permanent
+											// sidebar and stays; not overhanging it is sitting in the
+											// margin harming nothing, and closing it would take away a
+											// behaviour that was already fine.
+											if (isOverhanging && !settings.pinnedToc) settings.showToc = false;
+											if (hasEditorPane && editorPane) {
+												// Same renderer-to-buffer shift as the context menu: the
+												// outline reads `data-sourcepos` too, and has been landing
+												// short by the front matter's height for as long as both
+												// have existed.
+												editorPane.revealHeader(
+													sourceLine === null ? null : lineCoords.toBufferLine(sourceLine),
+													text,
+												);
+											}
+										}}
+										oncontext={(e, item) => {
+											docContextMenu = {
+												show: true,
+												x: e.clientX,
+												y: e.clientY,
+												items: [
+													{ 
+														label: t('menu.copyReference', settings.language),
+														onClick: () => {
+															copyHeadingReference(item.text, item.id);
+															docContextMenu.show = false;
+														} 
+													}
+												]
+											};
+										}}
+										onshowTooltip={(e, text, shortcut, align) => {
+											const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+											tooltip = {
+												show: true,
+												text,
+												shortcut: shortcut || '',
+												html: '',
+												isFootnote: false,
+												x: align === 'right' ? rect.right + 8 : (align as any === 'left' ? rect.left - 8 : rect.left + rect.width / 2),
+												y: align === 'right' || align as any === 'left' ? rect.top + rect.height / 2 : (align === 'below' ? rect.bottom + 8 : rect.top - 8),
+												align: align || 'top'
+											};
+										}}
+										onhideTooltip={() => tooltip.show = false}
+								/>
+							</div>
+						{/if}
+					{/if}
+				</div>
+			</div>
+	{:else}
+		<HomePage {recentFiles} {pinnedTags} onselectFile={selectFile} onloadFile={loadMarkdown} onremoveRecentFile={removeRecentFile} onnewFile={handleNewFile} onopenPinnedTag={openPinnedTag} onunpinTag={unpinTagFromHome} />
+	{/if}
+
+	<div 
+		class="tooltip align-{tooltip.align} {tooltip.show ? 'visible' : ''}" 
+		class:footnote-tooltip={tooltip.isFootnote} 
+		style="left: {tooltip.x}px; top: {tooltip.y}px;">
+		{#if tooltip.isFootnote}
+			{@html tooltip.html}
+		{:else}
+			<span class="tooltip-text">{tooltip.text}</span>
+			{#if tooltip.shortcut}
+				<span class="tooltip-shortcut">{tooltip.shortcut}</span>
+			{/if}
+		{/if}
+	</div>
+
+	<!-- Before the modals: installing runs the unsaved-tab review, whose dialogs
+	     share this z-index, so they have to come later to be on top. -->
+	<UpdateDialog settleForExit={settleForUpdate} />
+
+	<Modal
+		show={modalState.show}
+		title={modalState.title}
+		message={modalState.message}
+		kind={modalState.kind}
+		showSave={modalState.showSave}
+		onconfirm={handleModalConfirm}
+		onsave={() => closeModal('save')}
+		oncancel={() => closeModal('cancel')} />
+
+	<Modal
+		show={promptModal.show}
+		title={promptModal.title}
+		message={promptModal.message}
+		kind="info"
+		showInput={true}
+		bind:inputValue={promptModal.value}
+		onconfirm={() => closePrompt(promptModal.value)}
+		oncancel={() => closePrompt(null)} />
+
+	<!-- 本地导出入口（D6 唯一导出管线）：ExportModal + exportMessage 结果横幅（H4/H7/H8 回挂） -->
+	<ExportModal
+		show={showExportModal}
+		onexport={handleExport}
+		oncancel={() => (showExportModal = false)} />
+
+	{#if exportMessage.show}
+		<div class="export-message">
+			<span>{exportMessage.text}</span>
+			<button class="close-btn" onclick={() => { exportMessage = { show: false, text: '' }; }}>×</button>
+		</div>
+	{/if}
+
+	{#if identifyFlash}
+		<div class="identify-flash" transition:fade={{ duration: 150 }}>
+			<span>{identifyFlash}</span>
+		</div>
+	{/if}
+
+	<div class="toast-container">
+		{#each toasts as toast (toast.id)}
+			<Toast 
+				message={toast.message} 
+				type={toast.type} 
+				onremove={() => toasts = toasts.filter(t => t.id !== toast.id)} />
+		{/each}
+	</div>
+
+	{#if viewableItems.length > 0}
+		<ZoomOverlay
+			items={viewableItems}
+			initialIndex={lightboxIndex}
+			onclose={() => (viewableItems = [])}
+		/>
+	{/if}
+
+	{#if isDragging}
+		<div class="drag-overlay" role="presentation">
+			<div class="drag-zones" class:split={isSplit} class:editor-on-right={isSplit && settings.splitEditorSide === 'right'}>
+				{#if hasEditorPane}
+					<div class="drag-zone editor-zone" class:active={dragTarget === 'editor'}>
+								<div class="drag-message">
+									<span>{dropZoneLabel(dragPaths, 'editor') === 'embed' ? t('dragAndDrop.embed', settings.language) : t('dragAndDrop.open', settings.language)}</span>
+								</div>
+							</div>
+				{/if}
+				{#if isSplit || !isEditing}
+					<div class="drag-zone viewer-zone" class:active={dragTarget === 'preview'}>
+								<div class="drag-message">
+									<span>{t('dragAndDrop.open', settings.language)}</span>
+								</div>
+							</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
 {/if}
 
-{#if showSettings}
-<Settings show={showSettings} onclose={() => (showSettings = false)} />
-{/if}
+<ContextMenu {...docContextMenu} onhide={() => (docContextMenu.show = false)} />
 
-  <!-- Upstream: Toast notifications -->
-  <div class="toast-container">
-    {#each toasts as toast (toast.id)}
-      <Toast
-        message={toast.message}
-        type={toast.type}
-        onremove={() => toasts = toasts.filter(t => t.id !== toast.id)} />
-    {/each}
-  </div>
+<!-- What a PDF is rendered from: empty on screen, filled for the duration of a
+     print by `exportAsPdf`. It is a sibling of the app's own markup so that the
+     print sheet can hide everything else under `#app` in one rule, rather than
+     naming each part of the interface (#668). -->
+<article id="print-root" class="markdown-body" bind:this={printRootEl}></article>
 
-  <!-- Upstream: Lightbox overlay for images/diagrams -->
-  {#if lightboxIndex >= 0 && viewableItems.length > 0}
-    <ZoomOverlay
-      items={viewableItems}
-      initialIndex={lightboxIndex}
-      onclose={() => lightboxIndex = -1} />
-  {/if}
+<style>
+	:root {
+		scroll-behavior: smooth !important;
+		background-color: var(--color-canvas-default);
+	}
 
-  <!-- Upstream: Context menu -->
-  <ContextMenu {...docContextMenu} onhide={() => (docContextMenu.show = false)} />
+	:global(body) {
+		background-color: var(--color-canvas-default);
+		margin: 0;
+		padding: 0;
+		color: var(--color-fg-default);
+		overflow: hidden;
+	}
 
-  <style>
-  :root {
-    --animation: cubic-bezier(0.05, 0.95, 0.05, 0.95);
-    scroll-behavior: smooth !important;
-    background-color: var(--color-canvas-default);
-  }
+	/*
+	 * The article is the scroller, so anything it clips cannot be wider than it.
+	 * It fills the pane and its padding centres the text column instead of a
+	 * `max-width` doing so; that leaves the side margins inside the article for
+	 * a wide table to extend into (#811).
+	 */
+	.viewer-content {
+		container-type: inline-size;
+	}
 
-  :global(body) {
-    background-color: var(--color-canvas-default);
-    margin: 0;
-    padding: 0;
-    color: var(--color-fg-default);
-    overflow: hidden;
-  }
+	.markdown-body {
+		--gutter: clamp(24px, 5vw, 50px);
+		--measure: min(100cqi, var(--preview-max-width, 880px));
+		--breakout-inset: var(--gutter);
+		box-sizing: border-box;
+		min-width: 200px;
+		padding: 50px max(var(--gutter), (100cqi - var(--measure)) / 2 + var(--gutter));
+		height: 100%;
+		overflow-y: auto;
+		overflow-x: hidden;
+		transform: translate3d(0, 0, 0);
+		text-align: left;
+		overflow-wrap: anywhere;
+	}
 
-  .markdown-body {
-    box-sizing: border-box;
-    min-width: 200px;
-    margin: 0;
-    padding: 50px clamp(calc(calc(50% - 390px)), 5vw, 50px);
-    height: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
-    transform: translate3d(0, 0, 0); /* Create stacking context */
-  }
+	/* An outline floating in the margin keeps a wide table from sliding under it. */
+	.markdown-body.toc-in-gutter {
+		--breakout-inset: calc(var(--toc-width) + var(--gutter));
+	}
 
-  .markdown-body.full-width {
-    padding: 50px clamp(calc(calc(50% - 550px)), 5vw, 80px);
-    max-width: 100%;
-  }
+	/*
+	 * A table wider than the text column grows into the margins, centred on the
+	 * column, up to `--breakout-inset` from the pane edge; past that it scrolls.
+	 * `translate` because only it can use the table's own width: the shift is
+	 * half of what the table exceeds the column by, and 0 for one that fits.
+	 * Nested tables are left out, since their column does not start where the
+	 * text column does.
+	 */
+	.viewer-content :global(.markdown-body table:not(:is(li, blockquote, td, th, details, .markdown-alert, .footnotes) table)) {
+		max-width: max(100%, 100cqi - 2 * var(--breakout-inset));
+		translate: min(0px, (var(--measure) - 2 * var(--gutter)) / 2 - 50%);
+	}
 
-  .caret-indicator {
-    position: absolute;
-    height: 2px;
-    background-color: #0078d4;
-    width: 100%;
-    left: 0;
-    right: 0;
-    pointer-events: none;
-    z-index: 100;
-    opacity: 0.8;
-    transform: translateY(2px); /* visual adjustment */
-  }
+	.loading-chip {
+		position: absolute;
+		bottom: 30px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: var(--color-canvas-overlay);
+		border: 1px solid var(--color-border-default);
+		border-radius: 20px;
+		padding: 8px 16px;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		z-index: 100;
+		color: var(--color-fg-muted);
+		font-size: 13px;
+		font-family: var(--win-font), sans-serif;
+	}
 
-  /* Disable animation in split view to prevent jumpiness */
-  .split-view .markdown-body {
-    animation: none;
-  }
+	.loading-spinner {
+		width: 14px;
+		height: 14px;
+		border: 2px solid var(--color-border-muted);
+		border-top-color: var(--color-accent-fg);
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
 
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateY(12px);
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	/* Not under `.markdown-container`: the exported article is outside it. */
+	:global(.markdown-body pre),
+	:global(.markdown-body pre code),
+	:global(.markdown-body pre tt),
+	:global(.markdown-body code) {
+		font-family: var(--code-font, Consolas, monospace) !important;
+		font-size: var(--code-font-size, 14px) !important;
+	}
+
+	/*
+	 * The Code Font Size setting is an absolute px, which is what a reader wants
+	 * for code sitting in prose — and wrong for code sitting in a heading, where
+	 * it does not scale with the words around it: 14px inside a 24px `##` (#681),
+	 * 14px inside a 32px `#`. GitHub sizes inline code at 85% of whatever
+	 * contains it, and that is the rule the setting was overriding here.
+	 *
+	 * Scoped to headings so the setting keeps meaning what it says everywhere a
+	 * reader actually reads code, and `!important` because the rule above is —
+	 * specificity alone cannot answer it.
+	 */
+	:global(.markdown-body :is(h1, h2, h3, h4, h5, h6) code) {
+		font-size: 0.85em !important;
+	}
+
+	/*
+	 * The shared cursor in the preview (#799), drawn like the editor's: a caret
+	 * and a faint current-line band. It does not blink, which is what says the
+	 * preview is not the place to type.
+	 */
+	.preview-cursor {
+		position: absolute;
+		left: 0;
+		right: 0;
+		pointer-events: none;
+	}
+
+	.preview-cursor-line {
+		position: absolute;
+		inset: 0;
+		background: color-mix(in srgb, var(--color-fg-default) 7%, transparent);
+	}
+
+	.preview-cursor-caret {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 2px;
+		margin-left: -1px;
+		background: var(--color-accent-fg);
+	}
+
+	@media print {
+		.preview-cursor {
+			display: none;
+		}
+	}
+
+	.markdown-body.full-width {
+		--measure: 100cqi;
+	}
+
+
+
+	:global(.youtube-link) {
+		display: block;
+		max-width: 100%;
+		margin: 1em 0;
+	}
+
+	:global(.youtube-link img) {
+		display: block;
+		width: 100%;
+		aspect-ratio: 16 / 9;
+		object-fit: cover;
+		border-radius: 8px;
+	}
+
+	/*
+	 * A measurable position for a soft line break, so split-view scroll sync
+	 * can resolve a line inside a long paragraph instead of interpolating
+	 * across the whole block. See `processSoftLineAnchors`.
+	 *
+	 * `inline-block` is the point — it is what gives the element a CSS box, and
+	 * therefore an `offsetTop` the anchor lookup can read. Everything else here
+	 * is about taking that box back out of the layout: no width, no height, and
+	 * `vertical-align: top` so a zero-height box cannot sit on the baseline and
+	 * push the line it is on. It holds no text, so selection and copy step over
+	 * it.
+	 */
+	:global(.source-line-anchor) {
+		display: inline-block;
+		width: 0;
+		height: 0;
+		vertical-align: top;
+	}
+
+	:global(.mermaid-diagram) {
+		margin: 1em 0;
+		display: flex;
+		justify-content: center;
+		overflow-x: auto;
+	}
+
+	:global(.mermaid-diagram svg) {
+		max-width: 100%;
+		height: auto;
+	}
+
+	.tooltip {
+		position: fixed;
+		background: var(--color-canvas-overlay);
+		color: var(--color-fg-default);
+		padding: 4px 8px;
+		border-radius: 6px;
+		font-size: 11px;
+		pointer-events: none;
+		z-index: 10007;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		border: 1px solid var(--color-border-default);
+		font-family: var(--win-font), 'Segoe UI', sans-serif;
+		white-space: nowrap;
+		max-width: 400px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		transform: translateX(-50%) translateY(calc(-100% + 4px));
+		opacity: 0;
+		transition: 
+			opacity 0.15s ease,
+			transform 0.15s ease,
+			left 0.15s ease,
+			top 0.15s ease;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.tooltip.visible {
+		opacity: 1;
+		transform: translateX(-50%) translateY(-100%);
+	}
+
+	.tooltip.align-below {
+		transform: translateX(-50%) translateY(-4px);
+	}
+
+	.tooltip.align-below.visible {
+		transform: translateX(-50%) translateY(0);
+	}
+
+	.tooltip-text {
+		display: block;
+	}
+
+	.tooltip-shortcut {
+		color: var(--color-fg-muted);
+		font-size: 10px;
+		font-family: inherit;
+	}
+
+	.tooltip.align-right {
+		transform: translateX(4px) translateY(-50%);
+	}
+
+	.tooltip.align-right.visible {
+		transform: translateX(0) translateY(-50%);
+		align-items: flex-start;
+	}
+
+	.tooltip.align-left {
+		transform: translateX(calc(-100% - 4px)) translateY(-50%);
+	}
+
+	.tooltip.align-left.visible {
+		transform: translateX(-100%) translateY(-50%);
+		align-items: flex-end;
+	}
+
+
+	.tooltip.footnote-tooltip {
+		white-space: normal;
+		max-width: 500px;
+		text-align: left;
+		line-height: 1.5;
+		padding: 10px 14px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+		transform: translate(-50%, calc(-100% + 4px));
+		margin-top: -8px;
+		display: block; /* reset flex for footnotes */
+	}
+
+	.tooltip.footnote-tooltip.visible {
+		transform: translate(-50%, -100%);
+	}
+	
+	:global(.tooltip.footnote-tooltip p) {
+		margin: 0;
+		padding: 0;
+	}
+
+    :global(.tooltip.footnote-tooltip p + p) {
+        margin-top: 8px;
     }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  :global(.video-container) {
-    position: relative;
-    padding-bottom: 56.25%;
-    height: 0;
-    overflow: hidden;
-    max-width: 100%;
-    margin: 1em 0;
-  }
-
-  :global(.video-container iframe) {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    border-radius: 8px;
-  }
-
-  .tooltip {
-    position: fixed;
-    background: var(--color-canvas-default);
-    color: var(--color-fg-default);
-    padding: 6px 10px;
-    border-radius: 4px;
-    font-size: 12px;
-    pointer-events: none;
-    z-index: 10000;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-    border: 1px solid var(--color-border-default);
-    font-family: var(--win-font);
-    white-space: nowrap;
-    max-width: 400px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transform: translate(-50%, -100%);
-    transition: opacity 0.15s ease-out;
-    opacity: 1;
-  }
-
-  .tooltip::after {
-    content: '';
-    position: absolute;
-    bottom: -6px;
-    left: 50%;
-    transform: translateX(-50%);
-    border-left: 6px solid transparent;
-    border-right: 6px solid transparent;
-    border-top: 6px solid var(--color-canvas-default);
-  }
-
-  .editor-wrapper {
-    width: 100%;
-    height: 100%;
-    position: absolute;
-    top: 0;
-    left: 0;
-    padding-top: 36px;
-    box-sizing: border-box;
-  }
-
-  .export-message {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    background: var(--color-canvas-default);
-    border: 1px solid var(--color-border-default);
-    border-radius: 8px;
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-    z-index: 50000;
-    max-width: 400px;
-    font-size: 14px;
-    color: var(--color-fg-default);
-    animation: slideIn 0.3s ease-out;
-  }
-
-  .export-message .close-btn {
-    background: transparent;
-    border: none;
-    font-size: 18px;
-    color: var(--color-fg-muted);
-    cursor: pointer;
-    padding: 0 4px;
-    line-height: 1;
-  }
-
-  .export-message .close-btn:hover {
-    color: var(--color-fg-default);
-  }
-
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateX(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-
-  .drag-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 120, 212, 0.15);
-    backdrop-filter: blur(4px);
-    border: 3px dashed #0078d4;
-    margin: 12px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 40000;
-    pointer-events: none;
-    animation: fadeIn 0.15s ease-out;
-  }
-
-  .drag-message {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    color: #0078d4;
-    font-family: var(--win-font);
-    font-weight: 500;
-    font-size: 18px;
-  }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: scale(0.98);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-
-  .loading-screen {
-    position: fixed;
-    top: 36px;
-    left: 0;
-    width: 100%;
-    height: calc(100% - 36px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--color-canvas-default);
-    z-index: 5000;
-  }
-
-  .spinner {
-    animation: rotate 2s linear infinite;
-    z-index: 2;
-    width: 50px;
-    height: 50px;
-  }
-
-  .spinner .path {
-    stroke: var(--color-accent-fg);
-    stroke-linecap: round;
-    animation: dash 1.5s ease-in-out infinite;
-  }
-
-  @keyframes rotate {
-    100% {
-      transform: rotate(360deg);
-    }
-  }
-
-  @keyframes dash {
-    0% {
-      stroke-dasharray: 1, 150;
-      stroke-dashoffset: 0;
-    }
-    50% {
-      stroke-dasharray: 90, 150;
-      stroke-dashoffset: -35;
-    }
-    100% {
-      stroke-dasharray: 90, 150;
-      stroke-dashoffset: -124;
-    }
-  }
-  /* Layout System */
-  .layout-container {
-    display: flex;
-    width: 100%;
-    height: 100%;
-    position: absolute;
-    top: 0;
-    left: 0;
-    padding-top: 36px;
-    box-sizing: border-box;
-    overflow: hidden;
-  }
-
-  .pane {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    transition:
-      flex 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-      transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    min-width: 0;
-  }
-
-  .pane.editor-pane {
-    background: var(--color-canvas-default);
-  }
-
-  .pane.viewer-pane {
-    background: var(--color-canvas-default);
-  }
-
-  /* View Mode */
-  .layout-container:not(.split):not(.editing) .editor-pane {
-    width: 0 !important;
-    flex: 0 !important;
-    opacity: 0;
-  }
-
-  .layout-container:not(.split):not(.editing) .viewer-pane {
-    width: 100%;
-    flex: 1 !important;
-  }
-
-  /* Edit Mode */
-  .layout-container:not(.split).editing .editor-pane {
-    width: 100%;
-    flex: 1 !important;
-  }
-
-  .layout-container:not(.split).editing .viewer-pane {
-    width: 0 !important;
-    flex: 0 !important;
-    opacity: 0;
-  }
-
-  /* Split Mode Transition Logic */
-  /* Editor slides in from left */
-  /* Viewer slides right */
-
-  .pane {
-    height: 100%;
-    position: relative;
-  }
-
-  .split-bar {
-    width: 4px;
-    background: var(--color-border-default);
-    cursor: col-resize;
-    position: relative;
-    z-index: 100;
-    transition: background 0.2s;
-  }
-
-  .split-bar:hover {
-    background: var(--color-accent-fg);
-  }
-
-  .editor-wrapper {
-    /* Legacy mapping */
-    width: 100%;
-    height: 100%;
-  }
-
-  .metadata-popup {
-    position: absolute;
-    top: 48px;
-    right: 24px;
-    width: 400px;
-    max-height: 400px;
-    background: var(--color-canvas-overlay, var(--color-canvas-default));
-    border: 1px solid var(--color-border-default);
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .metadata-content {
-    padding: 16px;
-    overflow-y: auto;
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 13px;
-  }
-
-  .metadata-content pre {
-    margin: 0;
-    white-space: pre-wrap;
-  }
-
-  .toc-sidebar {
-    width: 240px;
-    flex: 0 0 240px !important;
-    border-right: 1px solid var(--color-border-default);
-    background: var(--color-canvas-subtle);
-    display: flex;
-    flex-direction: column;
-    padding: 20px 0;
-    z-index: 10;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-  }
-
-  .toc-title {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--color-fg-muted);
-    padding: 0 20px 12px;
-    letter-spacing: 0.05em;
-    flex-shrink: 0;
-  }
-
-  .toc-list {
-    overflow-y: auto;
-    flex: 1 1 auto;
-    min-height: 0;
-  }
-
-  .toc-item {
-    padding: 6px 20px;
-    font-size: 13px;
-    color: var(--color-fg-muted);
-    cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: all 0.1s;
-  }
-
-  .toc-item:hover {
-    background: var(--color-canvas-default);
-    color: var(--color-fg-default);
-  }
-
-  .toc-item.level-1 { font-weight: 600; }
-  .toc-item.level-2 { padding-left: 32px; }
-  .toc-item.level-3 { padding-left: 44px; }
-  .toc-item.level-4 { padding-left: 56px; }
-  .toc-item.level-5 { padding-left: 68px; }
-  .toc-item.level-6 { padding-left: 80px; }
-
-  /* Upstream: Loading chip for large file progressive loading */
-  .loading-chip {
-    position: absolute;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--color-canvas-overlay);
-    border: 1px solid var(--color-border-default);
-    border-radius: 20px;
-    padding: 8px 16px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 100;
-    color: var(--color-fg-muted);
-    font-size: 13px;
-  }
-
-  .loading-spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--color-border-muted);
-    border-top-color: var(--color-accent-fg);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  /* Upstream: Viewer content wrapper */
-  .viewer-content {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-  }
-
-  /* Upstream: Floating TOC overlay */
-  .toc-overlay-wrapper {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 240px;
-    height: 100%;
-    z-index: 50;
-    background: var(--color-canvas-subtle);
-    border-right: 1px solid var(--color-border-default);
-    overflow-y: auto;
-    padding-top: 36px;
-    box-sizing: border-box;
-  }
-
-  .toc-overlay-wrapper.is-pinned {
-    position: relative;
-    flex-shrink: 0;
-    padding-top: 0;
-  }
-
-  .toc-overlay-wrapper.on-right {
-    left: auto;
-    right: 0;
-    border-right: none;
-    border-left: 1px solid var(--color-border-default);
-  }
-
-  .toc-overlay-wrapper.is-pinned.on-right {
-    border-left: 1px solid var(--color-border-default);
-  }
-
-  .toc-overlay-wrapper.is-pinned:not(.on-right) {
-    border-right: 1px solid var(--color-border-default);
-  }
-
-  .toc-toggle-floating {
-    position: absolute;
-    top: 50%;
-    left: 0;
-    transform: translateY(-50%);
-    width: 24px;
-    height: 48px;
-    background: var(--color-canvas-overlay);
-    border: 1px solid var(--color-border-default);
-    border-left: none;
-    border-radius: 0 6px 6px 0;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 51;
-    opacity: 0;
-    transition: opacity 0.2s;
-    color: var(--color-fg-muted);
-  }
-
-  .toc-toggle-floating.expanded {
-    opacity: 1;
-    left: 240px;
-  }
-
-  .toc-toggle-floating.on-right {
-    left: auto;
-    right: 0;
-    border-left: 1px solid var(--color-border-default);
-    border-right: none;
-    border-radius: 6px 0 0 6px;
-  }
-
-  .toc-toggle-floating.on-right.expanded {
-    right: 240px;
-  }
-
-  .layout-container:hover .toc-toggle-floating,
-  .toc-toggle-floating:hover {
-    opacity: 1;
-  }
-
-  .toc-toggle-floating:active {
-    background: var(--color-canvas-default);
-  }
-
-  .toc-toggle-floating svg {
-    transition: transform 0.2s;
-  }
-
-  .toc-toggle-floating.on-right svg {
-    transform: rotate(180deg);
-  }
-
-  .toc-toggle-floating.expanded svg {
-    transform: rotate(180deg);
-  }
-
-  .toc-toggle-floating.on-right.expanded svg {
-    transform: rotate(0deg);
-  }
-
-  .toc-toggle-floating.in-edit-mode:not(.expanded) {
-    opacity: 0.4;
-  }
-
-  /* Upstream: Toast container */
-  .toast-container {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  /* Upstream: Layout adjustments for pinned TOC */
-  .layout-container.has-pinned-toc {
-    display: flex;
-  }
-
-  .layout-container.toc-on-left .toc-overlay-wrapper.is-pinned {
-    order: -1;
-  }
-
-  .layout-container.editing .toc-overlay-wrapper:not(.on-right) {
-    left: 0;
-  }
-
-  .layout-container.editing .toc-overlay-wrapper.on-right {
-    right: 0;
-  }
-
-  .drag-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    pointer-events: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.1);
-  }
-
-  .drag-zones {
-    display: flex;
-    gap: 16px;
-    width: 80%;
-    max-width: 600px;
-  }
-
-  .drag-zone {
-    flex: 1;
-    padding: 40px 20px;
-    border: 2px dashed var(--color-border-muted);
-    border-radius: 12px;
-    text-align: center;
-    transition: all 0.2s ease;
-    opacity: 0.5;
-  }
-
-  .drag-zone.active {
-    opacity: 1;
-    border-color: var(--color-accent-fg);
-    background: var(--color-accent-subtle);
-  }
-
-  .drag-message {
-    color: var(--color-fg-muted);
-    font-size: 14px;
-  }
-
-  .drag-zone.active .drag-message {
-    color: var(--color-fg-default);
-  }
+
+	.tooltip.footnote-tooltip::after {
+		content: '';
+		position: absolute;
+		bottom: -6px;
+		left: 50%;
+		transform: translateX(-50%);
+		border-left: 6px solid transparent;
+		border-right: 6px solid transparent;
+		border-top: 6px solid var(--color-canvas-overlay);
+	}
+
+
+	.drag-overlay {
+		position: fixed;
+		top: 36px;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		pointer-events: none;
+		z-index: 40000;
+		animation: fadeIn 0.1s ease-out;
+	}
+
+	.drag-message {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		color: #ffffff;
+		font-family: var(--win-font);
+		font-weight: 500;
+		font-size: 13px;
+		position: absolute;
+		bottom: 40px;
+		left: 50%;
+		transform: translateX(-50%);
+		white-space: nowrap;
+		background: var(--color-accent-fg);
+		padding: 6px 14px;
+		border-radius: 20px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+		pointer-events: none;
+	}
+
+	.drag-zones {
+		display: flex;
+		width: 100%;
+		height: 100%;
+		gap: 12px;
+	}
+
+	.drag-zone {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		transition: background 0.2s, border-color 0.2s, opacity 0.2s;
+		border: 2px dashed transparent;
+		opacity: 0;
+		position: relative;
+		margin: 8px;
+		border-radius: 12px;
+	}
+
+	.drag-zone.active {
+		background: color-mix(in srgb, var(--color-accent-fg) 8%, transparent);
+		border-color: color-mix(in srgb, var(--color-accent-fg) 30%, transparent);
+		opacity: 1;
+	}
+
+	.loading-screen {
+		position: fixed;
+		top: 36px;
+		left: 0;
+		width: 100%;
+		height: calc(100% - 36px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--color-canvas-default);
+		z-index: 5000;
+	}
+
+	.spinner {
+		animation: rotate 2s linear infinite;
+		z-index: 2;
+		width: 50px;
+		height: 50px;
+	}
+
+	.spinner .path {
+		stroke: var(--color-accent-fg);
+		stroke-linecap: round;
+		animation: dash 1.5s ease-in-out infinite;
+	}
+
+	@keyframes rotate {
+		100% {
+			transform: rotate(360deg);
+		}
+	}
+
+	@keyframes dash {
+		0% {
+			stroke-dasharray: 1, 150;
+			stroke-dashoffset: 0;
+		}
+		50% {
+			stroke-dasharray: 90, 150;
+			stroke-dashoffset: -35;
+		}
+		100% {
+			stroke-dasharray: 90, 150;
+			stroke-dashoffset: -124;
+		}
+	}
+	/* Layout System */
+	.layout-container {
+		display: flex;
+		width: 100%;
+		height: 100%;
+		position: absolute;
+		top: 0;
+		left: 0;
+		padding-top: 36px;
+		box-sizing: border-box;
+		overflow: hidden;
+	}
+
+	/**
+	 * Swapping the panes reverses the row rather than reordering the markup
+	 * (#184). The editor keeps its place in the DOM, so focus order, the drag
+	 * hit test — which reads each pane's own `getBoundingClientRect()` — and
+	 * every `.editor-pane` / `.viewer-pane` rule carry over untouched. The
+	 * padding that a pinned outline adds is on the container and is unaffected
+	 * by the direction, so the outline stays on the side it is pinned to.
+	 */
+	.layout-container.editor-on-right,
+	.drag-zones.editor-on-right {
+		flex-direction: row-reverse;
+	}
+
+	.pane {
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		min-width: 0;
+		height: 100%;
+		position: relative;
+		background: var(--color-canvas-default);
+	}
+
+	.viewer-content {
+		display: flex;
+		flex-direction: row;
+		width: 100%;
+		height: 100%;
+		overflow: hidden;
+	}
+
+	/* View Mode */
+	.layout-container:not(.split):not(.editing) .editor-pane {
+		width: 0 !important;
+		flex: 0 !important;
+		opacity: 0;
+	}
+
+	.layout-container:not(.split):not(.editing) .viewer-pane {
+		width: 100%;
+		flex: 1 !important;
+	}
+
+	/* Edit Mode */
+	.layout-container:not(.split).editing .editor-pane {
+		width: 100%;
+		flex: 1 !important;
+	}
+
+	.layout-container:not(.split).editing .viewer-pane {
+		width: 0 !important;
+		flex: 0 !important;
+		opacity: 0;
+	}
+
+	.split-bar {
+		width: 4px;
+		background: var(--color-border-default);
+		cursor: col-resize;
+		position: relative;
+		z-index: 100;
+		transition: background 0.2s;
+	}
+
+	.split-bar:hover {
+		background: var(--color-accent-fg);
+	}
+
+	@keyframes fadeIn {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+
+	.identify-flash {
+		position: fixed;
+		inset: 0;
+		z-index: 40000;
+		pointer-events: none;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: inset 0 0 0 3px var(--color-accent-fg);
+		border-radius: 8px;
+		font-family: var(--win-font);
+	}
+
+	.identify-flash span {
+		padding: 10px 22px;
+		border-radius: 10px;
+		background: var(--color-accent-fg);
+		color: #fff;
+		font-size: 20px;
+		font-weight: 600;
+		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+		font-family: var(--win-font);
+	}
+
+	/*
+	 * `.layout-container` is absolutely positioned from top: 0, so a bar in
+	 * normal flow would end up underneath it. Pinned just below the 36px
+	 * title bar instead, the way editors surface file-changed-on-disk notices.
+	 */
+	.external-change-bar {
+		position: fixed;
+		top: 36px;
+		left: 0;
+		right: 0;
+		z-index: 40000;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 14px;
+		background: color-mix(in srgb, var(--color-attention-fg, #9a6700) 14%, var(--color-canvas-overlay));
+		border-bottom: 1px solid var(--color-border-default);
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+		color: var(--color-fg-default);
+		font-family: var(--win-font), sans-serif;
+		font-size: 13px;
+	}
+	.external-change-text {
+		flex: 1;
+		min-width: 0;
+	}
+	.external-change-action {
+		flex: none;
+		padding: 4px 10px;
+		border: 1px solid var(--color-border-default);
+		border-radius: 6px;
+		background: var(--color-canvas-default);
+		color: var(--color-fg-default);
+		font-family: inherit;
+		font-size: 12px;
+		cursor: pointer;
+	}
+	.external-change-action:hover {
+		background: color-mix(in srgb, var(--color-accent-fg) 8%, var(--color-canvas-default));
+	}
+	.external-change-action.primary {
+		border-color: color-mix(in srgb, var(--color-accent-fg) 40%, transparent);
+	}
+	.toast-container {
+		position: fixed;
+		bottom: 24px;
+		right: 24px;
+		z-index: 50000;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		pointer-events: none;
+	}
+	/* 本地导出结果横幅（H4/H7/H8 回挂，Task 13） */
+	.export-message {
+		position: fixed;
+		bottom: 24px;
+		right: 24px;
+		background: var(--color-canvas-default);
+		border: 1px solid var(--color-border-default);
+		border-radius: 8px;
+		padding: 12px 16px;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+		z-index: 50001;
+		max-width: 400px;
+		font-size: 14px;
+		color: var(--color-fg-default);
+		animation: slideIn 0.3s ease-out;
+	}
+	.export-message .close-btn {
+		background: transparent;
+		border: none;
+		font-size: 18px;
+		color: var(--color-fg-muted);
+		cursor: pointer;
+		padding: 0 4px;
+		line-height: 1;
+	}
+	.export-message .close-btn:hover {
+		color: var(--color-fg-default);
+	}
+	@keyframes slideIn {
+		from {
+			opacity: 0;
+			transform: translateX(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
+	}
+	.top-fade-mask {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 60px;
+		height: 52px;
+		background: linear-gradient(to bottom, var(--color-canvas-default) 40%, transparent 100%);
+		pointer-events: none;
+		z-index: 50;
+	}
+
+	.toc-overlay-wrapper {
+		position: absolute;
+		top: 36px;
+		left: 0;
+		bottom: 0;
+		z-index: 1000;
+		height: calc(100% - 36px);
+		width: var(--toc-width);
+		background-color: var(--color-canvas-default);
+		border-right: 1px solid transparent;
+		border-left: 1px solid transparent;
+		box-shadow: 10px 0 30px rgba(0, 0, 0, 0);
+		transition: box-shadow 0.3s ease, border-color 0.3s ease;
+	}
+
+	.layout-container.editing.has-pinned-toc.toc-on-left .editor-pane {
+		padding-left: 40px;
+	}
+	
+	.layout-container.editing.has-pinned-toc.toc-on-right .editor-pane {
+		padding-right: 40px;
+	}
+
+	.toc-overlay-wrapper.on-right {
+		left: auto;
+		right: 0;
+	}
+
+	.toc-overlay-wrapper.is-overhanging:not(.is-pinned) {
+		border-right-color: var(--color-border-default);
+		box-shadow: 10px 0 30px rgba(0, 0, 0, 0.12);
+	}
+	
+	.toc-overlay-wrapper.is-overhanging.on-right:not(.is-pinned) {
+		border-left-color: var(--color-border-default);
+		box-shadow: -10px 0 30px rgba(0, 0, 0, 0.12);
+	}
+
+	.toc-toggle-floating {
+		position: absolute;
+		/*
+		 * 36px of title bar, a 12px inset, and however tall the editor toolbar
+		 * is right now — 0 when there isn't one. See `paneTopChrome`: the last
+		 * term is measured because the toolbar's height is the toolbar's to
+		 * decide, and a copy of it here would silently go stale.
+		 */
+		top: calc(48px + var(--pane-top-chrome, 0px));
+		left: 8px;
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background-color: color-mix(in srgb, var(--color-canvas-default) 82%, transparent);
+		border: 1px solid var(--color-border-default);
+		border-radius: 4px;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
+		color: var(--color-fg-muted);
+		cursor: pointer;
+		z-index: 1001;
+		transition: 
+			left 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+			background-color 0.2s ease,
+			border-color 0.2s ease,
+			box-shadow 0.2s ease,
+			color 0.2s ease,
+			opacity 0.2s ease,
+			transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		opacity: 0.6;
+		padding: 0;
+	}
+
+	/**
+	 * Expanded, the button floats over the OUTLINE, which has no editor toolbar
+	 * on it — so the offset that clears one has nothing to clear and pushes the
+	 * button down onto the outline's first entry instead. 48px puts it back in
+	 * the panel's own header band, whose buttons sit at the far end (right when
+	 * the outline is on the left, left when it is on the right), leaving this
+	 * end of that band empty.
+	 *
+	 * Collapsed it keeps the offset, because there it really is floating over
+	 * the editor pane and the toolbar really is above it.
+	 */
+	.toc-toggle-floating.expanded {
+		left: 24px;
+		top: 48px;
+	}
+
+	.toc-toggle-floating.on-right {
+		left: auto;
+		right: 8px;
+	}
+
+	.toc-toggle-floating.on-right.expanded {
+		right: 24px;
+	}
+
+	.layout-container:hover .toc-toggle-floating,
+	.toc-toggle-floating:hover {
+		background-color: color-mix(in srgb, var(--color-canvas-default) 90%, transparent);
+		color: var(--color-fg-default);
+		opacity: 1;
+	}
+
+	.toc-toggle-floating:focus-visible {
+		outline: 2px solid var(--color-accent-fg);
+		outline-offset: 2px;
+		opacity: 1;
+	}
+
+	.toc-toggle-floating:active {
+		background-color: var(--color-border-muted);
+	}
+
+	.toc-toggle-floating svg {
+		transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		transform: rotate(0deg);
+	}
+	
+	.toc-toggle-floating.on-right svg {
+		transform: rotate(180deg);
+	}
+
+	.toc-toggle-floating.expanded svg {
+		transform: rotate(180deg);
+	}
+	
+	.toc-toggle-floating.on-right.expanded svg {
+		transform: rotate(0deg);
+	}
+
+	.layout-container.toc-resizing,
+	.layout-container.toc-resizing .toc-overlay-wrapper,
+	.layout-container.toc-resizing .toc-toggle-floating {
+		transition: none !important;
+	}
+
+
+	.layout-container.has-pinned-toc.toc-on-left {
+		padding-left: var(--toc-width);
+	}
+
+	.layout-container.has-pinned-toc.toc-on-right {
+		padding-right: var(--toc-width);
+	}
+
+	.toc-overlay-wrapper.is-pinned {
+		z-index: 10;
+		box-shadow: none !important;
+		border-right: 1px solid var(--color-border-default);
+	}
+
+	.toc-overlay-wrapper.is-pinned.on-right {
+		border-right: none;
+		border-left: 1px solid var(--color-border-default);
+	}
+
+	.layout-container.editing .toc-overlay-wrapper:not(.on-right) {
+		border-right-color: var(--color-border-default);
+	}
+
+	.layout-container.editing .toc-overlay-wrapper.on-right {
+		border-left-color: var(--color-border-default);
+	}
+
+	.toc-resize-handle {
+		position: absolute;
+		top: 0;
+		right: -5px;
+		bottom: 0;
+		width: 10px;
+		z-index: 80;
+		cursor: col-resize;
+		touch-action: none;
+		outline: none;
+	}
+
+	.toc-resize-handle.on-right {
+		right: auto;
+		left: -5px;
+	}
+
+	.toc-resize-handle::after {
+		content: '';
+		position: absolute;
+		top: 10px;
+		bottom: 10px;
+		left: 50%;
+		width: 1px;
+		transform: translateX(-50%);
+		background-color: var(--color-accent-fg);
+		opacity: 0;
+		transition: opacity 0.15s ease;
+	}
+
+	.toc-resize-handle:hover::after,
+	.toc-resize-handle:focus-visible::after,
+	.toc-overlay-wrapper.is-resizing .toc-resize-handle::after {
+		opacity: 0.85;
+	}
 </style>

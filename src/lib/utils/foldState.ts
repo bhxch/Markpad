@@ -1,0 +1,233 @@
+import { invalidateAnchorMemos } from './previewAnchor.js';
+
+/**
+ * Fold state for headings and callouts.
+ *
+ * `assignFoldKey` names each fold once, while the markup is built, and writes
+ * the name to `data-fold-key`. Every later reader asks the element
+ * (`foldKeyOf`) instead of recomputing it.
+ *
+ * The tab stores the folds whose state DIFFERS from what the source asks for,
+ * not the folds that are closed. Headings always start open, so for them the
+ * two are the same. A `> [!note]-` callout starts closed: storing "closed"
+ * could not tell a callout the reader opened from one never touched, and the
+ * next render would shut it again.
+ */
+
+/** Where `assignFoldKey` leaves its answer for every later reader. */
+const FOLD_KEY_ATTR = 'data-fold-key';
+
+const HEADING_HEAD_CLASS = 'foldable-header';
+const HEADING_CONTENT_CLASS = 'foldable-content-wrapper';
+const CALLOUT_CONTENT_CLASS = 'markdown-alert-content';
+const COLLAPSED_CLASS = 'is-collapsed';
+
+/**
+ * The two elements a fold toggles, and the key its state is stored under.
+ *
+ * `head` is what the reader clicks and what the chevron rotates with; `content`
+ * is the box whose height animates. Both carry `is-collapsed` because the CSS
+ * needs it in both places, and keeping them in one object is what stops a
+ * caller from setting one and forgetting the other.
+ */
+interface FoldRegion {
+	key: string;
+	head: Element;
+	content: Element;
+}
+
+/**
+ * Name this fold, once, and leave the name on it.
+ *
+ * `taken` is the keys already handed out in this render, so that two callouts
+ * with the same title — or two headings with the same text and no id — get
+ * keys of their own rather than folding as one. It is the same guarantee
+ * comrak gives heading ids, applied to the things comrak does not name.
+ *
+ * Keys only have to be unique within a document and stable across re-renders of
+ * it. Both fall out of keying by content in document order: an edit somewhere
+ * else leaves this fold's key alone.
+ */
+export function assignFoldKey(head: Element, taken: Set<string>): string {
+	// A heading's id is comrak's slug, already deduplicated, and it is what the
+	// outline and every `#anchor` link name the heading by. Text is the fallback
+	// for a heading the renderer gave no id. A callout has neither, so it is
+	// keyed by its title, in a namespace of its own so that a callout titled
+	// "Notes" and an id-less heading reading "Notes" stay two folds.
+	const base = head.classList.contains(HEADING_HEAD_CLASS)
+		? head.id || head.textContent?.trim() || ''
+		: `callout:${head.querySelector('.callout-title-inner')?.textContent?.trim() ?? ''}`;
+
+	let key = base;
+	for (let n = 1; taken.has(key); n += 1) key = `${base}~${n}`;
+	taken.add(key);
+	head.setAttribute(FOLD_KEY_ATTR, key);
+	return key;
+}
+
+/** The key the renderer wrote on this element, or `''` if it is not a fold head. */
+export function foldKeyOf(head: Element | null | undefined): string {
+	return head?.getAttribute(FOLD_KEY_ATTR) ?? '';
+}
+
+/**
+ * Is this fold closed, for a tab that has these deviations recorded?
+ *
+ * `foldedInSource` is what the document asks for — `> [!note]-` for a callout,
+ * always `false` for a heading. See the note at the top of this file for why
+ * the stored set is deviations rather than closures.
+ */
+export function isFolded(
+	overrides: ReadonlySet<string>,
+	key: string,
+	foldedInSource = false,
+): boolean {
+	return overrides.has(key) !== foldedInSource;
+}
+
+/**
+ * The same set with this key's deviation flipped.
+ *
+ * A NEW set, never a mutation: the viewer holds the tab's set through a
+ * `$derived`, and Svelte cannot see an `add` or a `delete` on a Set it is
+ * already holding — see `Tab.foldOverrides`.
+ */
+function flipFold(overrides: ReadonlySet<string>, key: string): Set<string> {
+	const next = new Set(overrides);
+	if (!next.delete(key)) next.add(key);
+	return next;
+}
+
+function regionOfHead(head: Element): FoldRegion | null {
+	const key = foldKeyOf(head);
+	if (!key) return null;
+
+	// The heading's wrapper is the sibling the renderer inserts right after it
+	// (`renderProtocol.test.ts` pins that), so the pairing needs no id lookup
+	// and no document to look ids up in. A callout encloses its own content.
+	const content = head.classList.contains(HEADING_HEAD_CLASS)
+		? head.nextElementSibling
+		: head.querySelector(`.${CALLOUT_CONTENT_CLASS}`);
+	const contentClass = head.classList.contains(HEADING_HEAD_CLASS)
+		? HEADING_CONTENT_CLASS
+		: CALLOUT_CONTENT_CLASS;
+
+	return content?.classList.contains(contentClass) ? { key, head, content } : null;
+}
+
+/** The fold whose control the reader just clicked — a chevron, or a callout title. */
+export function foldRegionAt(control: Element): FoldRegion | null {
+	const head = control.closest(`.${HEADING_HEAD_CLASS}, .callout-foldable`);
+	return head ? regionOfHead(head) : null;
+}
+
+/**
+ * The fold this key names, in the document currently on screen.
+ *
+ * A scan rather than an attribute selector: a callout key is its title, which
+ * is arbitrary user text, and building a selector out of it means escaping it
+ * correctly for the exact question `getAttribute` answers directly.
+ */
+function foldRegionByKey(root: Element, key: string): FoldRegion | null {
+	for (const head of Array.from(root.querySelectorAll(`[${FOLD_KEY_ATTR}]`))) {
+		if (foldKeyOf(head) === key) return regionOfHead(head);
+	}
+	return null;
+}
+
+/**
+ * Where a fold driver acts, and where what it flips is written down.
+ *
+ * An argument rather than an import. The deviations live on the tab, and
+ * `markdown.ts` imports this module while it builds the preview — reaching for
+ * the tab store from here would put the whole store behind every render, and
+ * behind every test that renders anything.
+ */
+export interface FoldHost {
+	/** The preview root. `null` while the preview is off screen — editor-only mode. */
+	readonly root: Element | null;
+	/** The deviations recorded for the document on screen. */
+	readonly folds: ReadonlySet<string>;
+	/** Write a new deviation set to whatever owns that document. */
+	setFolds(next: Set<string>): void;
+}
+
+/**
+ * The single write path for a fold, whichever of the three drivers asked: the
+ * preview's own control (`toggleFoldFromClick`), the outline's fold button, and
+ * find opening what hides a match (`revealFold`).
+ *
+ * Writes the stored deviation (what the next render reads) and the classes
+ * (what the current DOM shows) together. Doing only the classes folds
+ * something that springs open again on the next render.
+ *
+ * The state is flipped even when the fold is not in the DOM (the preview is
+ * hidden in editor-only mode, and the outline is still there to click), so the
+ * fold is honoured by the render that brings it back.
+ */
+export function toggleFold(host: FoldHost, key: string): void {
+	host.setFolds(flipFold(host.folds, key));
+
+	const region = host.root ? foldRegionByKey(host.root, key) : null;
+	if (region) applyFold(region, !region.content.classList.contains(COLLAPSED_CLASS));
+}
+
+/** Open this fold if it is shut — what find asks for on the way to a match. */
+export function revealFold(host: FoldHost, key: string): void {
+	const region = host.root ? foldRegionByKey(host.root, key) : null;
+	if (region?.content.classList.contains(COLLAPSED_CLASS)) toggleFold(host, key);
+}
+
+/**
+ * The two things a click folds through: a heading's chevron, and a foldable
+ * callout's whole title bar. Narrower than `foldRegionAt` reads, deliberately —
+ * `.foldable-header` is the entire heading, and clicking the words of a heading
+ * is not a fold.
+ */
+const FOLD_CONTROL_SELECTOR = '.header-fold-icon, .callout-toggle';
+
+/**
+ * Fold whatever the reader clicked, and say whether they clicked a fold at all.
+ *
+ * `false` is an ordinary click — a link, or text — and still the caller's to
+ * deal with. `true` is a fold control, even in the case where it names no
+ * region: the click belonged to the fold either way and is not also a link.
+ */
+export function toggleFoldFromClick(host: FoldHost, target: Element): boolean {
+	const control = target.closest(FOLD_CONTROL_SELECTOR);
+	if (!control) return false;
+
+	const region = foldRegionAt(control);
+	if (region) toggleFold(host, region.key);
+	return true;
+}
+
+/** Put a fold's two elements in the given state. The stored deviation is the caller's. */
+function applyFold(region: FoldRegion, collapsed: boolean): void {
+	region.head.classList.toggle(COLLAPSED_CLASS, collapsed);
+	region.content.classList.toggle(COLLAPSED_CLASS, collapsed);
+	// A shut fold answers for its contents in scroll sync's sample table.
+	invalidateAnchorMemos();
+}
+
+/**
+ * Every collapsed fold between `el` and the preview root, outermost first.
+ *
+ * Find calls this to learn what is hiding a match. Outermost first so that a
+ * nested fold is already on screen by the time its own height is measured.
+ */
+export function collapsedFoldsAround(el: Element, root: Element): FoldRegion[] {
+	const folds: FoldRegion[] = [];
+	for (let curr = el.parentElement; curr && curr !== root; curr = curr.parentElement) {
+		if (!curr.classList.contains(COLLAPSED_CLASS)) continue;
+
+		const head = curr.classList.contains(HEADING_CONTENT_CLASS)
+			? curr.previousElementSibling
+			: curr.classList.contains(CALLOUT_CONTENT_CLASS)
+				? curr.parentElement
+				: null;
+		const region = head ? regionOfHead(head) : null;
+		if (region) folds.unshift(region);
+	}
+	return folds;
+}

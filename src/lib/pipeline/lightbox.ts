@@ -60,6 +60,10 @@ export async function injectLightboxButtons(root: ParentNode, blocks?: Element[]
 			wrapper.appendChild(img);
 		}
 
+		// 合并后幂等守卫（Task 13）：上游 blockPatch 下预览 DOM 跨 patch 持久，
+		// 全根重复扫描时先清旧按钮再装新按钮，防悬停按钮逐 patch 累积。
+		wrapper.querySelectorAll(':scope > .img-lightbox-btn').forEach((b) => b.remove());
+
 		const btn = document.createElement('button');
 		btn.className = 'img-lightbox-btn';
 		btn.type = 'button';
@@ -90,6 +94,8 @@ export async function injectLightboxButtons(root: ParentNode, blocks?: Element[]
 			items.push({ type: 'img', src: img.getAttribute('src') || '' });
 		}
 
+		// 同上：图表 wrapper 的全屏按钮重复扫描防累积
+		dw.querySelectorAll(':scope > .img-lightbox-btn').forEach((b) => b.remove());
 		const btn = document.createElement('button');
 		btn.className = 'img-lightbox-btn';
 		btn.type = 'button';

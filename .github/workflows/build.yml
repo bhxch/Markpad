@@ -6,29 +6,187 @@ on:
 permissions:
   contents: write
 
+# One release build at a time, per version.
+#
+# Dispatching twice used to give two runs writing to the same draft release, and
+# that is not hypothetical: publish-packages.yml records markpad-app 2.7.2 going
+# to Chocolatey at 15:37 UTC on 2026-08-07 from run 31192564528 -- a run that
+# then failed on Linux and produced no release -- while the release users got
+# came out of a different run three hours later. #561 moved the package pushes
+# out of the matrix, which fixed the irreversible half. This is the other half.
+#
+# Keyed on the ref rather than on the version, because the version is read from
+# package.json inside `create-release` and is not available to a concurrency
+# group, which is evaluated before any job starts. A release is always dispatched
+# from master, so in practice the two are the same key.
+#
+# `cancel-in-progress: false` deliberately. The second dispatch waits instead of
+# killing the first: a half-cancelled run leaves a draft release holding some
+# platforms' assets and not others, which looks exactly like a build that has not
+# finished yet.
+concurrency:
+  group: build-and-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   create-release:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       release_id: ${{ steps.create_release.outputs.id }}
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          # An exact major rather than `lts/*`. Resolving an LTS *alias*
+          # requires the version manifest, which is a network call made before
+          # the tool-cache lookup — and that call is what failed three times in
+          # one afternoon with `self-signed certificate`, on jobs whose own
+          # work needed no network at all. A semver range is matched against
+          # the runner's tool cache first, and the cache already holds what
+          # `lts/*` was resolving to (`Found in cache @ …/node/24.18.0`), so
+          # the manifest is never reached. If a future image drops 24 this
+          # falls back to fetching the manifest — today's behaviour, not worse.
+          node-version: 24
 
       - name: Get Version
         id: get_version
         shell: bash
         run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
+      # `create-release` composes the release for `v<version from package.json>`,
+      # and softprops/action-gh-release documents what it does when that tag
+      # already has one: "the existing release will be updated". The matrix then
+      # uploads with `--clobber`, and `generate-update-feed` overwrites
+      # `latest.json`. So a dispatch from a master that was never bumped does not
+      # fail and does not create anything -- it rewrites the release users are
+      # downloading right now, with a build of whatever master holds today, and
+      # every gate this pipeline has is downstream of that: the draft, the asset
+      # check, and clicking Publish all come after the write.
+      #
+      # The tag and the version are two facts that nothing else compares. This
+      # compares them against the one place a released version is recorded.
+      #
+      # It fails closed. An answer that is not "no release" and not "a draft" --
+      # including a network error or a rate limit -- stops the run, because the
+      # direction this guard protects is the one where proceeding is expensive
+      # and waiting five minutes is not.
+      - name: This version has not already been released
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.get_version.outputs.version }}"
+
+          if answer=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft 2>&1); then
+            if [ "$(printf '%s' "$answer" | jq -r '.isDraft')" != "true" ]; then
+              echo "::error::$TAG is already published. This run would rewrite that release's assets and its updater feed, not create a new one. Bump the version first -- npm run release X.Y.Z, RELEASING.md per-release step 1."
+              exit 1
+            fi
+            echo "::notice::$TAG already has a draft release. This run writes into it, which is the recovery path."
+          elif printf '%s' "$answer" | grep -qi 'not found'; then
+            echo "$TAG has no release yet."
+          else
+            echo "::error::Could not establish whether $TAG is already released, so this run stops rather than guess: $answer"
+            exit 1
+          fi
+
+      # Every Markpad up to v2.7.0 has the pre-transfer endpoint compiled in and
+      # reaches the current feed only through GitHub's transfer redirect, which a
+      # repository or fork at the old location voids permanently. RELEASING.md §5
+      # has the detail; this is the part that notices.
+      #
+      # The assertion is the property, not a proxy for it. It does not ask whether
+      # a redirect exists — something may legitimately occupy the old location, so
+      # long as that URL still yields this repository's feed. It asks for the feed
+      # and checks where the feed points. A network failure is not evidence either
+      # way and warns instead of blocking a release on a flake.
+      - name: The endpoint old installs still use must lead to this repository
+        shell: bash
+        run: |
+          legacy='https://github.com/alecdotdev/Markpad/releases/latest/download/latest.json'
+          feed=''
+          for attempt in 1 2 3; do
+            if feed=$(curl -fsSL --max-time 30 "$legacy"); then break; fi
+            feed=''
+            sleep $(( attempt * 5 ))
+          done
+
+          if [ -z "$feed" ]; then
+            echo "::warning::Could not fetch $legacy after three attempts. Treating as unknown, not as failure."
+            exit 0
+          fi
+
+          urls=$(printf '%s' "$feed" | jq -r '.platforms | to_entries[] | .value.url' 2>/dev/null || true)
+          if [ -z "$urls" ]; then
+            echo "::error::$legacy answered, but not with an updater feed. Every install up to v2.7.0 asks this URL for its updates and will now be told there is none. See RELEASING.md section 5."
+            exit 1
+          fi
+
+          foreign=$(printf '%s\n' "$urls" | grep -v "$GITHUB_REPOSITORY/" || true)
+          if [ -n "$foreign" ]; then
+            echo "::error::$legacy serves a feed pointing somewhere other than $GITHUB_REPOSITORY:"
+            printf '  %s\n' $foreign
+            echo "::error::Installs up to v2.7.0 would follow it. See RELEASING.md section 5."
+            exit 1
+          fi
+
+          echo "$legacy still serves a feed for $GITHUB_REPOSITORY."
+
+      # A download table, above the generated changelog.
+      #
+      # GitHub's asset list is one flat, alphabetically sorted column: there is
+      # no way to group it by platform, and the file names alone do not say
+      # which of the two Windows executables installs and which does not. The
+      # release BODY is the one part of that page this repository controls, so
+      # the table goes there, and every row is a direct link.
+      #
+      # Version-stamped file names are what the bundler produces and what
+      # `latest.json` points at, so they are written out here rather than using
+      # the `/releases/latest/download/<name>` permalink, which only works for
+      # names that carry no version.
+      - name: Compose the download table
+        id: download_table
+        run: |
+          VERSION='${{ steps.get_version.outputs.version }}'
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
+          {
+            echo 'body<<RELEASE_BODY'
+            echo '## Download'
+            echo
+            echo '| System | Chip | Download | |'
+            echo '|---|---|---|---|'
+            echo "| **Windows** | Intel / AMD | [\`Markpad_${VERSION}_x64-setup.exe\`](${BASE}/Markpad_${VERSION}_x64-setup.exe) | installer |"
+            echo "| | Intel / AMD | [\`Markpad_${VERSION}_x64.exe\`](${BASE}/Markpad_${VERSION}_x64.exe) | portable |"
+            echo "| | ARM64 | [\`Markpad_${VERSION}_arm64-setup.exe\`](${BASE}/Markpad_${VERSION}_arm64-setup.exe) | installer |"
+            echo "| | ARM64 | [\`Markpad_${VERSION}_arm64.exe\`](${BASE}/Markpad_${VERSION}_arm64.exe) | portable |"
+            echo "| **macOS** | Intel **and** Apple Silicon | [\`Markpad_${VERSION}_universal.dmg\`](${BASE}/Markpad_${VERSION}_universal.dmg) | one file for both |"
+            echo "| **Linux** | x86-64 | [\`Markpad_${VERSION}_amd64.AppImage\`](${BASE}/Markpad_${VERSION}_amd64.AppImage) | portable |"
+            echo "| | x86-64 | [\`Markpad_${VERSION}_amd64.deb\`](${BASE}/Markpad_${VERSION}_amd64.deb) | Debian, Ubuntu |"
+            echo "| | x86-64 | [\`Markpad-${VERSION}-1.x86_64.rpm\`](${BASE}/Markpad-${VERSION}-1.x86_64.rpm) | Fedora, RHEL, openSUSE |"
+            echo
+            echo '> [!NOTE]'
+            echo '> **Windows SmartScreen Notice**: Windows executables are not signed with an Authenticode certificate, so SmartScreen shows them as an unrecognized app. Click *"More info"* → *"Run anyway"*. The antivirus heuristic that used to flag the portable `.exe` no longer does.'
+            echo
+            echo 'The two Windows files differ only in that one installs and one does not.'
+            echo 'Package managers: `choco install markpad-app` (Windows), `brew install --cask markpad` (macOS), `sudo snap install markpad` (Linux).'
+            echo
+            echo '## What Markpad renders'
+            echo
+            echo "Every syntax Markpad renders is in one document — [**download \`markdown-syntax.md\`**](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/v${VERSION}/samples/markdown-syntax.md) ([简体中文](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/v${VERSION}/samples/markdown-syntax.zh-CN.md)) and open it in Markpad: the preview shows each feature working, the editor beside it shows how each one is written. Give the same file to an AI and it knows exactly what Markpad can render: ask it to reformat a document you already have, or to write a new one that uses the whole range — callouts, tables, footnotes, maths, diagrams — and open the result here. [Read it on GitHub](https://github.com/${GITHUB_REPOSITORY}/blob/v${VERSION}/samples/markdown-syntax.md)."
+            echo
+            echo '---'
+            echo 'RELEASE_BODY'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create Release
         id: create_release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -37,6 +195,7 @@ jobs:
           draft: true
           prerelease: false
           generate_release_notes: true
+          body: ${{ steps.download_table.outputs.body }}
 
   build:
     needs: create-release
@@ -66,159 +225,417 @@ jobs:
             rust_target: 'aarch64-apple-darwin,x86_64-apple-darwin'
 
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          # An exact major rather than `lts/*`. Resolving an LTS *alias*
+          # requires the version manifest, which is a network call made before
+          # the tool-cache lookup — and that call is what failed three times in
+          # one afternoon with `self-signed certificate`, on jobs whose own
+          # work needed no network at all. A semver range is matched against
+          # the runner's tool cache first, and the cache already holds what
+          # `lts/*` was resolving to (`Found in cache @ …/node/24.18.0`), so
+          # the manifest is never reached. If a future image drops 24 this
+          # falls back to fetching the manifest — today's behaviour, not worse.
+          node-version: 24
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_target }}
 
+      # No cargo cache here, deliberately, and it is a budget decision rather
+      # than a judgement that caching does not work.
+      #
+      # A cargo cache is 1.0-1.2 GB per entry. This workflow has four matrix
+      # entries, so caching it would claim another ~4.5 GB of a 10 GB
+      # per-repository limit that already holds ~110 npm caches and the three
+      # entries test_build.yml writes on master. Over that limit GitHub evicts
+      # least-recently-used, and these would be the least recently used of all:
+      # this workflow is `workflow_dispatch` only and runs about once a week.
+      #
+      # What it would buy is also the least valuable minutes in the repository.
+      # A release build is not on anyone's critical path -- nobody waits on it
+      # the way they wait on a pull request check -- and its four jobs already
+      # finish in 12-16 minutes. Spending a third of the cache budget to make a
+      # weekly job faster, at the cost of the caches every pull request reads,
+      # is the wrong trade. If the limit ever stops binding, this is the first
+      # place to add one back.
+
       - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-24.04'
+        if: matrix.os == 'linux'
+        # The same list test_build.yml installs, which is what makes it a
+        # check: a pull request now compiles and bundles against exactly the
+        # packages a release does. An assertion holds the two together.
+        #
+        # It was sixteen. Six of those apt installs anyway --
+        # libwebkit2gtk-4.1-dev depends on libwebkit2gtk-4.1-0,
+        # libjavascriptcoregtk-4.1-dev, gir1.2-webkit2-4.1 and libgtk-3-dev,
+        # and those pull the remaining two -- and four libxcb *-dev packages
+        # and xdg-utils appear in no Tauri v2 prerequisite list. Run
+        # 31487547674 built the .deb, the .rpm and the AppImage on
+        # ubuntu-24.04 with the six below and nothing else.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libappindicator3-dev \
-          librsvg2-dev \
-          patchelf \
-          rpm \
-          libwebkit2gtk-4.1-0=2.44.0-2 \
-          libwebkit2gtk-4.1-dev=2.44.0-2 \
-          libjavascriptcoregtk-4.1-0=2.44.0-2 \
-          libjavascriptcoregtk-4.1-dev=2.44.0-2 \
-          gir1.2-javascriptcoregtk-4.1=2.44.0-2 \
-          gir1.2-webkit2-4.1=2.44.0-2
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm xdg-utils \
-          libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
-          sudo snap install lxd
-          sudo lxd waitready
-          sudo lxd init --auto
-          sudo usermod -aG lxd $USER
-          sudo iptables -F FORWARD
-          sudo iptables -P FORWARD ACCEPT
-          sudo snap install snapcraft --classic
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            rpm
 
       - name: Install Frontend Dependencies
-        run: npm install
+        run: npm ci
 
-      # --- Windows Build (x64) ---
-      - name: Build Windows x64
-        if: matrix.platform == 'windows-latest' && matrix.arch == 'x64'
-        run: npm run tauri build
+      # --- Windows Build ---
+      - name: Build Windows
+        if: matrix.os == 'windows'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build ${{ matrix.target && format('-- --target {0}', matrix.target) || '' }}
 
-      - name: Upload Windows x64 Artifacts
-        if: matrix.platform == 'windows-latest' && matrix.arch == 'x64'
+      # One `gh release upload` with explicit paths, not `find -exec`: find exits
+      # 0 when the command it runs fails, so a failed upload passed the step.
+      - name: Upload Windows Artifacts
+        if: matrix.os == 'windows'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ matrix.target }}
         run: |
+          set -euo pipefail
           VERSION="${{ needs.create-release.outputs.version }}"
-          cp src-tauri/target/release/Markpad.exe "Markpad_${VERSION}_x64.exe"
-          cp "Markpad_${VERSION}_x64.exe" "MarkpadInstaller_${VERSION}_x64.exe"
-          gh release upload v$VERSION "Markpad_${VERSION}_x64.exe" "MarkpadInstaller_${VERSION}_x64.exe" --clobber
-
-      - name: Create Chocolatey Package
-        if: matrix.platform == 'windows-latest' && matrix.arch == 'x64'
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p packaging/choco/tools
-          cp src-tauri/target/release/Markpad.exe packaging/choco/tools/Markpad.exe
-          cp LICENSE packaging/choco/tools/LICENSE.txt
-          choco pack packaging/choco/markpad-app.nuspec --version ${{ needs.create-release.outputs.version }} --outdir .
-          gh release upload v${{ needs.create-release.outputs.version }} markpad-app.${{ needs.create-release.outputs.version }}.nupkg --clobber
-
-      - name: Publish to Chocolatey
-        if: matrix.platform == 'windows-latest' && matrix.arch == 'x64'
-        continue-on-error: true
-        shell: pwsh
-        env:
-          CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
-        run: |
-          choco apikey --key $env:CHOCO_API_KEY --source https://push.chocolatey.org/
-          choco push markpad-app.${{ needs.create-release.outputs.version }}.nupkg --source https://push.chocolatey.org/
-
-      # --- Windows Build (ARM64) ---
-      - name: Build Windows ARM64
-        if: matrix.platform == 'windows-latest' && matrix.arch == 'arm64'
-        run: npm run tauri build -- --target aarch64-pc-windows-msvc
-
-      - name: Upload Windows ARM64 Artifacts
-        if: matrix.platform == 'windows-latest' && matrix.arch == 'arm64'
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ needs.create-release.outputs.version }}"
-          cp src-tauri/target/aarch64-pc-windows-msvc/release/Markpad.exe "Markpad_${VERSION}_arm64.exe"
-          cp "Markpad_${VERSION}_arm64.exe" "MarkpadInstaller_${VERSION}_arm64.exe"
-          gh release upload v$VERSION "Markpad_${VERSION}_arm64.exe" "MarkpadInstaller_${VERSION}_arm64.exe" --clobber
+          OUT="src-tauri/target/${TARGET:+$TARGET/}release"
+          PORTABLE="Markpad_${VERSION}_${{ matrix.arch }}.exe"
+          cp "$OUT/Markpad.exe" "$PORTABLE"
+          gh release upload "v$VERSION" "$PORTABLE" "$OUT"/bundle/nsis/*-setup.exe "$OUT"/bundle/nsis/*-setup.exe.sig --clobber
 
       # --- Linux Build ---
-      - name: Pre-download AppImage Dependencies
-        if: matrix.platform == 'ubuntu-24.04'
-        run: |
-          mkdir -p ~/.cache/tauri
-          wget -q https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64 -O ~/.cache/tauri/AppRun-x86_64
-          wget -q https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage -O ~/.cache/tauri/linuxdeploy-x86_64.AppImage
-          chmod +x ~/.cache/tauri/AppRun-x86_64 ~/.cache/tauri/linuxdeploy-x86_64.AppImage
-
       - name: Build Linux
-        if: matrix.platform == 'ubuntu-24.04'
+        if: matrix.os == 'linux'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # See the same variable in test_build.yml. A release must not be the
+          # place this is discovered: the PR check hits it about half the time,
+          # and there is nothing about a tag that would make it less likely.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: npm run tauri build
 
-      - name: Upload Linux Artifacts
-        if: matrix.platform == 'ubuntu-24.04'
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Why the AppImage has to be repacked at all, and what is removed, is in
+      # scripts/strip-appimage.sh. It is a script rather than a heredoc because
+      # this is the step that failed in two of the three v2.7.2 release
+      # attempts, and an inline one can only be exercised by cutting a release.
+      - name: Strip host-coupled libraries from AppImage
+        if: matrix.os == 'linux'
         run: |
-          find src-tauri/target/release/bundle/deb -name "*.deb" -exec gh release upload v${{ needs.create-release.outputs.version }} {} --clobber \;
-          find src-tauri/target/release/bundle/rpm -name "*.rpm" -exec gh release upload v${{ needs.create-release.outputs.version }} {} --clobber \;
-          find src-tauri/target/release/bundle/appimage -name "*.AppImage" -exec gh release upload v${{ needs.create-release.outputs.version }} {} --clobber \;
+          set -euo pipefail
+          APPIMAGE=$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -name '*.AppImage' | head -1)
+          if [ -z "$APPIMAGE" ]; then
+            echo "::error::No AppImage found to repackage" >&2
+            exit 1
+          fi
+          echo "APPIMAGE=$(realpath "$APPIMAGE")" >> "$GITHUB_ENV"
+          bash scripts/strip-appimage.sh "$APPIMAGE"
 
-      - name: Build and Publish Snap Package
-        if: matrix.platform == 'ubuntu-24.04'
+      # tauri build already produced a .sig for the pre-strip file, which no
+      # longer matches what the updater will download. Signing is kept out of
+      # the script so the script can be run on any AppImage without a key.
+      - name: Re-sign the repacked AppImage
+        if: matrix.os == 'linux'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          npm run tauri signer sign -- "$APPIMAGE"
+          if [ ! -f "$APPIMAGE.sig" ]; then
+            echo "::error::signer sign did not produce $APPIMAGE.sig" >&2
+            exit 1
+          fi
+          ls -la "$APPIMAGE" "$APPIMAGE.sig"
+
+      # The last thing before the artifact becomes downloadable, and the only
+      # check in this pipeline that starts Markpad rather than inspecting it.
+      # It runs on another distribution's userspace, because the runner cannot
+      # disagree with libraries that were copied out of the runner.
+      #
+      # Placed after the re-sign so it starts the exact bytes latest.json will
+      # point at, and before the upload so a failure leaves the draft release
+      # without a Linux artifact. generate-update-feed needs `build` to have
+      # succeeded, so it does not run either -- nothing is published, and
+      # nothing was ever installable.
+      - name: The AppImage starts on a distribution it was not built on
+        if: matrix.os == 'linux'
+        run: bash scripts/smoke-appimage.sh "$APPIMAGE"
+
+      - name: Upload Linux Artifacts
+        if: matrix.os == 'linux'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         run: |
-          # Build snap
-          sg lxd -c 'snapcraft pack'
-          sg lxd -c 'snapcraft pack'
-          
-          # Find and upload the snap
-          SNAP_FILE=$(ls *.snap | head -n 1)
-          if [ -n "$SNAP_FILE" ]; then
-            gh release upload v${{ needs.create-release.outputs.version }} $SNAP_FILE --clobber
-            
-            # Publish to snap store
-            snapcraft push $SNAP_FILE --release stable
-          else
-            echo "Snap file not found!"
+          set -euo pipefail
+          B=src-tauri/target/release/bundle
+          gh release upload "v${{ needs.create-release.outputs.version }}" "$B"/deb/*.deb "$B"/rpm/*.rpm "$B"/appimage/*.AppImage "$B"/appimage/*.AppImage.sig --clobber
+
+      # --- MacOS Build ---
+      # Developer ID takes precedence; without it the legacy signing path remains.
+      - name: Import macOS signing certificate
+        if: matrix.os == 'macos'
+        shell: bash
+        env:
+          APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+          APPLE_DEVELOPER_ID_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_PASSWORD }}
+          APPLE_DEVELOPER_ID_SHA1: ${{ secrets.APPLE_DEVELOPER_ID_SHA1 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [ -n "${APPLE_DEVELOPER_ID_P12:-}${APPLE_DEVELOPER_ID_PASSWORD:-}${APPLE_DEVELOPER_ID_SHA1:-}" ]; then
+            for name in APPLE_DEVELOPER_ID_P12 APPLE_DEVELOPER_ID_PASSWORD APPLE_DEVELOPER_ID_SHA1 APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+              if [ -z "${!name:-}" ]; then
+                echo "::error::Developer ID signing requires $name; refusing to fall back."
+                exit 1
+              fi
+            done
+            [[ "$APPLE_DEVELOPER_ID_SHA1" =~ ^[A-Fa-f0-9]{40}$ && "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || {
+              echo '::error::Invalid Developer ID SHA-1 or Apple team ID.'
+              exit 1
+            }
+            MACOS_CERTIFICATE="$APPLE_DEVELOPER_ID_P12"
+            MACOS_CERTIFICATE_PASSWORD="$APPLE_DEVELOPER_ID_PASSWORD"
+            MACOS_SIGNING_IDENTITY="$(printf '%s' "$APPLE_DEVELOPER_ID_SHA1" | tr '[:lower:]' '[:upper:]')"
+            echo 'MACOS_DEVELOPER_ID=true' >> "$GITHUB_ENV"
+          fi
+          if [ -z "${MACOS_CERTIFICATE:-}" ]; then
+            echo "No MACOS_CERTIFICATE secret; leaving the bundle unsigned (unchanged behaviour)."
+            exit 0
+          fi
+
+          # The certificate is set, so this release is meant to be signed, and
+          # the early exit above no longer covers a configuration that is only
+          # half there. The identity is the value with nothing downstream to
+          # catch it: a wrong one stops `codesign` with "no identity found",
+          # while an empty one is exported as an empty APPLE_SIGNING_IDENTITY,
+          # and whether `tauri build` then errors or simply signs nothing is not
+          # this step's to know. Refusing here makes it not matter. A missing
+          # password needs no check of its own -- `security import` fails on it.
+          if [ -z "${MACOS_SIGNING_IDENTITY:-}" ]; then
+            echo "::error::MACOS_CERTIFICATE is set but MACOS_SIGNING_IDENTITY is empty. Set all three secrets or none -- RELEASING.md one-time setup step 6."
             exit 1
           fi
 
-      # --- MacOS Build ---
+          KEYCHAIN="$RUNNER_TEMP/markpad-signing.keychain"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          CERTIFICATE="$RUNNER_TEMP/certificate.p12"
+          trap 'rm -f "$CERTIFICATE"' EXIT
+
+          printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$CERTIFICATE"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Lock the keychain after an hour and on sleep, so a stuck runner does
+          # not leave the key readable for the rest of its life.
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERTIFICATE" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          # Without this, codesign blocks on a GUI prompt for the private key
+          # that nobody is there to answer.
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN" > /dev/null
+          # codesign resolves the identity through the search list, so the new
+          # keychain has to join it rather than replace it.
+          security list-keychains -d user -s \
+            $(security list-keychains -d user | tr -d '"') "$KEYCHAIN"
+          rm -f "$CERTIFICATE"
+
+          if [ -n "${APPLE_DEVELOPER_ID_P12:-}" ]; then
+            security find-identity -v -p codesigning "$KEYCHAIN" \
+              | awk -v sha="$MACOS_SIGNING_IDENTITY" '$2 == sha && /Developer ID Application/ { found=1 } END { exit !found }'
+          fi
+
+          # `tauri build` reads this and signs with it; unset means no signing.
+          echo "APPLE_SIGNING_IDENTITY=$MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
       - name: Build MacOS (Universal)
-        if: matrix.platform == 'macos-latest'
+        if: matrix.os == 'macos'
         env:
           # Fix OOM issue
           NODE_OPTIONS: "--max-old-space-size=8192"
-        run: npm run tauri build -- --target universal-apple-darwin
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_ID: ${{ env.MACOS_DEVELOPER_ID == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ env.MACOS_DEVELOPER_ID == 'true' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.MACOS_DEVELOPER_ID == 'true' && secrets.APPLE_TEAM_ID || '' }}
+        run: |
+          if [ "${MACOS_DEVELOPER_ID:-}" != true ]; then
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
+          npm run tauri build -- --target universal-apple-darwin
+
+      - name: Verify notarized macOS artifacts
+        if: matrix.os == 'macos' && env.MACOS_DEVELOPER_ID == 'true'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          BUNDLE=src-tauri/target/universal-apple-darwin/release/bundle
+          REQUIREMENT="anchor apple generic and certificate leaf = H\"$APPLE_SIGNING_IDENTITY\" and certificate leaf[subject.OU] = \"$APPLE_TEAM_ID\""
+          APP_ID="$(node -p "require('./src-tauri/tauri.conf.json').identifier")"
+          verify_app() {
+            codesign --verify --deep --strict -R="$REQUIREMENT and identifier \"$APP_ID\"" "$1"
+            xcrun stapler validate "$1"
+            spctl -a -t exec "$1"
+          }
+          verify_app "$BUNDLE/macos/Markpad.app"
+          # Verify the updater's exact archive without changing its minisign signature.
+          WORK="$(mktemp -d)"
+          trap 'hdiutil detach "$WORK/mount" -quiet 2>/dev/null || true; rm -rf "$WORK"' EXIT
+          ARCHIVES=("$BUNDLE"/macos/*.app.tar.gz)
+          DMGS=("$BUNDLE"/dmg/*.dmg)
+          [[ ${#ARCHIVES[@]} == 1 && ${#DMGS[@]} == 1 ]]
+          mkdir "$WORK/archive" "$WORK/mount"
+          tar -xzf "${ARCHIVES[0]}" -C "$WORK/archive"
+          verify_app "$WORK/archive/Markpad.app"
+          # Tauri notarizes the app. Also staple the downloadable disk image.
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "${DMGS[0]}"
+          codesign --verify --strict -R="$REQUIREMENT" "${DMGS[0]}"
+          xcrun notarytool submit "${DMGS[0]}" --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "${DMGS[0]}"
+          xcrun stapler validate "${DMGS[0]}"
+          spctl -a -t open --context context:primary-signature "${DMGS[0]}"
+          hdiutil attach "${DMGS[0]}" -readonly -nobrowse -mountpoint "$WORK/mount"
+          verify_app "$WORK/mount/Markpad.app"
 
       - name: Upload MacOS Artifacts
-        if: matrix.platform == 'macos-latest'
+        if: matrix.os == 'macos'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          find src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" -exec gh release upload v${{ needs.create-release.outputs.version }} {} --clobber \;
+          set -euo pipefail
+          B=src-tauri/target/universal-apple-darwin/release/bundle
+          gh release upload "v${{ needs.create-release.outputs.version }}" "$B"/dmg/*.dmg "$B"/macos/*.app.tar.gz "$B"/macos/*.app.tar.gz.sig --clobber
+
+  generate-update-feed:
+    needs: [create-release, build]
+    # Pinned like every other runner that this pipeline names. This job only runs
+    # `gh` and `jq`, so the version buys little on its own -- what it buys is that
+    # `ubuntu-latest` moving is a thing that happens to us with a commit rather
+    # than without one.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The updater feed must describe a complete release. Do not publish an
+    # update if any platform build failed or was cancelled.
+    if: ${{ always() && needs.create-release.result == 'success' && needs.build.result == 'success' }}
+    steps:
+      - name: Generate latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p ./sigs
+          # Fail loudly on auth/rate-limit/transient issues — never silently
+          # publish an empty latest.json that would overwrite a previously-good one.
+          gh release download "v$VERSION" --repo "$REPO" --pattern "*.sig" --dir ./sigs
+
+          # Default Tauri v2 updater mode: macOS .app.tar.gz, Windows NSIS *-setup.exe, Linux *.AppImage
+          # (NOT v1Compatible mode — which would use .nsis.zip / .AppImage.tar.gz wrappers)
+          MAC_SIG=$(ls ./sigs/*.app.tar.gz.sig 2>/dev/null | head -1 || true)
+          WIN_X64_SIG=$(ls ./sigs/*x64*-setup.exe.sig 2>/dev/null | head -1 || true)
+          WIN_ARM_SIG=$(ls ./sigs/*arm64*-setup.exe.sig 2>/dev/null | head -1 || true)
+          LINUX_SIG=$(ls ./sigs/*.AppImage.sig 2>/dev/null | head -1 || true)
+
+          if [ -z "$MAC_SIG" ] || [ -z "$WIN_X64_SIG" ] || [ -z "$WIN_ARM_SIG" ] || [ -z "$LINUX_SIG" ]; then
+            echo "ERROR: release v${VERSION} is missing one or more required updater signatures. Aborting before publishing latest.json." >&2
+            exit 1
+          fi
+
+          platform_entry() {
+            local sig_file="$1"
+            if [ -z "$sig_file" ] || [ ! -f "$sig_file" ]; then
+              printf 'null'
+              return
+            fi
+            local artifact
+            artifact=$(basename "${sig_file%.sig}")
+            # Strip CR/LF that Windows-produced .sig files may carry; minisign signatures
+            # don't contain whitespace within the payload, so it's safe to remove.
+            local sig
+            sig=$(tr -d '\r\n' < "$sig_file")
+            local url="https://github.com/${REPO}/releases/download/v${VERSION}/${artifact}"
+            jq -n --arg sig "$sig" --arg url "$url" '{signature: $sig, url: $url}'
+          }
+
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          DARWIN_AARCH64=$(platform_entry "$MAC_SIG")
+          DARWIN_X86_64=$(platform_entry "$MAC_SIG")
+          WINDOWS_X86_64=$(platform_entry "$WIN_X64_SIG")
+          WINDOWS_AARCH64=$(platform_entry "$WIN_ARM_SIG")
+          LINUX_X86_64=$(platform_entry "$LINUX_SIG")
+
+          # Every key below is a plain {os}-{arch}, and that is load-bearing.
+          #
+          # tauri-plugin-updater looks up two keys in order: {os}-{arch}-{installer}
+          # first, then {os}-{arch}. The first is only tried when the binary knows
+          # its own bundle type, and ours does not on Windows or Linux --
+          # `__TAURI_BUNDLE_TYPE` is written into the binary by patching it after
+          # the build, and that patch fails on both, three times in the v2.7.0 run:
+          #   Warn Failed to add bundler type to the binary: __TAURI_BUNDLE_TYPE
+          #   variable not found in binary. ... Updater plugin may not be able to
+          #   update this package.
+          # macOS is unaffected: tauri-utils returns BundleType::App there without
+          # reading the variable.
+          #
+          # So Windows and Linux clients ask only for {os}-{arch}, which is what
+          # this file publishes, and the warning is inert for us.
+          #
+          # Adding a per-installer key -- "windows-x86_64-nsis" say -- would end
+          # that. It would be the key those clients cannot ask for, so they would
+          # keep resolving the unsuffixed one and silently ignore the new entry;
+          # remove the unsuffixed one in the same edit and they get
+          # TargetsNotFound and stop updating. If per-installer keys are ever
+          # wanted, the missing bundle type has to be fixed first.
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "See https://github.com/${REPO}/releases/tag/v${VERSION}" \
+            --arg pub_date "$DATE" \
+            --argjson darwin_aarch64 "$DARWIN_AARCH64" \
+            --argjson darwin_x86_64 "$DARWIN_X86_64" \
+            --argjson windows_x86_64 "$WINDOWS_X86_64" \
+            --argjson windows_aarch64 "$WINDOWS_AARCH64" \
+            --argjson linux_x86_64 "$LINUX_X86_64" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: ({
+                "darwin-aarch64":   $darwin_aarch64,
+                "darwin-x86_64":    $darwin_x86_64,
+                "windows-x86_64":   $windows_x86_64,
+                "windows-aarch64":  $windows_aarch64,
+                "linux-x86_64":     $linux_x86_64
+              } | with_entries(select(.value != null)))
+            }' > latest.json
+
+          cat latest.json
+          gh release upload "v$VERSION" latest.json --clobber --repo "$REPO"

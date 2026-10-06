@@ -2,13 +2,18 @@ import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 // @ts-expect-error url module is available at runtime
 import { fileURLToPath } from "url";
+import { monacoImePatch } from "./scripts/monacoImePatch.mjs";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [sveltekit()],
+  // See scripts/monacoImePatch.mjs: a build-time patch to Monaco, to delete
+  // once microsoft/vscode#333909 ships in a release.
+  plugins: [monacoImePatch, sveltekit()],
+  build: {
+    chunkSizeWarningLimit: 6000,
+  },
 
   resolve: {
     alias: {

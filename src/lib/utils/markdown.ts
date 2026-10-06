@@ -1,17 +1,8 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import DOMPurify from "dompurify";
-
-export const highlightColorMap: Record<string, string> = {
-	default: "color-mix(in srgb, var(--color-accent-fg) 40%, transparent)",
-	yellow: "rgba(255, 208, 0, 0.4)",
-	orange: "rgba(255, 140, 0, 0.4)",
-	red: "rgba(255, 60, 60, 0.4)",
-	pink: "rgba(255, 105, 180, 0.4)",
-	purple: "rgba(164, 108, 244, 0.4)",
-	blue: "rgba(67, 138, 243, 0.4)",
-	cyan: "rgba(43, 185, 178, 0.4)",
-	green: "rgba(77, 177, 88, 0.4)",
-};
+import { assignFoldKey, isFolded } from "./foldState.js";
+import { isOffHostUncPath } from "./markdownLinks.js";
+import { parseSourceposLineRange } from "./previewAnchor.js";
+import { carrySourcepos } from "./richContent.js";
 
 const alertIcons: Record<string, string> = {
 	note: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>',
@@ -26,7 +17,31 @@ const alertIcons: Record<string, string> = {
 	example: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>',
 };
 
-export function resolvePath(basePath: string, relativePath: string): string {
+/**
+ * Resolves a **filesystem path** an author wrote in a document — an image
+ * `src`, a local file link — against the document holding it.
+ *
+ * Deliberately not the same function as `resolveHrefRelativePath` in
+ * ./markdownLinks.ts, which resolves an *href*. The two were named alike and
+ * differ in three ways that are each right for one caller and wrong for the
+ * other, so `the path resolver for documents and the one for hrefs differ on
+ * purpose` in scripts/exportHtml.test.ts pins the differences rather than
+ * papering over them:
+ *
+ *   - `\` separates here, in the relative half too: a Windows author writes
+ *     `![](img\a.png)` and means a directory. In an href `\` is an ordinary
+ *     character and must survive.
+ *   - Empty segments survive (`a//b` stays `a//b`), because a path is bytes
+ *     the OS will be handed, not a URL to tidy up.
+ *   - A base with no separator at all — an unsaved buffer's `""`, a bare
+ *     `note.md` — yields a *relative* result rather than one rooted at `/`.
+ *     Callers that cannot use a relative answer refuse it themselves;
+ *     `resolveLocalFileLinkPath` is the one that does.
+ */
+export function resolveDocumentRelativePath(
+	basePath: string,
+	relativePath: string,
+): string {
 	if (relativePath.match(/^[a-zA-Z]:/) || relativePath.startsWith("/"))
 		return relativePath;
 	const parts = basePath.split(/[/\\]/);
@@ -39,55 +54,48 @@ export function resolvePath(basePath: string, relativePath: string): string {
 	return parts.join("/");
 }
 
-export function isYoutubeLink(url: string): boolean {
-	return url.includes("youtube.com/watch") || url.includes("youtu.be/");
+function isYoutubeLink(url: string): boolean {
+	return (
+		url.includes("youtube.com/watch") ||
+		url.includes("youtube.com/embed/") ||
+		url.includes("youtube.com/v/") ||
+		url.includes("youtube.com/u/") ||
+		url.includes("youtu.be/")
+	);
 }
 
-export function getYoutubeId(url: string): string | null {
+function getYoutubeId(url: string): string | null {
 	const match = url.match(
 		/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/,
 	);
 	return match && match[2].length === 11 ? match[2] : null;
 }
 
-function replaceWithYoutubeEmbed(element: Element, videoId: string) {
-	const container = element.ownerDocument.createElement("div");
-	container.className = "video-container";
-	const iframe = element.ownerDocument.createElement("iframe");
-	iframe.src = `https://www.youtube.com/embed/${videoId}`;
-	iframe.title = "YouTube video player";
-	iframe.frameBorder = "0";
-	iframe.allow =
-		"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
-	iframe.allowFullscreen = true;
-	container.appendChild(iframe);
-	element.replaceWith(container);
+function replaceWithYoutubeLink(element: Element, videoId: string, href: string) {
+	const link = element.ownerDocument.createElement("a");
+	link.className = "youtube-link";
+	carrySourcepos(element, link);
+	link.href = href;
+	link.setAttribute("aria-label", "Open YouTube video in browser");
+
+	const thumbnail = element.ownerDocument.createElement("img");
+	thumbnail.src = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+	thumbnail.alt = "YouTube video thumbnail";
+	link.appendChild(thumbnail);
+
+	element.replaceWith(link);
 }
 
-export function getLanguage(path: string): string {
-	if (!path) return "markdown";
-	const ext = path.split(".").pop()?.toLowerCase();
-	switch (ext) {
-		case "js":
-		case "jsx":
-			return "javascript";
-		case "ts":
-		case "tsx":
-			return "typescript";
-		case "html":
-			return "html";
-		case "css":
-			return "css";
-		case "json":
-			return "json";
-		case "md":
-		case "markdown":
-		case "mdown":
-		case "mkd":
-			return "markdown";
-		default:
-			return "plaintext";
-	}
+/**
+ * A link whose text is its URL: comrak's autolink, where a bare `www.` gains
+ * `http://` in the href. `$select=Name&$top=2` in such a URL is a query, not
+ * math. `autolink_ranges` in src-tauri/src/markdown.rs keeps the backend from
+ * masking it for the same reason.
+ */
+function isAutolink(link: Element): boolean {
+	const href = link.getAttribute("href");
+	const text = link.textContent;
+	return href === text || href === `http://${text}`;
 }
 
 function processInlineMath(root: Element) {
@@ -95,7 +103,11 @@ function processInlineMath(root: Element) {
 		acceptNode(node) {
 			let curr = node.parentElement;
 			while (curr && curr !== root) {
+				if (curr.hasAttribute("data-math"))
+					return NodeFilter.FILTER_REJECT;
 				if (["CODE", "PRE", "SCRIPT", "STYLE"].includes(curr.tagName))
+					return NodeFilter.FILTER_REJECT;
+				if (curr.tagName === "A" && isAutolink(curr))
 					return NodeFilter.FILTER_REJECT;
 				curr = curr.parentElement;
 			}
@@ -105,17 +117,272 @@ function processInlineMath(root: Element) {
 
 	const toReplace: { node: Text; newText: string }[] = [];
 	let node: Node | null;
-	const regex = /(^|[^\\])\$(?!\s)([^$]*?[^\s\\])\$(?![\d])/g;
 	while ((node = walker.nextNode())) {
 		const text = (node as Text).nodeValue || "";
 		if (text.includes("$")) {
-			const newText = text.replace(regex, "$1\\($2\\)");
+			const newText = convertInlineMathDelimiters(text).text;
 			if (newText !== text) toReplace.push({ node: node as Text, newText });
 		}
 	}
 	for (const { node, newText } of toReplace) {
 		node.nodeValue = newText;
 	}
+}
+
+function processDisplayMathBlocks(root: Element, doc: Document) {
+	for (const element of Array.from(root.querySelectorAll("p, li"))) {
+		const math = extractDisplayMathBlock(element);
+		if (!math) {
+			processDisplayMathRuns(element, doc);
+			continue;
+		}
+
+		element.setAttribute("data-math", "display");
+		element.setAttribute("data-math-source", math);
+		element.replaceChildren(doc.createTextNode(math));
+	}
+}
+
+/** What may follow a closing `$$` in a tight list item: a block on its own line. */
+const BLOCK_AFTER_DISPLAY_CLOSER = /^(BR|UL|OL|BLOCKQUOTE|PRE|TABLE|HR|DIV)$/;
+
+function tagOf(node: Node | null): string {
+	return node?.nodeType === Node.ELEMENT_NODE ? (node as Element).tagName : "";
+}
+
+/**
+ * Renders a `$$` block that shares its paragraph with prose:
+ *
+ *     The formula
+ *     $$
+ *     x^2
+ *     $$
+ *     is nice.
+ *
+ * With no blank line around it, the block is part of the paragraph, and
+ * `render.hardbreaks` turns every line of it into a text node between two
+ * `<br>`s. `extractDisplayMathBlock` wants the whole element to be the
+ * formula and `processInlineMath` only ever sees one line, so the formula was
+ * shown as its source.
+ *
+ * The rule is the multi-line half of `find_display_close` in
+ * src-tauri/src/markdown.rs, which already hid exactly these lines from
+ * comrak: an opening `$$` with nothing after it on its line, then lines up to
+ * the first one that is `$$` alone. A code span anywhere in between ends the
+ * search, as a code region does there. Text before the opener and after the
+ * closer stays prose.
+ */
+function processDisplayMathRuns(element: Element, doc: Document) {
+	let node = element.firstChild;
+	while (node) {
+		const openerBreak = node.nextSibling;
+		const opener =
+			node.nodeType === Node.TEXT_NODE && tagOf(openerBreak) === "BR"
+				? convertInlineMathDelimiters(node.nodeValue || "").opener
+				: -1;
+		if (opener === -1) {
+			node = node.nextSibling;
+			continue;
+		}
+
+		const lines: string[] = [];
+		let closer: Node | null = null;
+		for (let line = openerBreak!.nextSibling; line?.nodeType === Node.TEXT_NODE; ) {
+			const next: Node | null = line.nextSibling;
+			const value = (line.nodeValue || "").replace(/^\n/, "");
+			if (
+				value.trim() === "$$" &&
+				(!next || BLOCK_AFTER_DISPLAY_CLOSER.test(tagOf(next)))
+			) {
+				closer = line;
+				break;
+			}
+			if (tagOf(next) !== "BR") break;
+			lines.push(value);
+			line = next!.nextSibling;
+		}
+		const math = lines.join("\n").trim();
+		if (!closer || !math) {
+			node = node.nextSibling;
+			continue;
+		}
+
+		const span = doc.createElement("span");
+		span.setAttribute("data-math", "display");
+		span.setAttribute("data-math-source", math);
+		span.appendChild(doc.createTextNode(math));
+		// The formula is a block of its own; a `<br>` straight after it would
+		// draw an empty line.
+		let after = closer.nextSibling;
+		if (tagOf(after) === "BR") after = after!.nextSibling;
+		for (let drop = openerBreak!; drop !== after; ) {
+			const next = drop.nextSibling!;
+			drop.parentNode!.removeChild(drop);
+			drop = next;
+		}
+		node.nodeValue = (node.nodeValue || "").slice(0, opener);
+		element.insertBefore(span, after);
+		node = after;
+	}
+}
+
+function extractDisplayMathBlock(element: Element): string | null {
+	let text = "";
+	let previousWasBreak = false;
+
+	for (const child of Array.from(element.childNodes)) {
+		if (child.nodeType === Node.TEXT_NODE) {
+			let value = child.nodeValue || "";
+			if (previousWasBreak) value = value.replace(/^\n+/, "");
+			text += value;
+			previousWasBreak = false;
+		} else if (
+			child.nodeType === Node.ELEMENT_NODE &&
+			(child as Element).tagName === "BR"
+		) {
+			text += "\n";
+			previousWasBreak = true;
+		} else {
+			return null;
+		}
+	}
+
+	const trimmed = text.trim();
+	if (!trimmed.startsWith("$$") || !trimmed.endsWith("$$")) return null;
+
+	const math = trimmed.slice(2, -2).trim();
+	return math ? math : null;
+}
+
+/**
+ * Rewrites the math of one text node into delimiters KaTeX's auto-renderer can
+ * find, and resolves the dollar escapes the backend handed over intact.
+ *
+ * The output vocabulary is deliberately small and deliberately unspellable in
+ * Markdown: `\(…\)` for inline, `\[…\]` for a same-line `$$…$$`. CommonMark
+ * eats a user-typed `\(` or `\[` long before this function runs, so every one
+ * of these that exists was minted here — which is what lets KaTeX be given no
+ * `$`-based delimiter at all (see MATH_DELIMITERS in richContent.ts) and what
+ * makes this function the single place that decides what a reader sees as a
+ * formula.
+ *
+ * That in turn is why `\$` arrives here still escaped. comrak would have
+ * resolved it, and then `\$\$x\$\$` and `$$x$$` would be the same eight bytes
+ * and the reader's literal dollars would be typeset. `mask_math_spans` in
+ * src-tauri/src/markdown.rs hides the escape from comrak for exactly this
+ * moment.
+ */
+function convertInlineMathDelimiters(text: string): {
+	text: string;
+	/** Where an unclosed `$$` with nothing after it starts, or -1. */
+	opener: number;
+} {
+	const parts: string[] = [];
+	let index = 0;
+	let opener = -1;
+	// Allows adjacent inline spans like `$a$$b$` without treating `$$` display
+	// delimiters as inline math openings.
+	let previousDollarAllowsInlineOpen = false;
+
+	while (index < text.length) {
+		const char = text[index];
+		if (char === "\\") {
+			let run = 1;
+			while (text[index + run] === "\\") run += 1;
+			if (text[index + run] !== "$") {
+				parts.push(text.slice(index, index + run));
+				previousDollarAllowsInlineOpen = false;
+				index += run;
+				continue;
+			}
+			// CommonMark's own arithmetic: each `\\` is one literal backslash,
+			// and the odd one left over is what marks the `$` as text. Whether
+			// the run is odd or even the `$` is not a delimiter — that is the
+			// rule the backend ports in `find_math_spans`, and the two have to
+			// stay the same rule.
+			parts.push("\\".repeat(run >> 1) + "$");
+			previousDollarAllowsInlineOpen = false;
+			index += run + 1;
+			continue;
+		}
+		if (char !== "$") {
+			parts.push(char);
+			previousDollarAllowsInlineOpen = false;
+			index += 1;
+			continue;
+		}
+
+		if (text[index + 1] === "$") {
+			const displayEnd = findDisplayMathEnd(text, index + 2);
+			if (displayEnd !== -1) {
+				parts.push(`\\[${text.slice(index + 2, displayEnd).trim()}\\]`);
+				previousDollarAllowsInlineOpen = true;
+				index = displayEnd + 2;
+				continue;
+			}
+
+			if (!text.slice(index + 2).trim()) opener = index;
+			parts.push("$$");
+			previousDollarAllowsInlineOpen = false;
+			index += 2;
+			continue;
+		}
+
+		// A backslash in front of this `$` is impossible: the branch above
+		// consumes the whole run together with the `$` it escapes.
+		if (
+			(text[index - 1] === "$" && !previousDollarAllowsInlineOpen) ||
+			/\s/.test(text[index + 1] || "")
+		) {
+			parts.push(char);
+			previousDollarAllowsInlineOpen = false;
+			index += 1;
+			continue;
+		}
+
+		const end = findInlineMathEnd(text, index + 1);
+		if (end === -1) {
+			parts.push(char);
+			previousDollarAllowsInlineOpen = false;
+			index += 1;
+			continue;
+		}
+
+		parts.push(`\\(${text.slice(index + 1, end)}\\)`);
+		index = end + 1;
+		previousDollarAllowsInlineOpen = true;
+	}
+
+	return { text: parts.join(""), opener };
+}
+
+function findDisplayMathEnd(text: string, start: number): number {
+	for (let index = start; index < text.length - 1; index += 1) {
+		if (
+			text[index] === "$" &&
+			text[index + 1] === "$" &&
+			text[index - 1] !== "\\"
+		) {
+			return index;
+		}
+	}
+	return -1;
+}
+
+function findInlineMathEnd(text: string, start: number): number {
+	for (let index = start; index < text.length; index += 1) {
+		if (text[index] !== "$") continue;
+		// Escaped dollars are math content, not closing delimiters.
+		if (text[index - 1] === "\\") continue;
+
+		const beforeEnd = text[index - 1] || "";
+		const afterEnd = text[index + 1] || "";
+		// A following `$` may open an adjacent inline span; the outer loop handles it.
+		if (/\s/.test(beforeEnd) || /\d/.test(afterEnd)) return -1;
+
+		return index;
+	}
+	return -1;
 }
 
 function processBlockIds(root: Element, doc: Document) {
@@ -184,37 +451,188 @@ function processBlockIds(root: Element, doc: Document) {
 	}
 }
 
+const taskTextBoundaryTags = new Set([
+	"ADDRESS",
+	"ARTICLE",
+	"ASIDE",
+	"BLOCKQUOTE",
+	"DD",
+	"DETAILS",
+	"DIALOG",
+	"DIV",
+	"DL",
+	"DT",
+	"FIELDSET",
+	"FIGCAPTION",
+	"FIGURE",
+	"FOOTER",
+	"FORM",
+	"H1",
+	"H2",
+	"H3",
+	"H4",
+	"H5",
+	"H6",
+	"HEADER",
+	"HR",
+	"LI",
+	"MAIN",
+	"NAV",
+	"OL",
+	"P",
+	"PRE",
+	"SECTION",
+	"TABLE",
+	"UL",
+]);
+
+/**
+ * Blank the way HTML means it: ASCII whitespace only. JS `\s` and `trim()` also
+ * match U+00A0, which a writer types on purpose, to keep an empty line
+ * Markdown would collapse or to indent text (#843).
+ */
+function isBlank(text: string | null | undefined): boolean {
+	return /^[ \t\n\f\r]*$/.test(text ?? "");
+}
+
+function stripLeadingWhitespace(nodes: Node[]) {
+	for (let index = 0; index < nodes.length; ) {
+		const node = nodes[index];
+		if (node.nodeType !== 3) break;
+
+		const trimmed = node.textContent?.replace(/^[ \t\n\f\r]+/, "") || "";
+		if (trimmed) {
+			node.textContent = trimmed;
+			break;
+		}
+		node.parentNode?.removeChild(node);
+		nodes.splice(index, 1);
+	}
+}
+
+// A tight task item keeps its text bare, so text that follows a block inside
+// it (`- [ ] a` / fenced code / `then b`) is a bare text node of the `<li>`.
+// The item is a grid, CSS can only place elements, and an anonymous grid item
+// lands in the 15px checkbox column: one letter per line (#832). Wrap every
+// such run, inline elements included, the way the first line already is.
+function wrapTextAfterTaskBlocks(li: Element) {
+	let run: Node[] = [];
+	const flush = () => {
+		if (run.some((n) => n.nodeType !== 3 || !isBlank(n.textContent))) {
+			const wrapper = li.ownerDocument!.createElement("span");
+			wrapper.className = "task-text";
+			li.insertBefore(wrapper, run[0]);
+			stripLeadingWhitespace(run);
+			for (const n of run) wrapper.appendChild(n);
+		}
+		run = [];
+	};
+
+	for (const n of Array.from(li.childNodes)) {
+		const el = n.nodeType === 1 ? (n as Element) : null;
+		if (
+			el &&
+			(taskTextBoundaryTags.has(el.tagName) ||
+				el.tagName === "INPUT" ||
+				el.classList.contains("task-text"))
+		) {
+			flush();
+			continue;
+		}
+		run.push(n);
+	}
+	flush();
+}
+
 function processTaskItems(root: Element) {
 	for (const input of Array.from(
 		root.querySelectorAll('li input[type="checkbox"]'),
 	)) {
+		const li = input.closest("li");
+		if (!li) continue;
+		if (!input.hasAttribute("data-task-checkbox")) {
+			input.setAttribute("disabled", "");
+			continue;
+		}
+
 		input.setAttribute("data-task-checkbox", "");
 		input.removeAttribute("disabled");
 		(input as HTMLInputElement).style.cursor = "pointer";
 
-		const li = input.closest("li");
-		if (!li) continue;
+		// comrak writes `task-list-item` only on the branch where it opens the
+		// `<li>` itself, which a plain task item does not take — so the `<ul>`
+		// gets `contains-task-list` and the items get nothing. That asymmetry
+		// showed as half a fix: the bullet disappeared, because that rule can
+		// match the list, while the grid that puts the checkbox beside its text
+		// stayed dead, because every one of those rules names the item.
+		//
+		// Added here rather than by widening fifteen selectors to
+		// `ul.contains-task-list > li`: this loop already owns which items are
+		// really tasks — `data-task-checkbox` is the renderer's own verdict,
+		// checked above — so the class lands on exactly that set and nothing
+		// else, including in documents where a `<ul>` holds both kinds.
+		li.classList.add("task-list-item");
+
+		const inputParagraph = input.parentElement;
+		if (inputParagraph?.tagName === "P" && inputParagraph.parentElement === li) {
+			li.insertBefore(input, inputParagraph);
+		}
 
 		const nodes = Array.from(li.childNodes);
 		const inputIdx = nodes.indexOf(input);
+		if (inputIdx === -1) continue;
 		const afterInput = nodes.slice(inputIdx + 1);
 
-		const inlineNodes = [];
+		const inlineNodes: Node[] = [];
+		let paragraphNode: Element | null = null;
 		for (const n of afterInput) {
-			if (
-				n.nodeType === 1 &&
-				["P", "DIV", "UL", "OL"].includes((n as Element).tagName)
-			)
+			if (n.nodeType === 3 && isBlank(n.textContent)) {
+				inlineNodes.push(n);
+				continue;
+			}
+
+			if (n.nodeType === 1 && taskTextBoundaryTags.has((n as Element).tagName)) {
+				const onlyLeadingWhitespace = inlineNodes.every(
+					(node) => node.nodeType === 3 && isBlank(node.textContent),
+				);
+				if ((n as Element).tagName === "P" && onlyLeadingWhitespace) {
+					paragraphNode = n as Element;
+				}
 				break;
+			}
 			inlineNodes.push(n);
 		}
 
-		if (inlineNodes.length > 0) {
+		const hasInlineText = inlineNodes.some(
+			(n) => n.nodeType !== 3 || !isBlank(n.textContent),
+		);
+		if (paragraphNode) {
+			stripLeadingWhitespace(inlineNodes);
+			const paragraphChildren = Array.from(paragraphNode.childNodes);
+			const hasParagraphText = paragraphChildren.some(
+				(n) => n.nodeType !== 3 || !isBlank(n.textContent),
+			);
+			if (!hasParagraphText) {
+				paragraphNode.remove();
+			} else {
+				stripLeadingWhitespace(paragraphChildren);
+				const wrapper = root.ownerDocument!.createElement("span");
+				wrapper.className = "task-text";
+				for (const n of paragraphChildren) wrapper.appendChild(n);
+				paragraphNode.replaceWith(wrapper);
+			}
+		} else if (hasInlineText) {
+			const insertBeforeNode = afterInput[inlineNodes.length] || null;
+			stripLeadingWhitespace(inlineNodes);
 			const wrapper = root.ownerDocument!.createElement("span");
 			wrapper.className = "task-text";
 			for (const n of inlineNodes) wrapper.appendChild(n);
-			li.insertBefore(wrapper, afterInput[inlineNodes.length] || null);
+			li.insertBefore(wrapper, insertBeforeNode);
+		} else {
+			stripLeadingWhitespace(inlineNodes);
 		}
+
+		wrapTextAfterTaskBlocks(li);
 
 		if ((input as HTMLInputElement).checked) {
 			li.classList.add("task-done");
@@ -222,13 +640,104 @@ function processTaskItems(root: Element) {
 	}
 }
 
+/**
+ * How many source lines a block has to span before its soft line breaks are
+ * worth anchoring.
+ *
+ * Two lines cost half a line of interpolation error at worst, which nobody can
+ * see; the anchors are for the long paragraphs where the error accumulates.
+ * Keeping short blocks untouched is most of the DOM saving, because most
+ * paragraphs are short.
+ */
+const LINE_ANCHOR_MIN_SPAN = 3;
+
+/**
+ * Give each soft line break inside a long block a measurable position.
+ *
+ * Split-view scroll sync is asymmetric. The editor answers "which line is at
+ * this pixel" from Monaco's real layout, so it knows the height of every line
+ * including its wraps. The preview answers the reverse by interpolating across
+ * the block that owns the line — which assumes every source line in the block
+ * renders to the same height. Prose breaks that assumption whenever one line
+ * wraps to three and the next to one, and a long paragraph is where the error
+ * shows.
+ *
+ * The information to do better is already in the DOM. `render.hardbreaks` is
+ * on, so every source newline becomes a `<br>`, and comrak stamps each one
+ * with the line it ended. What a `<br>` cannot do is be measured: it generates
+ * no CSS box, which is why `BOXLESS_TAGS` in previewAnchor.ts excludes it —
+ * resolving to one hands the caller `offsetTop = 0` and scrolls to the top of
+ * the document.
+ *
+ * So each break gets a sibling that does generate a box, carrying the line the
+ * break starts rather than the one it ends. Zero-width and zero-height, so it
+ * changes nothing on screen; `previewAnchor` needs only `offsetTop` from it,
+ * because a single-line range never interpolates and never reads the height.
+ *
+ * The `<br>` itself is left alone. Replacing it would put the layout, text
+ * selection and copy behaviour of every wrapped paragraph at risk to save one
+ * node per line.
+ */
+function processSoftLineAnchors(root: Element, doc: Document) {
+	for (const block of Array.from(root.querySelectorAll("[data-sourcepos]"))) {
+		const range = parseSourceposLineRange(block.getAttribute("data-sourcepos"));
+		if (!range || range.endLine - range.startLine + 1 < LINE_ANCHOR_MIN_SPAN) continue;
+
+		for (const br of Array.from(block.querySelectorAll("br[data-sourcepos]"))) {
+			// Only the breaks this block owns. A nested block keeps its own, and
+			// it will be visited in its own turn if it is long enough to qualify.
+			//
+			// From the PARENT: `closest` matches the element it starts on, and
+			// the `<br>` carries a `data-sourcepos` of its own, so starting on
+			// it answers with the `<br>` every time and nothing would qualify.
+			if (br.parentElement?.closest("[data-sourcepos]") !== block) continue;
+
+			const at = parseSourceposLineRange(br.getAttribute("data-sourcepos"));
+			if (!at) continue;
+
+			// The line AFTER the break: the anchor marks where the next source
+			// line starts on screen, which is the question the mapping asks.
+			const line = at.endLine + 1;
+			if (line > range.endLine) continue;
+
+			const anchor = doc.createElement("span");
+			anchor.className = "source-line-anchor";
+			anchor.setAttribute("data-sourcepos", `${line}:1-${line}:1`);
+			anchor.setAttribute("aria-hidden", "true");
+			// Behind the newline comrak writes after the `<br>`, not in front of
+			// it. That newline is collapsible whitespace, and a browser drops it
+			// only while it is still at the START of the line: put a box — and
+			// `inline-block` is what makes this one a box — in front of it, and
+			// it becomes a space BETWEEN two boxes and is drawn. Every wrapped
+			// line of a paragraph long enough to qualify then opens with an
+			// indent nobody typed. Splitting the text node leaves the whitespace
+			// on the break's side, where it goes on collapsing away.
+			//
+			// `insertBefore` rather than `after`: it is the older API, and the
+			// render-protocol DOM the tests drive implements it.
+			const follows = br.nextSibling;
+			const text = follows?.nodeType === Node.TEXT_NODE ? follows : null;
+			const lead = text ? /^\s+/.exec(text.nodeValue ?? "") : null;
+			if (text && lead) {
+				text.nodeValue = (text.nodeValue ?? "").slice(lead[0].length);
+				br.parentNode?.insertBefore(doc.createTextNode(lead[0]), text);
+			}
+			br.parentNode?.insertBefore(anchor, follows);
+		}
+	}
+}
+
 export function processMarkdownHtml(
 	html: string,
 	filePath: string,
-	collapsedHeaders: Set<string>,
+	foldOverrides: Set<string>,
 ): string {
 	const parser = new DOMParser();
 	const doc = parser.parseFromString(html, "text/html");
+
+	// The keys handed out in THIS render, shared by the callout pass and the
+	// heading pass below so that neither can hand out a key the other used.
+	const foldKeys = new Set<string>();
 
 	for (const img of doc.querySelectorAll("img")) {
 		const src = img.getAttribute("src");
@@ -236,8 +745,17 @@ export function processMarkdownHtml(
 		if (src && !src.startsWith("http") && !src.startsWith("data:")) {
 			try {
 				const decodedSrc = decodeURIComponent(src);
-				finalSrc = convertFileSrc(resolvePath(filePath, decodedSrc));
-				img.setAttribute("src", finalSrc);
+				const resolved = resolveDocumentRelativePath(filePath, decodedSrc);
+				// Rendering alone fetches this, so a UNC path on another host
+				// would leak the user's NTLM hash without a click. Left as
+				// written, `//host/x` would instead load as a web address.
+				if (isOffHostUncPath(resolved, filePath)) {
+					finalSrc = null;
+					img.removeAttribute("src");
+				} else {
+					finalSrc = convertFileSrc(resolved);
+					img.setAttribute("src", finalSrc);
+				}
 			} catch (e) {
 				console.error("Failed to decode/resolve image src:", src, e);
 			}
@@ -253,8 +771,9 @@ export function processMarkdownHtml(
 			if (isVideo || isAudio) {
 				const media = doc.createElement(isVideo ? "video" : "audio");
 				media.setAttribute("controls", "");
-				media.setAttribute("src", finalSrc || "");
+				if (finalSrc) media.setAttribute("src", finalSrc);
 				media.style.maxWidth = "100%";
+				carrySourcepos(img, media);
 
 				if (img.hasAttribute("width"))
 					media.setAttribute("width", img.getAttribute("width")!);
@@ -271,7 +790,7 @@ export function processMarkdownHtml(
 
 			if (isYoutubeLink(src)) {
 				const videoId = getYoutubeId(src);
-				if (videoId) replaceWithYoutubeEmbed(img, videoId);
+				if (videoId) replaceWithYoutubeLink(img, videoId, src);
 			}
 		}
 	}
@@ -286,7 +805,7 @@ export function processMarkdownHtml(
 				parent.childNodes.length === 1
 			) {
 				const videoId = getYoutubeId(href);
-				if (videoId) replaceWithYoutubeEmbed(a, videoId);
+				if (videoId) replaceWithYoutubeLink(a, videoId, href);
 			}
 		}
 	}
@@ -298,7 +817,7 @@ export function processMarkdownHtml(
 			let prev = br.previousSibling;
 			let isLeading = true;
 			while (prev) {
-				if (prev.nodeType === 3 && prev.textContent?.replace(/\xA0|\s|&nbsp;/g, "").trim()) {
+				if (prev.nodeType === 3 && !isBlank(prev.textContent)) {
 					isLeading = false;
 					break;
 				} else if (prev.nodeType === 1) {
@@ -315,9 +834,9 @@ export function processMarkdownHtml(
 		// Also clean up leading empty text nodes and paragraphs
 		while (node.firstChild) {
 			const child = node.firstChild;
-			if (child.nodeType === 3 && child.textContent?.replace(/\xA0|\s|&nbsp;/g, "").trim() === "") {
+			if (child.nodeType === 3 && isBlank(child.textContent)) {
 				child.parentElement?.removeChild(child);
-			} else if (child.nodeType === 1 && (child as Element).tagName === "P" && (child as Element).innerHTML.replace(/\xA0|\s|&nbsp;/g, "").trim() === "") {
+			} else if (child.nodeType === 1 && (child as Element).tagName === "P" && isBlank((child as Element).innerHTML)) {
 				child.parentElement?.removeChild(child);
 			} else {
 				break;
@@ -325,21 +844,14 @@ export function processMarkdownHtml(
 		}
 	};
 
-	// parse callouts
 	for (const bq of Array.from(doc.querySelectorAll("blockquote"))) {
-		const walker = doc.createTreeWalker(bq, NodeFilter.SHOW_TEXT);
-		let textNode: Text | null = null;
-		let matchResult: RegExpMatchArray | null = null;
-		
-		let curr: Node | null;
-		while (curr = walker.nextNode()) {
-			const m = curr.nodeValue?.match(/^\s*\[!([a-zA-Z0-9_\-]+)\]([+-]?)\s*/i);
-			if (m) {
-				textNode = curr as Text;
-				matchResult = m;
-				break;
-			}
-		}
+		// Only the text the quote's first paragraph opens with is a marker, as
+		// in Obsidian and GitHub: `[!note]` in code or a nested quote is text.
+		let first = bq.firstChild;
+		while (first && first.nodeType === 3 && isBlank(first.textContent)) first = first.nextSibling;
+		const lead = first?.nodeType === 1 && (first as Element).tagName === "P" ? first.firstChild : null;
+		const matchResult = lead?.nodeType === 3 ? lead.nodeValue?.match(/^\s*\[!([a-zA-Z0-9_\-]+)\]([+-]?)\s*/i) : null;
+		const textNode = matchResult ? (lead as Text) : null;
 
 		if (textNode && matchResult) {
 			const type = matchResult[1].toLowerCase();
@@ -420,9 +932,17 @@ export function processMarkdownHtml(
 			if (contentInner.childNodes.length === 0) {
 				container.classList.add("callout-title-only");
 			} else {
-				if (fold === "-") {
-					contentWrapper.classList.add("is-collapsed");
-					container.classList.add("is-collapsed");
+				// A callout the reader folds is remembered exactly like a
+				// heading, and `> [!note]-` is the document's opening position
+				// rather than a state of its own — see `foldState.ts`. A
+				// title-only callout hides nothing and so is not a fold at all,
+				// which is why the key is assigned in this branch.
+				if (isFoldable) {
+					const key = assignFoldKey(container, foldKeys);
+					if (isFolded(foldOverrides, key, fold === "-")) {
+						contentWrapper.classList.add("is-collapsed");
+						container.classList.add("is-collapsed");
+					}
 				}
 				container.appendChild(contentWrapper);
 			}
@@ -430,12 +950,30 @@ export function processMarkdownHtml(
 		}
 	}
 
+	processDisplayMathBlocks(doc.body, doc);
 	processBlockIds(doc.body, doc);
 	processTaskItems(doc.body);
 	processInlineMath(doc.body);
+	processSoftLineAnchors(doc.body, doc);
 
 	const headings = Array.from(doc.querySelectorAll("h1, h2, h3, h4, h5, h6"));
+	// The heading↔wrapper pairing only needs to be unique within this
+	// render's output (the previous DOM is replaced wholesale), so a
+	// counter keeps the HTML deterministic for identical input.
+	let nextFoldId = 0;
 	for (const h of headings) {
+		// comrak puts the deduplicated heading id ("title", "title-1", ...)
+		// on an empty inner <a class="anchor">, so h.id is empty and the fold
+		// key falls all the way back to the heading text — which collides for
+		// duplicate titles and never matches an id-based anchor link. Promote
+		// the id onto the heading itself (and off the anchor, so the document
+		// keeps unique ids). See `assignFoldKey`.
+		const headingAnchor = h.querySelector("a.anchor");
+		if (headingAnchor && headingAnchor.id && !h.id) {
+			h.id = headingAnchor.id;
+			headingAnchor.removeAttribute("id");
+		}
+
 		const chevron = doc.createElement("span");
 		chevron.className = "header-fold-icon";
 		chevron.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
@@ -462,12 +1000,12 @@ export function processMarkdownHtml(
 		}
 		if (h.parentNode) h.parentNode.insertBefore(wrapper, h.nextSibling);
 
-		const mappingId = "wrap-" + Math.random().toString(36).substr(2, 9);
+		const mappingId = "wrap-" + nextFoldId++;
 		h.setAttribute("data-fold-target", mappingId);
 		wrapper.id = mappingId;
 
-		const key = h.id || h.textContent?.trim() || "";
-		if (collapsedHeaders.has(key)) {
+		const key = assignFoldKey(h, foldKeys);
+		if (isFolded(foldOverrides, key)) {
 			h.classList.add("is-collapsed");
 			wrapper.classList.add("is-collapsed");
 		}
@@ -475,151 +1013,10 @@ export function processMarkdownHtml(
 
 	// Clean up empty paragraphs that might be leftovers from blank lines
 	Array.from(doc.querySelectorAll("p")).forEach((p) => {
-		if (p.innerHTML.replace(/&nbsp;|\s/g, "").trim() === "") {
+		if (isBlank(p.innerHTML)) {
 			p.remove();
 		}
 	});
 
 	return doc.body.innerHTML;
-}
-
-export async function renderRichContent(
-	markdownBody: HTMLElement,
-	hljs: any,
-	katex: any,
-	renderMathInElement: any,
-	mermaid: any,
-	theme: string,
-	invoke: (cmd: string, args?: any) => Promise<any>,
-) {
-	if (!hljs || !renderMathInElement || !mermaid) return;
-
-	const isSystemDark = window.matchMedia(
-		"(prefers-color-scheme: dark)",
-	).matches;
-	const datasetThemeType = document.documentElement.dataset.themeType;
-	const isDark =
-		datasetThemeType === "dark" ||
-		theme === "dark" ||
-		(theme === "system" && isSystemDark);
-	const effectiveTheme = isDark ? "dark" : "neutral";
-	mermaid.initialize({ startOnLoad: false, theme: effectiveTheme });
-
-	const codeBlocks = Array.from(markdownBody.querySelectorAll("pre code"));
-	for (const block of codeBlocks) {
-		const codeEl = block as HTMLElement;
-		const preEl = codeEl.parentElement as HTMLPreElement;
-
-		if (codeEl.classList.contains("language-mermaid")) {
-			try {
-				const mermaidCode = codeEl.textContent || "";
-				const id = `mermaid-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-				const { svg } = await mermaid.render(id, mermaidCode);
-				const container = document.createElement("div");
-				container.className = "mermaid-diagram";
-				container.innerHTML = DOMPurify.sanitize(svg, {
-					ADD_TAGS: ["foreignObject"],
-					ADD_ATTR: ["dominant-baseline", "text-anchor"],
-				});
-				preEl.replaceWith(container);
-			} catch (error) {
-				console.error("Failed to render Mermaid diagram:", error);
-				const errorDiv = document.createElement("div");
-				errorDiv.className = "mermaid-error";
-				errorDiv.style.color = "red";
-				errorDiv.style.padding = "1em";
-				errorDiv.textContent = `Error rendering Mermaid diagram: ${error}`;
-				preEl.replaceWith(errorDiv);
-			}
-			continue;
-		}
-
-		const hasExplicitLang = Array.from(codeEl.classList).some((c) =>
-			c.startsWith("language-"),
-		);
-
-		if (hasExplicitLang) {
-			hljs.highlightElement(codeEl);
-		}
-
-		const langClass = Array.from(codeEl.classList).find((c) =>
-			c.startsWith("language-"),
-		);
-
-		if (preEl && preEl.tagName === "PRE") {
-			preEl.querySelectorAll(".lang-label").forEach((l) => l.remove());
-			const codeContent = codeEl.textContent || "";
-			const existingWrapper = preEl.parentElement?.classList.contains(
-				"code-block-shell",
-			)
-				? (preEl.parentElement as HTMLDivElement)
-				: null;
-			existingWrapper
-				?.querySelectorAll(":scope > .lang-label")
-				.forEach((l) => l.remove());
-
-			const wrapper = existingWrapper ?? document.createElement("div");
-			if (!existingWrapper) {
-				wrapper.className = "code-block-shell";
-				preEl.replaceWith(wrapper);
-				wrapper.appendChild(preEl);
-			}
-
-			const copyCode = () => {
-				const codeToCopy = codeContent.replace(/\n$/, "");
-				invoke("clipboard_write_text", { text: codeToCopy })
-					.then(() => {
-						const originalContent = label.innerHTML;
-						label.innerHTML = "Copied!";
-						label.classList.add("copied");
-						setTimeout(() => {
-							label.innerHTML = originalContent;
-							label.classList.remove("copied");
-						}, 1500);
-					})
-					.catch((err) => {
-						console.error("Failed to copy code:", err);
-					});
-			};
-
-			const label = document.createElement("button");
-			label.className = "lang-label";
-			label.title = "Click to copy code";
-			label.onclick = copyCode;
-
-			if (hasExplicitLang && langClass) {
-				label.textContent = langClass.replace("language-", "");
-				wrapper.appendChild(label);
-			} else {
-				label.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
-				wrapper.appendChild(label);
-			}
-		}
-	}
-
-	if (katex) {
-		const mathElements = markdownBody.querySelectorAll("span[data-math]");
-		for (const el of Array.from(mathElements)) {
-			const isDisplay = el.getAttribute("data-math") === "display";
-			try {
-				katex.render(el.textContent || "", el as HTMLElement, {
-					displayMode: isDisplay,
-					throwOnError: false,
-				});
-			} catch (e) {
-				console.error("KaTeX rendering error:", e);
-			}
-		}
-	}
-
-	if (renderMathInElement) {
-		renderMathInElement(markdownBody, {
-			delimiters: [
-				{ left: "$$", right: "$$", display: true },
-				{ left: "\\(", right: "\\)", display: false },
-				{ left: "\\[", right: "\\]", display: true },
-			],
-			throwOnError: false,
-		});
-	}
 }

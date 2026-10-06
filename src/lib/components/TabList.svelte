@@ -4,28 +4,34 @@
 	import ContextMenu, { type ContextMenuItem } from './ContextMenu.svelte';
 	import { t } from '../utils/i18n.js';
 	import { settings } from '../stores/settings.svelte.js';
-	import { emit } from '@tauri-apps/api/event';
+	import { emitTo } from '@tauri-apps/api/event';
+	import { getCurrentWindow } from '@tauri-apps/api/window';
+	import { modifierFor, shortcutLabel } from '../utils/shortcuts.js';
+	import { duplicateNameSuffixes } from '../utils/duplicateTabNames.js';
 
 	import { flip } from 'svelte/animate';
 	import { tick } from 'svelte';
 
 	let {
 		onnewTab,
-		ondetach,
 		showHome = false,
 		ontabclick,
 		oncloseTab,
 	} = $props<{
 		onnewTab: () => void;
-		ondetach?: (tabId: string) => void;
 		showHome?: boolean;
 		ontabclick?: () => void;
 		oncloseTab?: (id: string) => void;
 	}>();
 
+	// Which tabs need a folder to be told apart, recomputed as the strip
+	// changes: a suffix is a fact about the SET of open tabs, not about any one
+	// of them, so it cannot live on the tab the way `title` does (#727).
+	const folderSuffixes = $derived(
+		settings.showFolderForDuplicateNames ? duplicateNameSuffixes(tabManager.tabs) : new Map<string, string>(),
+	);
+
 	let scrollContainer = $state<HTMLElement | null>(null);
-	let showLeftArrow = $state(false);
-	let showRightArrow = $state(false);
 
 	// Drag state
 	let draggingId = $state<string | null>(null);
@@ -51,12 +57,20 @@
 		items: [],
 	});
 
+	function selectTab(tab: TabData) {
+		if (justDragged) return;
+		tabManager.setActive(tab.id);
+		ontabclick?.();
+	}
+
 	function handleMouseDown(e: MouseEvent, tab: TabData, element: HTMLElement) {
 		if (e.button !== 0) return;
 		e.stopPropagation();
 		e.preventDefault();
 
-		const rect = element.getBoundingClientRect();
+		// The wrapper is as tall as the title bar; the drag proxy has to line up
+		// with the tab drawn inside it.
+		const rect = (element.firstElementChild ?? element).getBoundingClientRect();
 		dragState = {
 			startX: e.clientX,
 			currentX: e.clientX,
@@ -132,29 +146,27 @@
 		window.removeEventListener('mouseup', handleWindowMouseUp);
 	}
 
+	/*
+	 * Reveal the active tab only when it is out of view. Centring it on every
+	 * switch scrolled the strip back while the tabs were still sliding into a
+	 * closed tab's gap. `offsetLeft` ignores that slide's transform.
+	 */
 	$effect(() => {
-		const activeId = tabManager.activeTabId;
-		if (activeId && scrollContainer && !draggingId) {
-			const index = tabManager.tabs.findIndex((t) => t.id === activeId);
-			if (index !== -1) {
-				tick().then(() => {
-					setTimeout(() => {
-						if (!scrollContainer) return;
-
-						if (index === tabManager.tabs.length - 1) {
-							scrollContainer.scrollTo({ left: 99999, behavior: 'smooth' });
-							return;
-						}
-
-						const tabElements = scrollContainer.children;
-						if (tabElements[index]) {
-							const el = tabElements[index] as HTMLElement;
-							el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-						}
-					}, 150);
-				});
-			}
-		}
+		const index = tabManager.tabs.findIndex((t) => t.id === tabManager.activeTabId);
+		const strip = scrollContainer;
+		if (index === -1 || !strip || draggingId) return;
+		tick().then(() => {
+			const el = strip.children[index] as HTMLElement | undefined;
+			if (!el) return;
+			// Each side's own padding: counting padding the strip lacks scrolled it mid-flip.
+			const pad = getComputedStyle(strip);
+			const left = el.offsetLeft - strip.offsetLeft - parseFloat(pad.paddingLeft);
+			const right = el.offsetLeft - strip.offsetLeft + el.offsetWidth + parseFloat(pad.paddingRight);
+			const target = left < strip.scrollLeft ? left : right > strip.scrollLeft + strip.clientWidth ? right - strip.clientWidth : null;
+			if (target === null) return;
+			// 'instant', not 'auto': the strip's CSS `scroll-behavior: smooth` animates 'auto'.
+			strip.scrollTo({ left: target, behavior: settings.animateJumpScroll ? 'smooth' : 'instant' });
+		});
 	});
 
 	function handleContainerContextMenu(e: MouseEvent) {
@@ -162,13 +174,14 @@
 		e.preventDefault();
 
 		const currentLang = settings.language;
+		const modifier = modifierFor(settings.osType);
 		tabListContextMenu = {
 			show: true,
 			x: e.clientX,
 			y: e.clientY,
 			items: [
-				{ label: t('menu.newFile', currentLang), shortcut: 'Ctrl+T', onClick: () => emit('menu-tab-new') },
-				{ label: t('menu.undoCloseTab', currentLang), shortcut: 'Ctrl+Shift+T', onClick: () => emit('menu-tab-undo') },
+				{ label: t('menu.newFile', currentLang), shortcut: shortcutLabel('file-new', modifier), onClick: () => emitTo(getCurrentWindow().label, 'menu-tab-new') },
+				{ label: t('menu.undoCloseTab', currentLang), shortcut: shortcutLabel('tab-undo-close', modifier), onClick: () => emitTo(getCurrentWindow().label, 'menu-tab-undo') },
 			]
 		};
 	}
@@ -176,8 +189,6 @@
 
 <div class="tab-list-wrapper">
 	<div class="scroll-viewport">
-		<div class="scroll-shadow left" class:visible={showLeftArrow}></div>
-
 		<div
 			bind:this={scrollContainer}
 			class="tab-list-container"
@@ -191,23 +202,25 @@
 					e.currentTarget.scrollLeft += e.deltaY;
 				}
 			}}>
-			{#each tabManager.tabs as tab, i (tab.id)}
+			{#each tabManager.tabs as tab (tab.id)}
 				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<div
 					class="tab-item-wrapper"
 					animate:flip={{ duration: 200 }}
 					role="listitem"
 					class:drag-opacity={draggingId === tab.id}
-					onmousedown={(e) => handleMouseDown(e, tab, e.currentTarget as HTMLElement)}>
+					onmousedown={(e) => handleMouseDown(e, tab, e.currentTarget as HTMLElement)}
+					onclick={(e) => {
+						// Only reachable when maximized, where the wrapper reaches up to
+						// the screen edge (#823). Clicks inside the tab are the tab's own.
+						if (e.target === e.currentTarget) selectTab(tab);
+					}}>
 					<Tab
 						{tab}
+						folderSuffix={folderSuffixes.get(tab.id)}
 						isActive={!showHome && tabManager.activeTabId === tab.id}
-						isLast={i === tabManager.tabs.length - 1}
-						onclick={() => {
-							if (justDragged) return;
-							tabManager.setActive(tab.id);
-							ontabclick?.();
-						}}
+						onclick={() => selectTab(tab)}
 						onclose={() => oncloseTab?.(tab.id)} />
 				</div>
 			{/each}
@@ -215,14 +228,12 @@
 
 		{#if draggingId && dragState}
 			<div class="drag-proxy" style:left="{dragState.initialRect.left + (dragState.currentX - dragState.startX)}px" style:top="{dragState.initialRect.top}px">
-				<Tab tab={dragState.tab} isActive={!showHome && tabManager.activeTabId === dragState.tab.id} onclick={() => {}} onclose={() => {}} />
+				<Tab tab={dragState.tab} folderSuffix={folderSuffixes.get(dragState.tab.id)} isActive={!showHome && tabManager.activeTabId === dragState.tab.id} onclick={() => {}} onclose={() => {}} />
 			</div>
 		{/if}
-
-		<div class="scroll-shadow right" class:visible={showRightArrow}></div>
 	</div>
 
-	<button class="new-tab-btn" onclick={onnewTab} onmousedown={(e) => e.preventDefault()} title={`${t('tooltip.newTab', settings.language)} (Ctrl+T)`}>
+	<button class="new-tab-btn" onclick={onnewTab} onmousedown={(e) => e.preventDefault()} title={`${t('tooltip.newTab', settings.language)} (${shortcutLabel('file-new', modifierFor(settings.osType))})`}>
 		<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
 			><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
 	</button>
@@ -248,31 +259,6 @@
 		overflow: hidden;
 		min-width: 0;
 		max-width: 100%;
-	}
-
-	.scroll-shadow {
-		position: absolute;
-		top: 0;
-		bottom: 0;
-		width: 40px;
-		z-index: 20;
-		pointer-events: none;
-		opacity: 0;
-		transition: opacity 0.2s ease;
-	}
-
-	.scroll-shadow.visible {
-		opacity: 1;
-	}
-
-	.scroll-shadow.left {
-		left: 0;
-		background: linear-gradient(to right, var(--color-canvas-default), transparent);
-	}
-
-	.scroll-shadow.right {
-		right: 0;
-		background: linear-gradient(to left, var(--color-canvas-default), transparent);
 	}
 
 	.tab-list-container {
@@ -326,6 +312,15 @@
 
 	.tab-item-wrapper {
 		transition: opacity 0.1s;
+	}
+
+	/* Maximized on Windows/Linux, the strip above a tab is the screen's top
+	   edge. Give it to the tab, as Chrome does, so a flick to the edge picks the
+	   tab instead of dragging the window (#823). Only the top strip: the one
+	   below is not an edge and stays drag region, as do restored windows. */
+	:global(.custom-title-bar.maximized) .tab-item-wrapper {
+		align-self: flex-start;
+		padding-top: 4px; /* (36px bar - 28px tab) / 2 */
 	}
 
 	.tab-item-wrapper.drag-opacity {

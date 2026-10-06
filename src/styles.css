@@ -15,6 +15,7 @@ body {
 	overflow: hidden;
 	user-select: none;
 	-webkit-user-select: none;
+	font-family: var(--win-font);
 }
 
 #app {
@@ -61,7 +62,8 @@ body {
 	--hljs-type: #953800;
 }
 
-:root[data-theme="light"] {
+:root[data-theme="light"],
+#print-root {
 	/* Explicit Light Theme Override */
 	--color-fg-default: #1f2328;
 	--color-fg-muted: #656d76;
@@ -333,7 +335,14 @@ body {
 
 /* KaTeX Adjustment */
 .katex-display {
-	margin: 1.5em 0 !important;
+	/* `overflow-y: hidden` keeps a wide formula's horizontal scrollbar from
+	   bringing a vertical one, but it also clips at the padding edge. KaTeX
+	   sizes the block from its own font metrics, and a glyph it has no metrics
+	   for — the CJK label on an mhchem arrow, `->[燃烧]` — draws taller than
+	   the box, so its top was cut off. The padding is that headroom; the margin
+	   gives it back, so the block still sits 1.5em from its neighbours. */
+	margin: 1.1em 0 !important;
+	padding: 0.4em 0;
 	overflow-x: auto;
 	overflow-y: hidden;
 	text-align: center;
@@ -379,6 +388,10 @@ body {
 	font-size: 16px;
 	line-height: 1.5;
 	word-wrap: break-word;
+	overflow-wrap: anywhere;
+	text-align: left;
+	/* Space CJK from Latin. Ignored where unsupported. */
+	text-autospace: normal;
 	user-select: text;
 	-webkit-user-select: text;
 }
@@ -387,6 +400,241 @@ body {
 	display: inline-block;
 	fill: currentColor;
 	vertical-align: text-bottom;
+}
+
+.markdown-body .frontmatter-panel {
+	margin: 0 0 1.5rem;
+	border: 1px solid var(--color-border-default);
+	border-radius: 8px;
+	background: var(--color-canvas-subtle);
+	overflow: hidden;
+}
+
+.markdown-body .frontmatter-summary {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-height: 2.25rem;
+	padding: 0.45rem 0.75rem;
+	border: 0;
+	background: transparent;
+	color: var(--color-fg-default);
+	font: inherit;
+	font-weight: 600;
+	text-align: left;
+	cursor: pointer;
+	list-style: none;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+.markdown-body .frontmatter-summary::marker,
+.markdown-body .frontmatter-summary::-webkit-details-marker {
+	display: none;
+	content: "";
+}
+
+.markdown-body .frontmatter-summary:focus-visible {
+	outline: 2px solid var(--color-accent-fg);
+	outline-offset: -3px;
+}
+
+.markdown-body .frontmatter-chevron {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	inline-size: 1rem;
+	block-size: 1rem;
+	color: var(--color-fg-muted);
+	transform: rotate(90deg);
+	transition: transform 0.15s ease;
+}
+
+.markdown-body .frontmatter-panel:not([open]) .frontmatter-chevron {
+	transform: rotate(0deg);
+}
+
+.markdown-body .frontmatter-title {
+	flex: 1;
+}
+
+.markdown-body .frontmatter-count {
+	min-inline-size: 1.5rem;
+	padding: 0.05rem 0.45rem;
+	border: 1px solid var(--color-border-muted);
+	border-radius: 999px;
+	color: var(--color-fg-muted);
+	font-size: 0.78em;
+	font-weight: 500;
+	text-align: center;
+}
+
+.markdown-body .frontmatter-grid {
+	display: grid;
+	grid-template-columns: fit-content(12rem) minmax(0, 1fr);
+	column-gap: 0.75rem;
+	row-gap: 0.45rem;
+	align-items: start;
+	padding: 0.75rem;
+	border-top: 1px solid var(--color-border-muted);
+}
+
+.markdown-body .frontmatter-key {
+	padding-block: 0.35rem;
+	color: var(--color-fg-muted);
+	font-size: 0.9em;
+	overflow-wrap: anywhere;
+}
+
+.markdown-body .frontmatter-value {
+	min-width: 0;
+}
+
+.markdown-body .frontmatter-value input,
+.markdown-body .frontmatter-value select {
+	width: 100%;
+	min-height: 2rem;
+	box-sizing: border-box;
+	border: 1px solid var(--color-border-default);
+	border-radius: 6px;
+	background: var(--color-canvas-default);
+	color: var(--color-fg-default);
+	font: inherit;
+	font-size: 0.92em;
+	padding: 0.3rem 0.5rem;
+}
+
+.markdown-body .frontmatter-value input:focus-visible,
+.markdown-body .frontmatter-value select:focus-visible {
+	outline: 2px solid var(--color-accent-fg);
+	outline-offset: 1px;
+}
+
+.markdown-body .frontmatter-value code {
+	display: block;
+	padding: 0.35rem 0.5rem;
+	border: 1px solid var(--color-border-muted);
+	border-radius: 6px;
+	background: var(--color-canvas-default);
+	white-space: pre-wrap;
+}
+
+.markdown-body .frontmatter-tags {
+	display: flex;
+	flex-direction: column;
+	gap: 0.45rem;
+	min-width: 0;
+}
+
+.markdown-body .frontmatter-tag-list {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.35rem;
+	min-height: 2rem;
+}
+
+.markdown-body .frontmatter-tag {
+	display: inline-flex;
+	align-items: stretch;
+	max-width: 100%;
+	border: 1px solid var(--color-border-default);
+	border-radius: 6px;
+	background: var(--color-canvas-default);
+	overflow: hidden;
+}
+
+.markdown-body .frontmatter-tag-text,
+.markdown-body .frontmatter-tag-remove,
+.markdown-body .frontmatter-tag-add-button {
+	min-height: 1.8rem;
+	border: 0;
+	background: transparent;
+	color: var(--color-fg-default);
+	font: inherit;
+	font-size: 0.9em;
+}
+
+.markdown-body .frontmatter-tag-text {
+	max-width: min(18rem, 100%);
+	padding: 0.2rem 0.5rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	cursor: text;
+}
+
+.markdown-body .frontmatter-tag-remove {
+	inline-size: 1.7rem;
+	border-left: 1px solid var(--color-border-muted);
+	color: var(--color-fg-muted);
+	cursor: pointer;
+}
+
+.markdown-body .frontmatter-tag-add {
+	display: grid;
+	grid-template-columns: minmax(8rem, 1fr) 2rem;
+	gap: 0.35rem;
+	width: min(100%, 24rem);
+}
+
+.markdown-body .frontmatter-tag-add-button {
+	border: 1px solid var(--color-border-default);
+	border-radius: 6px;
+	background: var(--color-canvas-default);
+	color: var(--color-fg-muted);
+	cursor: pointer;
+}
+
+.markdown-body .frontmatter-value .frontmatter-tag-edit-input {
+	width: min(14rem, 100%);
+	min-height: 1.8rem;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	padding: 0.2rem 0.5rem;
+}
+
+.markdown-body .frontmatter-tag-text:hover,
+.markdown-body .frontmatter-tag-remove:hover,
+.markdown-body .frontmatter-tag-add-button:hover {
+	background: var(--color-neutral-muted);
+	color: var(--color-fg-default);
+}
+
+.markdown-body .frontmatter-tag-text:focus-visible,
+.markdown-body .frontmatter-tag-remove:focus-visible,
+.markdown-body .frontmatter-tag-add-button:focus-visible {
+	outline: 2px solid var(--color-accent-fg);
+	outline-offset: 1px;
+}
+
+.markdown-body .frontmatter-error,
+.markdown-body .frontmatter-field-error {
+	color: var(--color-danger-fg);
+	font-size: 0.9em;
+}
+
+.markdown-body .frontmatter-error {
+	padding: 0.75rem;
+	border-top: 1px solid var(--color-border-muted);
+	white-space: pre-wrap;
+}
+
+.markdown-body .frontmatter-field-error {
+	margin-top: 0.25rem;
+}
+
+@media (max-width: 720px) {
+	.markdown-body .frontmatter-grid {
+		grid-template-columns: minmax(0, 1fr);
+		row-gap: 0.25rem;
+	}
+
+	.markdown-body .frontmatter-key {
+		padding-block-end: 0;
+	}
 }
 
 .markdown-body h1:hover .anchor .octicon-link:before,
@@ -420,7 +668,7 @@ body {
 
 .markdown-body a {
 	background-color: transparent;
-	color: var(--color-accent-fg);
+	color: var(--md-link, var(--color-accent-fg));
 	text-decoration: none;
 }
 
@@ -429,9 +677,26 @@ body {
 	text-decoration: underline dotted;
 }
 
+/*
+ * The colours an imported VS Code theme gives Markdown, applied to the rendered
+ * construct rather than to the markup that produced it (#682). Every fallback
+ * is the value the rule had before, so a built-in theme — which has no
+ * `tokenColors` to take — renders exactly as it did.
+ */
 .markdown-body b,
 .markdown-body strong {
 	font-weight: 600;
+	color: var(--md-strong, inherit);
+}
+
+.markdown-body em,
+.markdown-body i {
+	color: var(--md-emph, inherit);
+}
+
+.markdown-body del,
+.markdown-body s {
+	color: var(--md-strike, inherit);
 }
 
 .markdown-body dfn {
@@ -485,6 +750,7 @@ body {
 .markdown-body samp {
 	font-family: monospace, monospace;
 	font-size: 1em;
+	text-autospace: no-autospace;
 }
 
 .markdown-body figure {
@@ -586,10 +852,17 @@ body {
 .markdown-body table {
 	border-spacing: 0;
 	border-collapse: collapse;
+	/* Behave like GitHub: keep natural column widths and let a genuinely wide
+	   table scroll horizontally within the content column instead of being
+	   clipped by the article's `overflow-x: hidden`. `display: block` turns the
+	   table itself into the scroll container; cells still wrap (see the
+	   white-space/overflow-wrap rules below), so tables whose content fits keep
+	   wrapping and never show a scrollbar. */
 	display: block;
 	width: max-content;
 	max-width: 100%;
-	overflow: auto;
+	overflow-x: auto;
+	overflow-y: hidden;
 	margin-top: 0;
 	margin-bottom: 16px;
 }
@@ -602,6 +875,12 @@ body {
 .markdown-body table th {
 	padding: 6px 13px;
 	border: 1px solid var(--color-border-default);
+	white-space: normal;
+	/* Not `anywhere`: that lets a column shrink to one character, so a long
+	   neighbour squeezes a short column into breaking mid-word (#927). */
+	overflow-wrap: break-word;
+	word-break: normal;
+	font-variant-numeric: tabular-nums;
 }
 
 .markdown-body table tr {
@@ -617,7 +896,7 @@ body {
 	cursor: pointer;
 }
 
-.markdown-body details summary:marker {
+.markdown-body details summary::marker {
 	display: none;
 }
 
@@ -657,8 +936,7 @@ body {
 	margin-bottom: 16px;
 	font-weight: 600;
 	line-height: 1.25;
-	display: flex;
-	align-items: flex-start;
+	text-wrap-style: balance;
 	position: relative;
 }
 
@@ -685,30 +963,45 @@ body {
 	position: relative;
 	overflow: visible !important;
 }
-.markdown-body .foldable-header:hover .header-fold-icon,
-.markdown-body .is-collapsed .header-fold-icon {
+.markdown-body .foldable-header:hover > .header-fold-icon,
+.markdown-body .foldable-header.is-collapsed > .header-fold-icon {
 	opacity: 0.5; /* show on hover or when collapsed */
 }
 .markdown-body .header-fold-icon:hover {
 	opacity: 1 !important;
 }
-.markdown-body .is-collapsed .header-fold-icon {
+/* `>` throughout: a heading's content wrapper holds the headings below it, so
+ * a descendant selector turned every nested chevron as the section folded. */
+.markdown-body .foldable-header.is-collapsed > .header-fold-icon {
 	transform: rotate(-90deg);
 }
-.is-collapsed + .folded-hidden,
-.folded-hidden {
-	display: none !important;
-}
-
-.foldable-content-wrapper, .markdown-alert-content {
-	display: grid;
-	grid-template-rows: 1fr;
-	transition: grid-template-rows 0.25s ease, opacity 0.25s ease;
+.foldable-content-wrapper {
+	height: var(--fold-content-height, auto);
+	transition: height 0.25s ease, opacity 0.25s ease;
 	opacity: 1;
 	overflow: hidden;
 }
-.foldable-content-wrapper.is-collapsed, .markdown-alert-content.is-collapsed {
-	grid-template-rows: 0fr;
+
+.foldable-content-wrapper.is-collapsed {
+	height: 0;
+	opacity: 0;
+	overflow: hidden; /* must hide when collapsed */
+}
+
+.markdown-alert-content {
+	display: grid;
+	/* `minmax(0, …)`, not a bare `fr`: WebKit (macOS, Linux) keeps the height a
+	   bare `1fr` row got at a narrower width, so a callout first laid out in the
+	   zero-width preview pane stays that tall after Ctrl+E widens it (#850). The
+	   collapsed value is spelled the same way so the two still interpolate. */
+	grid-template-rows: minmax(0, 1fr);
+	transition: grid-template-rows 0.25s ease, opacity 0.25s ease;
+	opacity: 1;
+	overflow: visible;
+}
+
+.markdown-alert-content.is-collapsed {
+	grid-template-rows: minmax(0, 0fr);
 	opacity: 0;
 	overflow: hidden;
 }
@@ -717,7 +1010,7 @@ body {
 	min-width: 0;
 	overflow: hidden;
 }
-.is-collapsed .content-inner {
+.is-collapsed > .content-inner {
 	overflow: hidden;
 }
 
@@ -729,7 +1022,7 @@ body {
 	margin-left: auto;
 	flex-shrink: 0;
 }
-.callout-foldable.is-collapsed .callout-fold-icon {
+.callout-foldable.is-collapsed > .markdown-alert-title > .callout-fold-icon {
 	transform: rotate(-90deg);
 }
 
@@ -759,18 +1052,24 @@ body {
 .markdown-body h6 {
 	font-weight: 600;
 	font-size: 0.85em;
-	color: var(--color-fg-muted);
+	color: var(--md-heading, var(--color-fg-muted));
+}
+
+.markdown-body :is(h1, h2, h3, h4, h5) {
+	color: var(--md-heading, inherit);
 }
 
 .markdown-body p {
 	margin-top: 0;
 	margin-bottom: 10px;
+	white-space: normal;
+	overflow-wrap: anywhere;
 }
 
 .markdown-body blockquote {
 	margin: 0;
 	padding: 0 1em;
-	color: var(--color-fg-muted);
+	color: var(--md-quote, var(--color-fg-muted));
 	border-left: 0.25em solid var(--color-border-default);
 }
 
@@ -779,6 +1078,15 @@ body {
 	margin-top: 0;
 	margin-bottom: 16px;
 	padding-left: 2em;
+}
+
+/* A task item is a grid, where margins do not collapse, so a nested list's
+ * margin would add 16px per level under the last sub-task (#911). */
+.markdown-body ul ul,
+.markdown-body ul ol,
+.markdown-body ol ol,
+.markdown-body ol ul {
+	margin-bottom: 0;
 }
 
 .markdown-body ol ol,
@@ -794,7 +1102,9 @@ body {
 }
 
 .markdown-body li {
-	word-wrap: break-all;
+	word-wrap: break-word;
+	overflow-wrap: anywhere;
+	word-break: normal;
 }
 
 .markdown-body li>p {
@@ -822,11 +1132,17 @@ body {
 	margin-bottom: 16px;
 }
 
+.markdown-body :not(pre) > code {
+	color: var(--md-code, inherit);
+}
+
 .markdown-body code {
 	padding: 0.2em 0.4em;
 	margin: 0;
 	font-size: 85%;
 	white-space: break-spaces;
+	overflow-wrap: anywhere;
+	word-break: break-word;
 	background-color: var(--color-neutral-muted);
 	border-radius: 6px;
 }
@@ -843,14 +1159,15 @@ body {
 		Liberation Mono,
 		monospace;
 	font-size: 12px;
-	word-wrap: normal;
+	word-wrap: break-word;
+	white-space: pre-wrap;
 }
 
 .markdown-body pre>code {
 	padding: 0;
 	margin: 0;
-	word-break: normal;
-	white-space: pre;
+	word-break: break-word;
+	white-space: pre-wrap;
 	background: transparent;
 	border: 0;
 }
@@ -861,13 +1178,13 @@ body {
 
 .markdown-body .highlight pre {
 	margin-bottom: 0;
-	word-break: normal;
+	word-break: break-word;
 }
 
 .markdown-body .highlight pre,
 .markdown-body pre {
 	padding: 18px 16px;
-	overflow-x: auto;
+	overflow-x: hidden;
 	overflow-y: hidden;
 	font-size: 85%;
 	line-height: 1.45;
@@ -909,36 +1226,11 @@ body {
 	margin: 0;
 	overflow: visible;
 	line-height: inherit;
-	word-wrap: normal;
+	word-wrap: break-word;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
 	background-color: transparent;
 	border: 0;
-}
-
-.markdown-body .csv-data td,
-.markdown-body .csv-data th {
-	padding: 5px;
-	overflow: hidden;
-	font-size: 12px;
-	line-height: 1;
-	text-align: left;
-	white-space: nowrap;
-}
-
-.markdown-body .csv-data .blob-num {
-	padding: 10px 8px 9px;
-	text-align: right;
-	background: var(--color-canvas-default);
-	border: 0;
-}
-
-.markdown-body .csv-data tr {
-	border-top: 0;
-}
-
-.markdown-body .csv-data th {
-	font-weight: 600;
-	background: var(--color-canvas-subtle);
-	border-top: 0;
 }
 
 .markdown-body [data-footnoteref] {
@@ -1020,15 +1312,6 @@ body {
 	padding-bottom: 8px !important;
 }
 
-.markdown-body details.markdown-alert summary.markdown-alert-title {
-	list-style: none;
-	cursor: pointer;
-}
-
-.markdown-body details.markdown-alert summary.markdown-alert-title::-webkit-details-marker {
-	display: none;
-}
-
 .markdown-body .markdown-alert-title svg:not(.callout-fold-icon) {
 	margin-right: 0.5rem;
 	display: inline-block;
@@ -1040,10 +1323,6 @@ body {
 	margin-left: auto;
 	transition: transform 0.2s ease;
 	opacity: 0.5;
-}
-
-.markdown-body details.markdown-alert[open] .callout-fold-icon {
-	transform: rotate(90deg);
 }
 
 .markdown-body .callout-title-inner {
@@ -1107,10 +1386,6 @@ body {
 
 .markdown-body .markdown-alert-caution > .markdown-alert-title {
 	color: var(--color-danger-fg);
-}
-
-.markdown-body .markdown-alert-caution .alert-icon {
-	vertical-align: text-bottom;
 }
 
 /* Syntax Highlighting */
@@ -1213,44 +1488,6 @@ body {
 .hljs-deletion {
 	color: var(--color-danger-fg);
 	background-color: var(--color-canvas-subtle);
-}
-
-.split-view {
-	display: flex;
-	flex-direction: row;
-	width: 100%;
-	height: 100vh;
-	padding-top: 36px;
-	box-sizing: border-box;
-}
-
-.split-editor {
-	flex: 1;
-	height: 100%;
-	position: relative;
-	border-right: 1px solid var(--color-border-default);
-	min-width: 0;
-}
-
-.split-editor .editor-container {
-	padding-top: 0 !important;
-}
-
-.split-preview {
-	flex: 1;
-	height: 100%;
-	overflow: hidden;
-	min-width: 0;
-	background-color: var(--color-canvas-default);
-}
-
-.split-preview .markdown-body {
-	margin: 0 !important;
-	height: 100% !important;
-	padding: 20px 40px !important;
-	width: 100% !important;
-	max-width: none !important;
-	box-sizing: border-box;
 }
 
 .split-bar {
@@ -1539,70 +1776,226 @@ body {
 	/* Marker class for tree-sitter highlighted code */
 }
 
+/*
+ * A tab switch draws the new tab's layout without animating it.
+ * `MarkdownViewer.svelte` adds `tab-switching` to `.layout-container`, forces a
+ * style recalculation and removes the class, all before the first paint. The
+ * selectors are the elements whose transitions follow per-tab state: the
+ * outline wrapper's shadow and the toggle button's position.
+ *
+ * Keep this in styles.css. The class is added through `classList`, so Svelte
+ * would prune these selectors from the component's scoped `<style>` and every
+ * transition would come back silently. `scripts/tabSwitchIsNotARender.test.ts`
+ * guards that. `!important` beats the scoped declarations.
+ */
+.layout-container.tab-switching .toc-overlay-wrapper,
+.layout-container.tab-switching .toc-toggle-floating {
+	transition: none !important;
+}
+
 /* print styles for pdf export */
+/* The PDF/print route renders the document from the buffer into `#print-root`
+   (see `exportAsPdf`), the same article the HTML export writes to disk. The
+   sheet below reveals that element and hides the rest of the app, so nothing on
+   screen — title bar, tab strip, splitter, find highlights, fold state — can
+   reach paper, and a new part of the interface cannot leak onto a page by being
+   forgotten here. It used to print the live window, and this block was a list of
+   app parts being subtracted back out: fifteen issues over five months were that
+   list missing an entry (#668).
+
+   What is left is typography for paper. */
 @media print {
 	@page {
-		margin: 0.75in;
+		margin: 0;
 		size: auto;
 	}
 
-	.custom-title-bar,
-	.tab-area,
-	.window-controls-left,
-	.window-controls-right,
-	.title-actions-container,
-	.tooltip,
-	.custom-tooltip,
-	.drag-overlay,
-	.pane.editor-pane,
-	.split-bar,
-	.home-menu-container,
-	.kebab-btn,
-	.title-action-btn,
-	.theme-dropdown-container,
-	.control-btn,
-	.lang-label {
+	/* `#app` is `display: contents`, so the viewer's own markup and the print
+	   article are siblings here. Structural rather than a list of names: a part
+	   added to the interface tomorrow is hidden by the same rule. */
+	body > :not(#app) {
 		display: none !important;
+	}
+	#app > :not(#print-root) {
+		display: none !important;
+	}
+	#print-root {
+		display: block !important;
 	}
 
 	html,
-	body,
-	#app,
-	.markdown-container,
-	.layout-container,
-	.pane.viewer-pane {
+	body {
 		background: white !important;
 		overflow: visible !important;
 		height: auto !important;
 		min-height: auto !important;
-		position: static !important;
 		margin: 0 !important;
 		padding: 0 !important;
-		width: 100% !important;
-		border-radius: 0 !important;
+	}
+
+	/* A callout written as "> [!note]-" carries its collapsed state in the
+	   markup itself, so it arrives here collapsed: text that is in the document,
+	   clipped to zero height, on a page that has no way to open it. Heading
+	   folds arrive open — the render is handed an empty fold state. The HTML
+	   export takes the same position from the other side (see
+	   `buildExportDocument`). */
+	.foldable-content-wrapper.is-collapsed {
+		height: auto !important;
+		overflow: visible !important;
+		opacity: 1 !important;
+	}
+	.markdown-alert-content.is-collapsed {
+		grid-template-rows: minmax(0, 1fr) !important;
+		overflow: visible !important;
+		opacity: 1 !important;
+	}
+	.foldable-content-wrapper .content-inner,
+	.markdown-alert-content .content-inner {
+		overflow: visible !important;
+	}
+	.markdown-body .header-fold-icon,
+	.markdown-body .callout-fold-icon,
+	.lang-label {
+		display: none !important;
 	}
 
 	.markdown-body {
-		padding: 0 !important;
+		padding: 0.75in !important;
 		margin: 0 !important;
+		box-sizing: border-box !important;
+		box-decoration-break: clone !important;
+		-webkit-box-decoration-break: clone !important;
 		overflow: visible !important;
 		height: auto !important;
 		min-height: auto !important;
 		max-width: 100% !important;
 		color: #000 !important;
 		background: white !important;
+		print-color-adjust: exact !important;
+		-webkit-print-color-adjust: exact !important;
 		position: static !important;
 	}
-
-	.markdown-body pre {
+	.markdown-body pre,
+	.markdown-body pre code {
 		white-space: pre-wrap !important;
-		word-break: break-word !important;
-		overflow-x: visible !important;
+		overflow-wrap: anywhere !important;
+		word-break: normal !important;
+		overflow: visible !important;
 	}
+	.markdown-body table {
+		display: table !important;
+		table-layout: auto !important;
+		width: 100% !important;
+		max-width: 100% !important;
+		overflow: visible !important;
+	}
+	.markdown-body table th,
+	.markdown-body table td {
+		overflow-wrap: break-word !important;
+		word-break: normal !important;
+	}
+	.markdown-body p,
+	.markdown-body li {
+		orphans: 3;
+		widows: 3;
+	}
+	.markdown-body h1,
+	.markdown-body h2,
+	.markdown-body h3,
+	.markdown-body h4,
+	.markdown-body h5,
+	.markdown-body h6 {
+		break-after: avoid;
+		break-inside: avoid;
+		line-height: 1.2;
+		margin: 1.4em 0 0.55em;
+	}
+	.markdown-body pre,
+	.markdown-body blockquote,
+	.markdown-body .markdown-alert,
+	.markdown-body table,
+	.markdown-body figure,
+	.markdown-body img,
+	.markdown-body .mermaid-diagram,
+	.markdown-body .katex-display {
+		break-inside: avoid;
+	}
+	.markdown-body .markdown-alert {
+		page-break-inside: avoid !important;
+		break-inside: avoid !important;
+		box-decoration-break: clone !important;
+		-webkit-box-decoration-break: clone !important;
+	}
+	.markdown-body tr {
+		break-inside: avoid;
+		page-break-inside: avoid;
+	}
+	.markdown-body .frontmatter-panel,
+	.markdown-body .frontmatter-summary,
+	.markdown-body .export-frontmatter-panel {
+		box-sizing: border-box !important;
+		max-width: 100% !important;
+	}
+	.markdown-body p {
+		margin: 0 0 0.75em;
+	}
+	.markdown-body ul,
+	.markdown-body ol {
+		margin: 0.4em 0 0.8em;
+		padding-left: 1.5em;
+	}
+	.markdown-body li + li {
+		margin-top: 0.2em;
+	}
+	.markdown-body blockquote {
+		margin: 1em 0;
+		padding: 0.15em 1em;
+		color: #333;
+		border-left: 3px solid #bbb;
+	}
+	.markdown-body pre {
+		margin: 1em 0;
+		padding: 0.75em 1em;
+		background: #f6f8fa;
+		border: 1px solid #d0d7de;
+		border-radius: 4px;
+		break-inside: auto;
+		page-break-inside: auto;
+	}
+	.markdown-body img {
+		display: block;
+		max-width: 100% !important;
+		height: auto !important;
+		margin: 1em auto;
+	}
+	/* An image or a diagram taller than the paper used to be clipped at the page
+	   break rather than scaled; 9.5in is what both Letter and A4 hold with the
+	   0.75in margins above. */
+	.markdown-body img,
+	.markdown-body .mermaid-diagram svg {
+		max-height: 9in !important;
+		object-fit: contain !important;
+	}
+	.markdown-body .mermaid-diagram {
+		overflow: visible !important;
+	}
+	.markdown-body table {
+		margin: 1em 0;
+		font-size: 0.9em;
+	}
+	.markdown-body table th,
+	.markdown-body table td {
+		padding: 0.4em 0.55em;
+		vertical-align: top;
+	}
+}
 
-	.markdown-container {
-		zoom: 1 !important;
-	}
+/* Paper is white whatever the screen is wearing, so the print article carries
+   the light palette rather than the app's current theme. Declared on the
+   element, so it wins over the theme's own `:root` definitions for this
+   subtree. */
+#print-root {
+	display: none;
 }
 
 /* ===== Extended markdown features ===== */
@@ -1685,33 +2078,51 @@ body {
 	opacity: 1;
 }
 
-.markdown-body ul.contains-task-list,
-.markdown-body ul li.task-list-item {
+/* On the item, not the list: comrak marks the whole `<ul>` once any item is a
+ * task, and `list-style` inherits, so a plain item beside a task lost its
+ * bullet. */
+.markdown-body li.task-list-item {
 	list-style: none;
 }
 
 .markdown-body ul li.task-list-item,
 .markdown-body .task-list-item {
+	--task-checkbox-size: 15px;
 	padding-left: 0;
 	margin-left: -1.5em;
-	display: flex;
+	display: grid;
+	grid-template-columns: var(--task-checkbox-size) minmax(0, 1fr);
+	column-gap: 0.5em;
 	align-items: baseline;
-	gap: 0.5em;
+}
+
+.markdown-body .task-text {
+	display: block;
+	min-width: 0;
+	grid-column: 2;
+}
+
+.markdown-body .task-list-item > :not(input[data-task-checkbox]):not(.task-text) {
+	grid-column: 2;
+}
+
+.markdown-body .task-list-item > input[data-task-checkbox] + :not(.task-text) {
+	grid-row: 2;
 }
 
 .markdown-body input[data-task-checkbox] {
 	-webkit-appearance: none;
 	appearance: none;
-	width: 15px;
-	height: 15px;
-	min-width: 15px;
+	width: var(--task-checkbox-size, 15px);
+	height: var(--task-checkbox-size, 15px);
+	min-width: var(--task-checkbox-size, 15px);
 	border: 1.5px solid var(--color-border-default);
 	border-radius: 3px;
 	background: transparent;
 	cursor: pointer;
 	position: relative;
 	top: 2px;
-	flex-shrink: 0;
+	grid-column: 1;
 	transition: background-color 0.1s ease, border-color 0.1s ease;
 }
 
@@ -1738,17 +2149,29 @@ body {
 	transform: rotate(45deg);
 }
 
-/* strike-through completed task text */
-.markdown-body li.task-done {
+/*
+ * Strike and dim a completed task. `task-done` is the class the app sets; the
+ * `:has` selectors are the fallback for reload and initial state. Both paths
+ * must change together, or nothing a user sees changes.
+ *
+ * Every selector names the item's own children, never its descendants, and
+ * nothing goes on the `li` itself:
+ *
+ * - `:has(input:checked)` without `>` matches any ancestor of a ticked item, so
+ *   ticking a sub-task struck out every parent above it (#911).
+ * - `text-decoration` on the `li` propagates into nested lists, and no
+ *   descendant can undo it, so a ticked parent struck out its open sub-tasks.
+ * - `opacity` composites once per element that declares it. A rule matching
+ *   every descendant multiplied 0.65 down the markup, and KaTeX, twelve spans
+ *   deep, landed at 0.65^12 = 0.006 and vanished -- see the two task items in
+ *   samples/katex-stress.md.
+ */
+.markdown-body li.task-done > .task-text,
+.markdown-body li.task-done > *:not(input):not(.task-text):not(ul):not(ol),
+.markdown-body li.task-list-item:has(> input[data-task-checkbox]:checked) > .task-text,
+.markdown-body li.task-list-item:has(> input[data-task-checkbox]:checked) > *:not(input):not(.task-text):not(ul):not(ol) {
 	text-decoration: line-through;
 	text-decoration-color: var(--color-fg-muted);
-}
-
-.markdown-body li.task-done .task-text,
-.markdown-body li.task-done p,
-.markdown-body li.task-done > *:not(input):not(ul):not(ol),
-.markdown-body li.task-done * {
-	text-decoration: line-through;
 	opacity: 0.65;
 }
 
@@ -1760,33 +2183,14 @@ body {
 	padding: 0 3px;
 }
 
-/* :has fallback for reload / initial state */
-.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) {
-	text-decoration: line-through;
-	text-decoration-color: var(--color-fg-muted);
+/* The reader's session-only highlights, drawn without touching the DOM. */
+::highlight(markpad-annotation) {
+	background-color: var(--highlight-color, rgba(255, 208, 0, 0.4));
 }
 
-.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) .task-text,
-.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) p,
-.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) > *:not(input):not(ul):not(ol),
-.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) * {
-	text-decoration: line-through;
-	opacity: 0.65;
-}
-
-/* restore opacity/decoration for certain safe elements like ul/ol/checkboxes/links */
-.markdown-body li.task-done input[data-task-checkbox],
-.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) input[data-task-checkbox] {
-	text-decoration: none !important;
-	opacity: 1 !important;
-}
-
-.markdown-body li.task-done ul,
-.markdown-body li.task-done ol,
-.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) ul,
-.markdown-body li.task-list-item:has(input[data-task-checkbox]:checked) ol {
-	text-decoration: none;
-	opacity: 1;
+/* Highlight Matches of Selection: fainter than a highlight, so the two read apart. */
+::highlight(markpad-occurrence) {
+	background-color: color-mix(in srgb, var(--color-accent-fg) 20%, transparent);
 }
 
 .markdown-body .footnote-backref,
@@ -1825,4 +2229,63 @@ body {
 
 .markdown-body .content-inner > .markdown-alert:first-child {
 	margin-top: 12px !important;
+}
+
+/*
+ * Monaco's find widget (Ctrl+F / Ctrl+H in the editor) draws its button
+ * tooltips through the hover service, which mounts them *outside* the editor
+ * proper — a `.context-view` appended to `.editor-container` — and puts them
+ * ABOVE the target. It only flips one below when the tooltip would leave the
+ * WINDOW (hoverWidget.js, adjustVerticalHoverPosition), and the widget sits a
+ * title bar's height down rather than at the window top, so the flip never
+ * fires and the tooltip lands in the strip `.pane` and `.editor-outer` clip
+ * away. That is #675: the first row of buttons showed a sliver of a tooltip or
+ * none, and the sliver that did reach the button flickered as the pointer
+ * crossed it. The second row was fine because its tooltip still fits inside
+ * the pane.
+ *
+ * So drop both clips while the widget is visible. Nothing else escapes: Monaco
+ * clips its own content — and the find widget itself, which lives in
+ * `.overlayWidgets` — inside `.overflow-guard`, leaving `.context-view` as the
+ * only child that can paint outside. `:has(.find-widget.visible)` limits this
+ * to while the widget is open.
+ *
+ * `overflow: clip` with an `overflow-clip-margin` would bound the escape more
+ * tightly, but WebKit ships `clip` without the margin property, so it would
+ * degrade to a plain clip — a silent no-op on the macOS and Linux builds.
+ * `clip-path: inset(-48px 0 0 0)` expresses it exactly and fails for a
+ * different reason: it creates a stacking context, which traps the tooltip
+ * below the title bar it has to paint over.
+ */
+.pane.editor-pane:has(.find-widget.visible),
+.pane.editor-pane:has(.find-widget.visible) .editor-outer {
+	overflow: visible;
+}
+
+/* Monaco writes `z-index: 2576` inline on this node, so only `!important`
+   reaches it, and the title bar it now has to clear is at 9999. Context menus
+   ride the same element and want the same thing: a menu opened near the top of
+   the editor belongs over the title bar, not under it. */
+.context-view {
+	z-index: 10000 !important;
+}
+
+/* The `.context-view` is absolutely positioned inside `.editor-container`, so
+   the tooltip's shrink-to-fit width stops at the editor's right edge, not the
+   window's. In split view the find widget's last buttons sit against that edge:
+   the tooltip wraps to two lines after Monaco has measured it as one and placed
+   it above the button, so the second line lands on the button and the tooltip
+   flickers as the pointer crosses it (#883). Sizing it to its text lets
+   Monaco's own window-edge shift do the placement. `.workbench-hover` keeps its
+   700px cap. */
+.context-view .monaco-hover {
+	width: max-content;
+}
+
+/* The folding chevron sits in a strip that also holds the TOC button's
+   clearance when line numbers are off (`utils/editorOptions.ts`). Monaco
+   centres the chevron in the strip, which would put it under the button;
+   the right end keeps it against the line it folds. */
+.monaco-editor .margin-view-overlays .cldr[class*="codicon-folding-"] {
+	justify-content: flex-end;
 }

@@ -7,6 +7,10 @@ import { DIAGRAM_ALIASES, getDiagramType } from '../diagrams';
 
 // Pipeline 步骤（spec D5）：为每个 pre>code 装配 .lang-label 复制按钮（点击复制 + 反馈）。
 // 跳过图表块（.diagram-wrapper / 图表语言），与原循环守卫逐字一致。
+// 合并后（Task 13，D5/D6 过渡形态）：上游 richContent 会把每个 pre 包进 .code-block-shell
+// 并在壳上装配自己的 .lang-label（经 MV 的 onCopyCode 走 Tauri 剪贴板）。凡上游已装配
+// 的块，本地注入让位（否则同块双按钮），本步骤只服务无壳的 pre（ detached/导出场景）。
+// 两侧复制按钮的统一由 Task 14 深化。
 export async function injectCopyButtons(root: ParentNode, blocks?: Element[]): Promise<void> {
 	const codeBlocks = blocks ?? root.querySelectorAll('pre code');
 	for (const block of Array.from(codeBlocks)) {
@@ -19,6 +23,8 @@ export async function injectCopyButtons(root: ParentNode, blocks?: Element[]): P
 
 		const pre = block.parentElement;
 		if (pre && pre.tagName === 'PRE') {
+			// 上游 .code-block-shell 已有自己的壳级复制按钮：本地让位，防双按钮
+			if (pre.parentElement?.classList.contains('code-block-shell')) continue;
 			pre.querySelectorAll('.lang-label').forEach((l) => l.remove());
 			const codeContent = (block as HTMLElement).textContent || '';
 

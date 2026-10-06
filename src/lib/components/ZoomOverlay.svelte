@@ -2,7 +2,7 @@
 	import { fade } from 'svelte/transition';
 	import { onMount } from 'svelte';
 	import { t } from '../utils/i18n.js';
-	import { settings } from '../stores/settings.svelte.js';
+	import { settings, wheelZoomFactor } from '../stores/settings.svelte.js';
 
 	export type ViewableItem = {
 		type: 'img' | 'svg';
@@ -26,7 +26,12 @@
 	let transitioning = $state(false);
 	let navigateTimer: ReturnType<typeof setTimeout>;
 
+	// D16：上游的光标锚定缩放需要 overlay 引用做 rect 计算——保留上游声明，
+	// bind:this 在模板根节点上。
+	let overlayEl: HTMLElement;
+
 	const MIN_ZOOM = 0.1;
+	// 本地上限 10（D16）：上游 20 在多图画廊下过冲。
 	const MAX_ZOOM = 10;
 	const ZOOM_STEP = 0.15;
 
@@ -70,12 +75,15 @@
 
 	function handleWheel(e: WheelEvent) {
 		e.preventDefault();
-		const delta = -e.deltaY;
-		const factor = delta > 0 ? 1.1 : 0.9;
-		const newZoom = zoom * factor;
-		if (newZoom >= MIN_ZOOM && newZoom <= MAX_ZOOM) {
-			zoom = newZoom;
-		}
+		const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * wheelZoomFactor(e.deltaY)));
+
+		// zoom toward cursor
+		const rect = overlayEl.getBoundingClientRect();
+		const cx = e.clientX - rect.left - rect.width / 2;
+		const cy = e.clientY - rect.top - rect.height / 2;
+		panX = cx - (cx - panX) * (newZoom / zoom);
+		panY = cy - (cy - panY) * (newZoom / zoom);
+		zoom = newZoom;
 	}
 
 	function handleMouseDown(e: MouseEvent) {
@@ -137,7 +145,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="zoom-overlay" transition:fade={{ duration: 150 }} onclick={onclose} role="presentation">
+<div class="zoom-overlay" transition:fade={{ duration: 150 }} onclick={onclose} role="presentation" bind:this={overlayEl}>
 	<button class="close-btn" onclick={onclose} aria-label={t('common.close', settings.language)}>
 		<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 			<line x1="18" y1="6" x2="6" y2="18"></line>
@@ -171,6 +179,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="zoom-content"
+		role="presentation"
 		onclick={(e) => e.stopPropagation()}
 		onwheel={handleWheel}
 		onmousedown={handleMouseDown}
@@ -306,13 +315,21 @@
 		padding: 32px;
 		border-radius: 8px;
 		box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-		overflow: hidden;
+		/* size the container to the SVG's natural proportions, capped at viewport */
+		max-width: min(90vw, 1200px);
+		max-height: 85vh;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	:global(.svg-container svg) {
+		/* let the SVG fill the container using its viewBox — stays fully vector */
 		display: block;
+		width: 100%;
+		height: 100%;
 		min-width: 400px;
-		height: auto;
+		min-height: 200px;
 	}
 
 	.indicator {

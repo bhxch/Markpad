@@ -1,0 +1,168 @@
+import { check, type Update } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
+import { getVersion } from '@tauri-apps/api/app';
+import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import type { ViewerWindowEntry } from '../utils/viewerWindows.js';
+
+type UpdatePhase =
+	| 'idle'
+	| 'checking'
+	| 'up-to-date'
+	| 'available'
+	| 'package-managed'
+	| 'downloading'
+	| 'error';
+
+type ErrorSource = 'check' | 'download' | 'install';
+
+class UpdateStore {
+	phase = $state<UpdatePhase>('idle');
+	show = $state(false);
+	current = $state('');
+	latest = $state('');
+	downloaded = $state(0);
+	total = $state(0);
+	errorMsg = $state('');
+	errorSource = $state<ErrorSource>('check');
+	notes = $state('');
+	/** Windows open beside this one when an install was last asked for (#767). */
+	otherWindows = $state<ViewerWindowEntry[]>([]);
+	#pending: Update | null = null;
+	#checkToken = 0;
+
+	async openDialog() {
+		if (this.show) return;
+		this.show = true;
+		await this.runCheck();
+	}
+
+	close() {
+		if (this.phase === 'downloading') return;
+		this.#checkToken++;
+		this.show = false;
+		this.phase = 'idle';
+		this.#clearResult();
+	}
+
+	/** Forget the last check's result, so a new one starts clean. */
+	#clearResult() {
+		this.errorMsg = '';
+		this.errorSource = 'check';
+		this.notes = '';
+		this.latest = '';
+		this.downloaded = 0;
+		this.total = 0;
+		this.otherWindows = [];
+		this.#pending = null;
+	}
+
+	async runCheck() {
+		if (this.phase === 'checking' || this.phase === 'downloading') return;
+
+		const token = ++this.#checkToken;
+		this.phase = 'checking';
+		this.#clearResult();
+
+		try {
+			// Ask whether this install can update itself BEFORE checking, not
+			// after. A `.deb`, `.rpm` or snap install passes the check happily —
+			// latest.json publishes `linux-x86_64` and every Linux build asks for
+			// exactly that key — and then fails at install time, because the
+			// updater's only Linux strategy is renaming a file over the running
+			// binary. Being offered an update that cannot be installed is worse
+			// than not being offered one, so the question is asked first and the
+			// dialog says where updates actually come from. See #570.
+			if (!(await invoke<boolean>('self_update_supported'))) {
+				if (token !== this.#checkToken) return;
+				this.phase = 'package-managed';
+				return;
+			}
+			if (token !== this.#checkToken) return;
+
+			// Cache the running app's version after the first successful fetch.
+			// Tauri reads it from the bundle once at startup so subsequent calls
+			// only return the cached value, but keeping it stable across
+			// retries makes intent clearer.
+			if (!this.current) {
+				const v = await getVersion();
+				if (token !== this.#checkToken) return;
+				this.current = v;
+			}
+
+			const u = await check();
+			if (token !== this.#checkToken) return;
+			if (u) {
+				this.#pending = u;
+				this.latest = u.version;
+				this.notes = u.body ?? '';
+				this.phase = 'available';
+			} else {
+				this.phase = 'up-to-date';
+			}
+		} catch (e) {
+			if (token !== this.#checkToken) return;
+			this.errorMsg = e instanceof Error ? e.message : String(e);
+			this.phase = 'error';
+		}
+	}
+
+	async startDownload(settleForExit: () => Promise<boolean>) {
+		if (this.phase !== 'available' || !this.#pending) return;
+
+		const update = this.#pending;
+		this.#checkToken++;
+		this.phase = 'downloading';
+		this.downloaded = 0;
+		this.total = 0;
+
+		// An install ends every window at once, and only this one reviews its
+		// unsaved tabs and writes the session. So the others close first, each
+		// through its own close review, and the update waits on offer (#767).
+		// No list to go on is how this behaved before it asked.
+		const windows = (await invoke<ViewerWindowEntry[]>('list_viewer_windows').catch(() => null)) ?? [];
+		this.otherWindows = windows.filter((window) => window.label !== getCurrentWindow().label);
+		if (this.otherWindows.length > 0) {
+			this.phase = 'available';
+			return;
+		}
+
+		// Installing ends the process without closing the window, so the close
+		// path's work — unsaved tabs, the restore snapshot — runs first (#761).
+		// Cancelling it keeps the update on offer.
+		if (!(await settleForExit())) {
+			this.phase = 'available';
+			return;
+		}
+
+		// Two separate try blocks so the error attribution is precise:
+		// downloadAndInstall failures map to errorSource='download' (the
+		// download or signature-verify failed), while a relaunch() failure
+		// maps to errorSource='install' (the new binary is on disk but the
+		// OS refused to restart — user just needs to quit and reopen).
+		try {
+			await update.downloadAndInstall((event) => {
+				if (event.event === 'Started') {
+					this.total = event.data.contentLength ?? 0;
+				} else if (event.event === 'Progress') {
+					this.downloaded += event.data.chunkLength;
+				}
+			});
+		} catch (e) {
+			this.errorMsg = e instanceof Error ? e.message : String(e);
+			this.errorSource = 'download';
+			this.phase = 'error';
+			return;
+		}
+
+		try {
+			await relaunch();
+		} catch (e) {
+			this.errorMsg = e instanceof Error ? e.message : String(e);
+			this.errorSource = 'install';
+			this.phase = 'error';
+		}
+	}
+}
+
+export const updateStore = new UpdateStore();

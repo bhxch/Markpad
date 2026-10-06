@@ -1,0 +1,192 @@
+name: Publish Packages
+
+# Chocolatey and the Snap Store used to be pushed from inside the platform
+# matrix in build.yml, which put an irreversible side effect before the thing
+# that decides whether a release happens at all.
+#
+# It is not hypothetical. Chocolatey's markpad-app 2.7.2 was published at
+# 15:37 UTC on 2026-08-07 by run 31192564528 -- a run that then failed on Linux
+# and produced no release. The release users actually got came out of a
+# different run three hours later. Nothing can un-push a Chocolatey version.
+#
+# So publishing to package managers hangs off `release: published`, which is a
+# human clicking Publish on a draft whose assets they have checked. Both jobs
+# consume that release rather than rebuilding, so what a package manager serves
+# is what the release page serves.
+#
+# Neither job is allowed to swallow a failure. The two steps these replace both
+# were, and the snap build failed under that for three months and six versions
+# while the job reported success -- the Snap Store still served 2.6.11 while
+# every release told people to install it. A publishing channel that cannot fail
+# loudly is a publishing channel nobody is maintaining.
+
+on:
+  release:
+    types: [published]
+  # Recovery, and a way to exercise this without cutting a release: point it at
+  # a tag that already has a published release.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published release tag, e.g. v2.7.2'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-packages-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  chocolatey:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      # Chocolatey accepts a version exactly once, so pushing 2.7.2 again is an
+      # error. That is correct on the `release: published` path -- a second
+      # publish of the same version is a real problem -- and wrong on the
+      # `workflow_dispatch` path, whose only possible use is a tag that is
+      # already published: recovering after the snap job failed, or exercising
+      # this workflow without cutting a release. Both would report a Chocolatey
+      # failure that means nothing.
+      #
+      # So it is asked rather than assumed, and asked of the feed rather than
+      # inferred from the text of a push error. A check that cannot answer --
+      # network, rate limit -- deliberately falls through to the push, which is
+      # the real gate; the point is to drop a known non-event, not to make
+      # publishing conditional on a lookup succeeding.
+      - name: Is this version already on Chocolatey?
+        id: already
+        shell: bash
+        run: |
+          VERSION="${TAG#v}"
+          feed="https://community.chocolatey.org/api/v2/Packages()?\$filter=Id%20eq%20'markpad-app'%20and%20Version%20eq%20'${VERSION}'"
+          if curl -fsS --max-time 30 "$feed" | grep -q "<d:Version>${VERSION}</d:Version>"; then
+            echo "::notice::markpad-app ${VERSION} is already on Chocolatey. Nothing to push."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Take the executable from the release
+        if: steps.already.outputs.published != 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+          # The portable x64 executable published on the release page, not a
+          # fresh build. A rebuild from the same commit is not guaranteed to be
+          # the same bytes, and VERIFICATION.txt below promises it is.
+          mkdir -p packaging/choco/tools
+          gh release download "$TAG" \
+            --pattern "Markpad_${VERSION}_x64.exe" \
+            --dir packaging/choco/tools
+          mv "packaging/choco/tools/Markpad_${VERSION}_x64.exe" packaging/choco/tools/Markpad.exe
+          cp LICENSE packaging/choco/tools/LICENSE.txt
+
+      - name: Record what the package contains
+        if: steps.already.outputs.published != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA=$(sha256sum packaging/choco/tools/Markpad.exe | cut -d' ' -f1)
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/Markpad_${VERSION}_x64.exe"
+          {
+            echo
+            echo "For this package:"
+            echo
+            echo "  Version:  ${VERSION}"
+            echo "  File:     ${URL}"
+            echo "  SHA256:   ${SHA}"
+          } >> packaging/choco/tools/VERIFICATION.txt
+          cat packaging/choco/tools/VERIFICATION.txt
+
+      - name: Pack and publish
+        if: steps.already.outputs.published != 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+        run: |
+          set -euo pipefail
+          choco pack packaging/choco/markpad-app.nuspec --version "$VERSION" --outdir .
+          gh release upload "$TAG" "markpad-app.${VERSION}.nupkg" --clobber
+          choco apikey --key "$CHOCO_API_KEY" --source https://push.chocolatey.org/
+          choco push "markpad-app.${VERSION}.nupkg" --source https://push.chocolatey.org/
+
+  snap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - name: Setup Snapcraft
+        run: |
+          set -euo pipefail
+          sudo snap install lxd
+          sudo lxd waitready
+          sudo lxd init --auto
+          sudo usermod -aG lxd "$USER"
+          sudo iptables -F FORWARD
+          sudo iptables -P FORWARD ACCEPT
+          sudo snap install snapcraft --classic
+
+      # The snap is a repackaging of this release's own .deb, so what the Snap
+      # Store serves is the binary the release page serves rather than a second
+      # compilation of the same source. snapcraft.yaml reads it from here.
+      - name: Take the .deb from the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "Markpad_${VERSION}_amd64.deb" \
+            --output markpad.deb
+          dpkg-deb -f markpad.deb Package Version Architecture
+
+      - name: Build and publish the snap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          set -euo pipefail
+          sg lxd -c 'snapcraft pack'
+
+          shopt -s nullglob
+          snaps=( *.snap )
+          if [ ${#snaps[@]} -eq 0 ]; then
+            echo "::error::snapcraft pack reported success but produced no .snap" >&2
+            exit 1
+          fi
+          SNAP_FILE="${snaps[0]}"
+
+          gh release upload "$TAG" "$SNAP_FILE" --clobber
+
+          # `upload`, not `push`. snapcraft 8 turned the old name into a hard
+          # error -- "The 'push' command was renamed to 'upload'", exit 64 --
+          # and the step above installs whatever `snap install snapcraft
+          # --classic` currently serves, so the command this line calls stopped
+          # existing without a commit here.
+          #
+          # It last worked on 2026-06-03: markpad 2.6.11, revision 15, which is
+          # still what the Snap Store serves. Every run after that died earlier,
+          # in the build, and the swallowing this workflow's header describes
+          # reported it as success. #561 removed that and #577/#579 fixed the
+          # build, so v2.7.4 was the first release to reach this line -- and it
+          # failed here, in run 31775835301, after packing
+          # markpad_2.7.4_amd64.snap green.
+          snapcraft upload "$SNAP_FILE" --release stable

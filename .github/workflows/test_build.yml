@@ -1,7 +1,65 @@
 name: Test Build (No Release)
 
 on:
+  # Keep release packaging changes from reaching a draft release without a
+  # platform build check.
+  #
+  # Documentation cannot change what these three platforms compile. No
+  # Markdown file is bundled as a resource -- `tauri.conf.json` has no
+  # `resources` key -- and the frontend suites that do read `samples/*.md` as
+  # fixtures still run on every pull request through test.yml, which carries
+  # no path filter. A documentation-only pull request was therefore spending
+  # three full platform builds, 12m14s on Linux alone, to prove nothing.
+  #
+  # This is only safe while `build-test` is not a required status check: a job
+  # that never starts stays pending forever against a required check, and the
+  # pull request can then never be merged. Checked when this was written --
+  # master's protection reports no required contexts, and `gh pr checks
+  # --required` reports none on the open pull requests. Whoever makes it
+  # required has to delete this filter in the same change.
+  #
+  # `samples/**` is deliberately absent. It holds only `.md` files today, so
+  # `**.md` already covers it, and `npm test` reads `samples/stress-test.md`
+  # as a fixture; naming the directory would drop a future non-Markdown
+  # fixture out of the matrix without anyone noticing.
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'pics/**'
+      - '.github/ISSUE_TEMPLATE/**'
+  # This trigger exists to fill the cargo cache, not to test master again.
+  #
+  # A GitHub Actions cache can only be restored by the branch that wrote it or
+  # by a branch descended from one that did, and until now nothing wrote a
+  # cargo cache on master: this workflow only ran on `pull_request`, so every
+  # cache was scoped to a pull request branch and no other branch could ever
+  # read it. Every new pull request paid a full cold compile no matter how many
+  # had been cached before it -- which is most of the benefit of caching, lost
+  # to where the cache was written rather than to anything about caching.
+  #
+  # One run per merge seeds all three platforms for every pull request opened
+  # afterwards. Only the first is a cold compile; later master runs restore
+  # master's own cache and recompile little.
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '**.md'
+      - 'pics/**'
+      - '.github/ISSUE_TEMPLATE/**'
   workflow_dispatch:
+
+# Every push to a pull request queued another full matrix while the previous
+# one was still waiting for a runner, and both then competed for the same
+# scarce macOS capacity. Only the newest revision of a branch is worth
+# building.
+#
+# Not on master, for the same reason test.yml does not: the push trigger above
+# exists to write the cache, and cancelling one master run because a second
+# merge landed would throw away the compile that was going to fill it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-test:
@@ -9,13 +67,32 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # One macOS entry, targeting the universal binary the release
+          # actually ships. Two separate arch entries cost two runners from a
+          # pool an order of magnitude smaller than the Linux and Windows
+          # ones -- macOS jobs here finish in 6-8 minutes but were waiting
+          # 20-30 for a slot -- while covering strictly less: universal
+          # compiles both architectures, so an Intel-only break still fails
+          # the check, and it fails on the same artifact the release produces.
           - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
-            os-name: 'macos-aarch64'
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
-            os-name: 'macos-x64'
-          - platform: 'ubuntu-22.04'
+            args: '--target universal-apple-darwin'
+            os-name: 'macos-universal'
+          # The same Ubuntu build.yml releases from. This said 22.04 from the
+          # commit that created this workflow and was never revisited, while
+          # build.yml moved to 24.04 and has been maintained there -- #463's
+          # WebKitGTK unpin takes the current version from noble-updates, and
+          # #499's AppImage strip was written against what noble's linuxdeploy
+          # bundles. Two different sets of system libraries: "the pull request
+          # compiled" did not mean "the release will", and the AppImage a pull
+          # request produced bundled libraries from a distribution nothing
+          # ships.
+          #
+          # The other direction -- releasing from 22.04 -- is the usual AppImage
+          # advice, because a binary linked against an older glibc runs on more
+          # systems. It is not available here: jammy's WebKitGTK is older than
+          # noble's, and older WebKitGTK failing EGL against current Mesa is
+          # exactly what #463 was. Taking that route means solving #463 again.
+          - platform: 'ubuntu-24.04'
             args: ''
             os-name: 'linux'
           - platform: 'windows-latest'
@@ -23,35 +100,175 @@ jobs:
             os-name: 'windows'
 
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+    # The release profile's LTO and single codegen unit are most of the build
+    # step's compile time and change nothing this job checks; build.yml keeps
+    # them. Job-level so rust-cache hashes them into its key: set on the step
+    # alone, master would restore an exact hit, skip the save, and every pull
+    # request would recompile its dependencies against the cached LTO ones.
+    env:
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
+      # No `cache: npm` — see the note in test.yml. It cost 8.76 GB of a 10 GB
+      # budget across 113 unbounded per-branch entries and saved seconds.
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: lts/*
+          # An exact major rather than `lts/*`. Resolving an LTS *alias*
+          # requires the version manifest, which is a network call made before
+          # the tool-cache lookup — and that call is what failed three times in
+          # one afternoon with `self-signed certificate`, on jobs whose own
+          # work needed no network at all. A semver range is matched against
+          # the runner's tool cache first, and the cache already holds what
+          # `lts/*` was resolving to (`Found in cache @ …/node/24.18.0`), so
+          # the manifest is never reached. If a future image drops 24 this
+          # falls back to fetching the manifest — today's behaviour, not worse.
+          node-version: 24
 
       - name: install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.os-name == 'macos-universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
+      # This is the job the 12m14s measurement in test.yml came from: 2m31s of
+      # it was the debug compile behind `cargo test` and 7m57s the release
+      # compile behind `Build app`, all of it from scratch on every run.
+      #
+      # `workspaces` names the cargo workspace root; the action finds no
+      # Cargo.lock without it.
+      #
+      # The automatic key covers the job id, the rustc release/host and a hash
+      # of the Cargo files. All three entries share the job id `build-test`,
+      # which leaves the rustc host as the only thing telling them apart, and
+      # the target list this matrix varies does not appear in the key at all.
+      # `key` makes the cache say which matrix entry wrote it rather than
+      # leaning on that coincidence.
+      #
+      # `save-if` is what keeps this affordable. Without it every pull request
+      # writes its own copy, and a copy here is 1.0-1.2 GB per platform: four
+      # cargo caches from a single run measured 4.45 GB, against a 10 GB
+      # per-repository limit that also holds ~110 npm caches. Two pull requests
+      # in flight would overflow it, and GitHub evicts least-recently-used --
+      # so the largest entries, these, are the ones that vanish, and the cache
+      # would be a slower way of not caching.
+      #
+      # Writing only on master pins the total at one set. Pull requests restore
+      # from master and save nothing, which is also what makes the push trigger
+      # above worth its runner time: it is the only writer.
+      # rust-cache's key ends `-Linux-x64`: `runner.os`, not the image. A cache
+      # written on ubuntu-22.04 restores onto ubuntu-24.04 as a full match --
+      # measured, `v0-rust-linux-build-test-Linux-x64-e8b3ee54-a2c94f3a` on both
+      # -- and cargo fingerprints do not track system libraries, so the
+      # webkit2gtk-sys build script's probe of jammy's headers would be reused
+      # against noble's without anything noticing.
+      #
+      # `$ImageOS` is `ubuntu22`/`ubuntu24`/`macos15`, so this invalidates the
+      # next runner move too, including the ones `-latest` makes without a
+      # commit. Named once, from the runner itself, rather than written down.
+      - name: name the runner image for the cache key
+        run: echo "IMAGE_OS=$ImageOS" >> "$GITHUB_ENV"
+        shell: bash
+
+      - name: cache rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.os-name }}-${{ env.IMAGE_OS }}
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+
+      # Keyed on which entry this is, not on which Ubuntu it happens to be.
+      # This asked for `ubuntu-22.04` literally, so moving the matrix to 24.04
+      # silently skipped the step and `cargo test` failed on a missing
+      # libwebkit2gtk-4.1-dev instead (run 31486273066). `os-name` does not
+      # change when the runner does.
       - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.os-name == 'linux'
         run: |
             sudo apt-get update
             sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm
 
       - name: install frontend dependencies
-        run: npm install
+        run: npm ci
+
+      # test.yml runs the suites on Linux only, so a Windows- or macOS-only
+      # regression in the cfg-gated code paths reaches a release build
+      # unchallenged. Running them here makes the platform matrix prove
+      # behaviour, not just that the tree compiles. Linux is skipped: test.yml
+      # already ran both on the same Ubuntu.
+      - name: run frontend behavior tests
+        if: matrix.os-name != 'linux'
+        shell: bash
+        run: npm test
+
+      - name: run cargo test
+        if: matrix.os-name != 'linux'
+        working-directory: src-tauri
+        run: cargo test
 
       - name: Build app
         env:
           NODE_OPTIONS: "--max_old_space_size=4096"
-        run: npm run tauri build -- ${{ matrix.args }}
+          # linuxdeploy and its appimage plugin are AppImages themselves, and an
+          # AppImage mounts itself through FUSE to run. GitHub's runners do not
+          # reliably provide it, and the failure is silent: the tool runs for a
+          # minute and exits non-zero with nothing on stderr. That is what the
+          # intermittent `failed to run linuxdeploy` here was -- the four
+          # downloads all succeed, the .deb bundles, only the AppImage step dies.
+          #
+          # This tells every AppImage to unpack itself to a temp dir and run from
+          # there instead of mounting. It costs a little disk and removes the
+          # dependency entirely. Ignored on macOS and Windows, which is why it
+          # sits on the shared step rather than behind a matrix condition.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: npm run tauri build -- --no-sign ${{ matrix.args }}
+
+      # The AppImage this job just built is the un-stripped one, and for this
+      # question that is the artifact to ask, not a worse one: it shows what
+      # linuxdeploy put in before anything was taken back out. What decides that
+      # is linuxdeploy-plugin-gtk, fetched from the tip of someone else's branch
+      # on every build -- so the answer can change with no commit here.
+      #
+      # Only possible since this job moved to the release's Ubuntu. Before that
+      # it bundled jammy's libraries and the comparison meant nothing.
+      - name: The AppImage bundles nothing that has to come from the host
+        if: matrix.os-name == 'linux'
+        run: |
+          set -euo pipefail
+          APPIMAGE=$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -name '*.AppImage' | head -1)
+          if [ -z "$APPIMAGE" ]; then
+            echo "::error::the Linux build produced no AppImage to check" >&2
+            exit 1
+          fi
+          bash scripts/check-appimage-libraries.sh "$APPIMAGE"
+          echo "APPIMAGE=$(realpath "$APPIMAGE")" >> "$GITHUB_ENV"
+
+      # The release strips the AppImage and then starts it. Doing both here as
+      # well is what makes those two steps testable at all: strip-appimage.sh
+      # has never run outside a release -- it failed in two of the three v2.7.2
+      # release attempts -- and smoke-appimage.sh would otherwise ship into the
+      # release path having never run anywhere.
+      #
+      # The order matters and is the release's order. Un-stripped, this AppImage
+      # still carries the libraries #498 was about, so smoking it before the
+      # strip would be reproducing the defect rather than testing for it.
+      #
+      # Not free: the strip repacks, and the smoke pulls a container image and a
+      # graphics stack. Roughly three minutes on a twelve-minute job. If that
+      # stops being worth it, path-filter these two steps rather than deleting
+      # them -- the release depends on both scripts either way.
+      - name: Strip the AppImage, as the release does
+        if: matrix.os-name == 'linux'
+        run: bash scripts/strip-appimage.sh "$APPIMAGE"
+
+      - name: The AppImage starts on a distribution it was not built on
+        if: matrix.os-name == 'linux'
+        run: bash scripts/smoke-appimage.sh "$APPIMAGE"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-bundle-${{ matrix.os-name }}
           path: |
@@ -64,3 +281,4 @@ jobs:
             src-tauri/target/*/release/bundle/macos/*.app
             src-tauri/target/release/*.exe
           if-no-files-found: warn
+          retention-days: 7

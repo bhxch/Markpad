@@ -1,18 +1,23 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for all Markpad windows",
   "windows": [
     "main",
-    "installer"
+    "window-*"
   ],
   "permissions": [
     "core:default",
     "opener:default",
     "opener:allow-open-url",
-    "opener:allow-open-path",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "**" }]
+    },
     "dialog:default",
+    "core:webview:allow-print",
     "core:window:allow-start-dragging",
+    "core:window:allow-set-title",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
@@ -21,6 +26,8 @@
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-destroy",
-    "core:webview:allow-internal-toggle-devtools"
+    "core:webview:allow-internal-toggle-devtools",
+    "updater:default",
+    "process:default"
   ]
 }

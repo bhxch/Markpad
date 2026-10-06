@@ -101,6 +101,10 @@ pub mod markdown_ext {
     /// Convert LaTeX delimiters \[...\] to $$...$$ and \(...\) to $...$
     /// This is needed because comrak only supports $...$$ and $...$ natively
     /// Skips content inside code blocks (`...` and ```...```)
+    // 原调用点（旧 render_markdown 命令）随上游化退役；D8 结论为保留资产：
+    // 上游管线只识别 $/$$（markdown.rs find_math_spans），不覆盖用户输入的
+    // \[...\]/\(...\)，本函数是两者间的预处理桥，后续任务决定接线方式。
+    #[allow(dead_code)]
     pub fn process_latex_delimiters(content: &str) -> String {
         let mut result = String::new();
         let chars: Vec<char> = content.chars().collect();

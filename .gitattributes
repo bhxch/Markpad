@@ -1,0 +1,46 @@
+# Line endings.
+#
+# Without this file, a Windows clone with the default `core.autocrlf=true`
+# checks the whole tree out CRLF. Every test in `scripts/` that reads `src/` as
+# text then matches patterns against bytes the repository does not contain —
+# fifteen files had to be hand-patched that way while cutting v2.7.0 (#452).
+#
+# This is the belt. `scripts/sourceTree.ts`'s `readSource` is the braces, and it
+# is the half that actually holds: `.gitattributes` does not touch a tree that is
+# already checked out (that needs `git add --renormalize .`), and it cannot stop
+# an editor from writing CRLF into a file it saves.
+#
+# Every tracked file in this repo is LF today, so this changes no stored bytes
+# and no working tree on Linux or macOS. What it changes is the *next* Windows
+# clone.
+* text=auto eol=lf
+
+# Consumed by Windows-only toolchains, which is where a lone LF is a real risk
+# rather than a theoretical one. These are pinned to CRLF so the bytes NSIS and
+# Chocolatey see are the bytes they see today on a `core.autocrlf=true` runner —
+# this file is not the place to also change the installer build.
+*.nsi   text eol=crlf
+*.nsh   text eol=crlf
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Never touched, never diffed as text.
+*.png   binary
+*.gif   binary
+*.svg   text eol=lf
+*.ico   binary
+*.icns  binary
+
+# Test fixtures that are deliberately not UTF-8 (#372).
+#
+# `-text` opts them out of the `* text=auto eol=lf` above, which would have git
+# decide they are text and normalise their line endings. That would not in fact
+# corrupt them — no GBK or Shift_JIS trail byte can be 0x0A or 0x0D — but it is
+# not worth resting on.
+#
+# `-diff` is the separate half, and the one that shows: without it git diffs
+# them as text and prints their bytes through a UTF-8 lens, so every review
+# that touches one reads a screen of mojibake. With it, "Binary files differ",
+# which is both shorter and true.
+samples/encoding-*.md  -text -diff

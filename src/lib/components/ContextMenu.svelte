@@ -4,6 +4,7 @@
 		shortcut?: string;
 		disabled?: boolean;
 		onClick?: () => void;
+		onHover?: () => void;
 		separator?: boolean;
 	};
 
@@ -19,19 +20,26 @@
 	let innerWidth = $state(1000);
 	let innerHeight = $state(1000);
 
+	/**
+	 * Escape closes the menu, and it listens on the window rather than on the
+	 * menu itself.
+	 *
+	 * The menu used to focus itself so its own `keydown` would fire. But this
+	 * menu is opened by right-clicking the preview, and right-clicking a
+	 * selection is how you copy or edit it — moving focus off the document
+	 * stops the selection being painted, so the highlight vanished under the
+	 * menu that was opened to act on it. Nothing else here wanted focus: there
+	 * is no arrow-key navigation, and the overlay handles click-to-dismiss.
+	 */
 	$effect(() => {
-		if (show) {
-			innerWidth = window.innerWidth;
-			innerHeight = window.innerHeight;
-		}
-	});
+		if (!show) return;
 
-	$effect(() => {
-		if (show && menuEl) {
-			setTimeout(() => {
-				menuEl?.focus();
-			}, 10);
-		}
+		const onKeydown = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') onhide();
+		};
+
+		window.addEventListener('keydown', onKeydown);
+		return () => window.removeEventListener('keydown', onKeydown);
 	});
 
 	let adjustedX = $derived(menuEl && x + menuEl.offsetWidth > innerWidth ? innerWidth - menuEl.offsetWidth - 8 : x);
@@ -43,7 +51,7 @@
 {#if show}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="context-menu-overlay" onclick={onhide} oncontextmenu={(e) => { e.preventDefault(); onhide(); }}>
+	<div class="context-menu-overlay" onclick={onhide} oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); onhide(); }}>
 		<div
 			class="context-menu show-dropdown"
 			bind:this={menuEl}
@@ -51,8 +59,7 @@
 			onclick={(e) => e.stopPropagation()}
 			oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
 			role="menu"
-			tabindex="-1"
-			onkeydown={(e) => e.key === 'Escape' && onhide()}>
+			tabindex="-1">
 			{#each items as item}
 				{#if item.separator}
 					<div class="menu-separator"></div>
@@ -60,6 +67,9 @@
 					<button
 						class="menu-item"
 						disabled={item.disabled}
+						onmouseenter={() => {
+							if (!item.disabled) item.onHover?.();
+						}}
 						onclick={() => {
 							if (!item.disabled && item.onClick) {
 								item.onClick();

@@ -1,0 +1,78 @@
+name: Bug report
+description: Something in Markpad is broken or behaves unexpectedly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fill in what you can — a partial report is genuinely useful, and nothing below is required.
+
+        **One problem per issue, please.** If you have hit several, open one issue for each: problems added to the end of an existing report tend to get lost in the thread while the first one is being discussed.
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Markpad version
+      description: Shown in Settings, or in the About / Markpad menu.
+      placeholder: "2.7.4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install it?
+      description: The installer and the portable build, or a snap and an AppImage, fail in different ways.
+      options:
+        - "Windows — installer (Markpad_…_setup.exe)"
+        - "Windows — portable (Markpad_….exe)"
+        - "Windows — Chocolatey"
+        - "macOS — .dmg"
+        - "macOS — Homebrew"
+        - "Linux — AppImage"
+        - "Linux — .deb"
+        - "Linux — .rpm"
+        - "Linux — snap"
+        - "Built from source"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS and version
+      description: On Linux, add the desktop session and GPU driver — that is usually what localises the bug.
+      placeholder: "Windows 11 24H2 · macOS 26.1 · CachyOS, GNOME on Wayland, Intel Arc/Mesa"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happens
+    attributes:
+      label: What happens, and what you expected instead
+      placeholder: Paste any error text from the terminal or a dialog here too — it is often the fastest route to the cause.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. See …
+
+  - type: textarea
+    id: source-markdown
+    attributes:
+      label: The Markdown that triggers it
+      description: Paste it as text, not as a screenshot of text — a screenshot has to be retyped before it can be tested, and the retyping is where the actual trigger gets lost. Paste the smallest part that still reproduces it, or attach the `.md`.
+      render: markdown
+
+  - type: textarea
+    id: extras
+    attributes:
+      label: Screenshots, and anything else
+      description: Drag images straight into this box.

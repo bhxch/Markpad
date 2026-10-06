@@ -2,22 +2,107 @@ name: Test
 
 on:
   pull_request:
+  # Contributors now branch inside this repository instead of a fork, so a
+  # commit can reach master without ever having been a pull request. Without
+  # this trigger no workflow listens to `push` at all and such a commit is
+  # never tested. Restricted to master: pull request branches already run the
+  # suite through the `pull_request` trigger above.
+  push:
+    branches:
+      - master
+
+# A pull request branch gets pushed to repeatedly, and every push queued
+# another full run of this suite while the previous revision was still being
+# tested. Only the newest revision of a branch is worth testing -- the same
+# reasoning test_build.yml already applies to its platform matrix.
+#
+# `github.ref` is `refs/pull/<n>/merge` under the pull_request trigger and
+# `refs/heads/master` under the push trigger, so the two triggers land in
+# different groups and neither can cancel the other.
+#
+# Cancellation is restricted to pull requests. The push trigger exists because
+# a commit can reach master without ever having been a pull request (see the
+# comment above it); cancelling a master run because a second commit landed
+# would leave the first one untested, which is the exact hole that trigger was
+# added to close.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
+      # No `cache: npm`, deliberately — it was the single largest consumer of a
+      # cache budget the cargo caches above have to fit inside.
+      #
+      # Measured: 113 npm cache entries, 8.76 GB, spread over 50 refs, against
+      # a 10 GB per-repository limit. GitHub scopes caches by ref, so one is
+      # written per branch per platform and nothing can bound it the way
+      # `save-if` bounds the cargo caches. Most of those 113 belonged to pull
+      # requests closed weeks earlier; caches are only evicted after seven days
+      # unused, or by least-recently-used pressure that takes the biggest
+      # entries — the cargo caches — first.
+      #
+      # What it bought, measured on runs that hit it: `npm ci` in 6s on Linux,
+      # 9s on macOS, 15-17s on Windows. It caches `~/.npm`, the download
+      # directory, not `node_modules` — `npm ci` still runs and still links all
+      # 190 packages, so the saving is only the registry fetch, and the runners
+      # are close to the registry. Seconds per job, for the budget that makes
+      # an eight-minute saving possible.
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: lts/*
-          cache: 'npm'
+          # An exact major rather than `lts/*`. Resolving an LTS *alias*
+          # requires the version manifest, which is a network call made before
+          # the tool-cache lookup — and that call is what failed three times in
+          # one afternoon with `self-signed certificate`, on jobs whose own
+          # work needed no network at all. A semver range is matched against
+          # the runner's tool cache first, and the cache already holds what
+          # `lts/*` was resolving to (`Found in cache @ …/node/24.18.0`), so
+          # the manifest is never reached. If a future image drops 24 this
+          # falls back to fetching the manifest — today's behaviour, not worse.
+          node-version: 24
 
       - name: install rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      # Nothing in this repository cached cargo output, so every job compiled
+      # the whole dependency graph from scratch. Measured on the Linux
+      # `build-test` job of run 31382758646: `cargo test` took 2m31s and the
+      # release `Build app` 7m57s out of 12m14s -- 86% of the job was Rust
+      # compilation, none of it reused.
+      #
+      # `src-tauri` is the cargo workspace root. Without naming it the action
+      # looks for Cargo.lock at the repository root, finds none and caches
+      # nothing.
+      #
+      # A pull request can only restore caches written on its own branch or on
+      # the base branch, so master runs are what seed a freshly opened branch.
+      # This job and test_build.yml's matrix both run on push to master for
+      # that reason, and `save-if` keeps them the only writers: a pull request
+      # restores and saves nothing.
+      #
+      # That bound is not cosmetic. One run's cargo caches measured 4.45 GB
+      # against a 10 GB per-repository limit shared with ~110 npm caches, and
+      # GitHub evicts least-recently-used -- so unbounded per-branch copies
+      # would push out the very entries they are meant to reuse.
+      - name: name the runner image for the cache key
+        run: echo "IMAGE_OS=$ImageOS" >> "$GITHUB_ENV"
+
+      - name: cache rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # See the note in test_build.yml: rust-cache keys on `runner.os`, so
+          # ubuntu-22.04 and ubuntu-24.04 share a cache and a build script's
+          # probe of the wrong distribution's headers gets reused.
+          key: ${{ env.IMAGE_OS }}
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: install dependencies (ubuntu only)
         run: |
@@ -27,10 +112,51 @@ jobs:
       - name: install frontend dependencies
         run: npm ci
 
+      - name: audit complete dependency lockfile
+        run: npm audit
+
       - name: check frontend
         run: npm run check
+
+      - name: run frontend behavior tests
+        run: npm test
+
+      # The `scripts/*.spec.ts` half of the suite: the tests whose subject is a
+      # runes module or needs a DOM, which `node --test` cannot load at all. Two
+      # non-overlapping globs, so a file is run by exactly one of these steps.
+      - name: run frontend behavior tests (vitest)
+        run: npm run test:vitest
+
+      # Nothing had ever checked Rust formatting, so master drifted to 47
+      # rustfmt diffs across all six source files -- not because anyone
+      # disagreed with the tool, but because `cargo fmt` is a thing you have to
+      # remember and nothing remembered it. The cost landed on whoever ran it
+      # next: a formatting sweep buried inside an unrelated change, or an
+      # unrelated change buried inside a formatting sweep.
+      #
+      # The sweep is done. This step is what stops it happening again, and it
+      # is the cheap half of this pair -- `--check` parses and prints, it does
+      # not compile, so it fails in about a second and before the two
+      # multi-minute steps below it.
+      - name: check rust formatting
+        run: |
+          cd src-tauri
+          cargo fmt --check
 
       - name: run cargo test
         run: |
           cd src-tauri
           cargo test
+
+      # `-D warnings` is only defensible because the count is currently zero:
+      # the two that existed (a redundant `'static` on a const, a `push_str`
+      # with a one-character literal) are fixed in the same commit as this
+      # gate. A gate added over a non-zero count is one people learn to ignore.
+      #
+      # `--all-targets` so the test modules are linted too -- one of the two
+      # lived in a `#[cfg(test)]` const and a default `cargo clippy` never saw
+      # it.
+      - name: run clippy
+        run: |
+          cd src-tauri
+          cargo clippy --all-targets -- -D warnings

@@ -22,6 +22,8 @@ use include_dir::{include_dir, Dir};
 static QUERIES_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/queries");
 
 /// Print debug info about embedded queries
+// 原调用点随旧 lib.rs 退役；保留为调试资产（合并排查 queries 嵌入问题时手动调用）。
+#[allow(dead_code)]
 pub fn debug_queries_dir() {
     eprintln!("[highlight] === QUERIES_DIR Debug Info ===");
     eprintln!("[highlight] Path: {:?}", QUERIES_DIR.path());

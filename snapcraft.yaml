@@ -2,7 +2,7 @@ name: markpad
 title: Markpad
 adopt-info: markpad
 icon: src-tauri/icons/128x128.png
-summary: The Notepad equivalent for Markdown
+summary: Light as Notepad, elegant as Markdown.
 description: |
   A lightweight, minimalist Markdown viewer and text editor built for productivity across Windows, macOS, and Linux.
   Features:
@@ -26,8 +26,9 @@ description: |
 license: BSD-3-Clause
 website: https://markpad.sftwr.dev
 donation: https://github.com/sponsors/alecdotdev
-source-code: https://github.com/alecdotdev/Markpad
-issues: https://github.com/alecdotdev/Markpad/issues
+source-code: https://github.com/sftwrdotdev/Markpad
+issues: https://github.com/sftwrdotdev/Markpad/issues
+contact: https://github.com/sftwrdotdev/Markpad/issues
 
 confinement: strict
 base: core24
@@ -35,57 +36,56 @@ grade: stable
 
 apps:
   markpad:
-    command: bin/markpad
-    desktop: usr/share/applications/markpad.desktop
+    # Both paths are the .deb's own layout, not this file's invention.
+    command: usr/bin/Markpad
+    desktop: usr/share/applications/Markpad.desktop
     extensions: [gnome]
     plugs:
       - network
       - network-bind
       - wayland
       - home
+      # `home` reaches $HOME and nothing else, so a note kept on a USB stick or
+      # a second-drive mount is invisible to the app, with no way for the user
+      # to grant it. This does not auto-connect -- it takes one
+      # `sudo snap connect markpad:removable-media` -- but without the plug
+      # declared here there is nothing to connect. #562.
+      - removable-media
 
 parts:
+  # The snap packages the .deb the release already shipped. It does not build
+  # Markpad -- build.yml built it once on ubuntu-24.04, and core24 is Ubuntu
+  # 24.04, so there is nothing a second compilation inside LXD would produce
+  # that the first did not.
+  #
+  # It used to do exactly that, and it cost more than the eight minutes. The
+  # snap carried a *different binary* from the .deb and the AppImage of the
+  # same version: one source, two independent compilations, two artifacts. And
+  # compiling meant rust and node in here, which is what four release-blocking
+  # failures were about -- #566, then runs 31479631082, 31480354438 and
+  # 31481081985 on the pull request that fixed it. None of that has anywhere
+  # left to go wrong, because none of it is here.
+  #
+  # `markpad.deb` is put next to this file by the job that runs snapcraft:
+  # .github/workflows/publish-packages.yml, which takes it from the release
+  # being published. That is the only thing that executes this file — #601
+  # removed the pull-request check — so a change here is first run against a
+  # published tag. Missing, snapcraft fails at pull with the path in the
+  # message.
   markpad:
-    plugin: rust
-    source: .
-    build-packages:
-      - libwebkit2gtk-4.1-dev
-      - build-essential
-      - curl
-      - wget
-      - file
-      - libssl-dev
-      - libgtk-3-dev
-      - libappindicator3-dev
-      - librsvg2-dev
+    plugin: dump
+    source: markpad.deb
+    source-type: deb
+    # The 16 libraries the binary asks for by name: core24 supplies libc, libm
+    # and libgcc_s; the gnome extension supplies the GTK and glib stack; these
+    # three are the rest.
     stage-packages:
       - libwebkit2gtk-4.1-0
       - libsoup-3.0-0
       - libjavascriptcoregtk-4.1-0
-    build-snaps:
-      - node/20/stable
     override-build: |
       set -e
-      craftctl set version="$(node -p "require('./package.json').version")"
-      npm install
-      export CARGO_BUILD_JOBS=2
-      npx tauri build --no-bundle
-      
-      # The binary is built in src-tauri/target/release/
-      install -D -m755 src-tauri/target/release/Markpad $CRAFT_PART_INSTALL/bin/markpad
-      
-      # Install the icon
-      install -D -m644 src-tauri/icons/128x128.png $CRAFT_PART_INSTALL/usr/share/icons/hicolor/128x128/apps/markpad.png
-      install -D -m644 src-tauri/icons/32x32.png $CRAFT_PART_INSTALL/usr/share/icons/hicolor/32x32/apps/markpad.png
-      
-      # Install the desktop file
-      cat << EOF > markpad.desktop
-      [Desktop Entry]
-      Name=Markpad
-      Exec=markpad
-      Icon=markpad
-      Type=Application
-      Categories=Utility;TextEditor;
-      MimeType=text/markdown;text/plain;
-      EOF
-      install -D -m644 markpad.desktop $CRAFT_PART_INSTALL/usr/share/applications/markpad.desktop
+      # From the artifact rather than from package.json, so the snap cannot be
+      # labelled a version it does not contain. dpkg-deb is part of dpkg.
+      craftctl set version="$(dpkg-deb -f "$CRAFT_PROJECT_DIR/markpad.deb" Version)"
+      craftctl default
