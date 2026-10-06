@@ -28,6 +28,9 @@ export default mergeConfig(await viteConfig({ mode: 'test', command: 'serve' }),
           name: 'local-unit',
           include: ['src/**/*.test.ts'],
           environment: 'happy-dom',
+          // pipeline 三件套（diagrams/highlight/index）全量并行时偶发 5s 默认
+          // 超时（资源竞争，单跑恒绿），放宽到 15s 消除 flaky。
+          testTimeout: 15000,
         },
       },
     ],
