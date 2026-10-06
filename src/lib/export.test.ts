@@ -301,6 +301,18 @@ describe('TOC 新交互类清理（Task 16）', () => {
 	});
 });
 
+describe('generateExportHtml: 导出宽度随预览设置派生（上游 #467）', () => {
+	it('contentWidth 参数注入 .markdown-body 的 max-width', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试', 1240);
+		expect(out).toMatch(/\.markdown-body\s*\{[^}]*\bmax-width:\s*1240px\b[^}]*\}/);
+	});
+
+	it('缺省 contentWidth 回退 900px，保持纯函数向后兼容', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+		expect(out).toMatch(/\.markdown-body\s*\{[^}]*\bmax-width:\s*900px\b[^}]*\}/);
+	});
+});
+
 describe('exportAsHtml: save_file_content 契约', () => {
 	it('HTML 导出保存以 save_file_content 落盘且携带 encoding: UTF-8', async () => {
 		// Rust 端 save_file_content 为三参必填 (path, content, encoding)，Tauri v2

@@ -416,8 +416,12 @@ function getTreeSitterStyles(theme: string): string {
 
 /**
  * Get the base CSS styles for export
+ *
+ * contentWidth：正文 .markdown-body 的 max-width（px）。上游 #467：导出宽度
+ * 不应写死 900px，而应与预览宽度设置同源；缺省回退 900px 保持纯函数向后兼容
+ * （PDF 通路 @media print 以 max-width: none 覆盖，不受此值影响）。
  */
-function getBaseStyles(theme: string): string {
+function getBaseStyles(theme: string, contentWidth: number = 900): string {
 	return `
 /* Base styles */
 * {
@@ -530,7 +534,7 @@ overflow-x: auto;
 	font-size: 16px;
 	line-height: 1.6;
 	color: var(--color-fg-default);
-	max-width: 900px;
+	max-width: ${contentWidth}px;
 	margin: 0 auto;
 	overflow-wrap: break-word;
 }
@@ -1136,7 +1140,8 @@ export async function generateExportHtml(
 	showToc: boolean,
 	pageSize: PdfPageSize = 'a4',
 	forPrint: boolean = false,
-	title: string = 'Exported Document'
+	title: string = 'Exported Document',
+	contentWidth: number = 900
 ): Promise<string> {
 	// Clone the container
 	const clone = container.cloneNode(true) as HTMLElement;
@@ -1503,7 +1508,7 @@ export async function generateExportHtml(
 ${cssVariables}
 }
 
-${getBaseStyles(themeMode)}
+${getBaseStyles(themeMode, contentWidth)}
 
 ${forPrint ? getPrintStyles(pageSize) : ''}
 	</style>
@@ -1524,7 +1529,8 @@ ${forPrint ? getPrintStyles(pageSize) : ''}
 export async function exportAsHtml(
 	container: HTMLElement,
 	showToc: boolean,
-	defaultFileName: string
+	defaultFileName: string,
+	contentWidth: number = 900
 ): Promise<boolean> {
 	const filePath = await save({
 		defaultPath: `${defaultFileName}.html`,
@@ -1533,7 +1539,7 @@ export async function exportAsHtml(
 
 	if (!filePath) return false;
 
-	const html = await generateExportHtml(container, showToc, 'a4', false, defaultFileName);
+	const html = await generateExportHtml(container, showToc, 'a4', false, defaultFileName, contentWidth);
 	// save_file_content 的 encoding 为三参必填（见 src-tauri/src/commands.rs），
 	// 缺 key 在 Tauri v2 反序列化阶段确定性报错，导出保存必败。
 	await invoke('save_file_content', { path: filePath, content: html, encoding: 'UTF-8' });

@@ -603,7 +603,10 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 
 		try {
 			if (format === 'html') {
-				const success = await exportAsHtml(container, settings.showToc, fileName);
+				// 上游 #467：导出 HTML 的正文宽度随预览设置派生（与 :419 的
+				// previewContentWidth 同源），不再写死 900px；全宽模式（null）导出
+				// 侧暂无 none 形态，回退 export.ts 的 900px 缺省。
+				const success = await exportAsHtml(container, settings.showToc, fileName, previewContentWidth ?? undefined);
 				if (success) {
 					exportMessage = { show: true, text: t('export.success', settings.language) };
 					setTimeout(() => { exportMessage = { show: false, text: '' }; }, 3000);
