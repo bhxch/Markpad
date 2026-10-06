@@ -2,15 +2,6 @@ import pako from 'pako';
 
 const DEFAULT_KROKI_HOST = 'https://kroki.io';
 
-export const SUPPORTED_DIAGRAMS = [
-    'plantuml', 'c4plantuml', 
-    'graphviz', 'dot', 
-    'ditaa', 
-    'excalidraw', 
-    'blockdiag', 'nwdiag', 'actdiag', 'seqdiag', 
-    'erd', 'nomnoml', 'bpmn', 'pikchr', 'svgbob', 'vega', 'vegalite'
-];
-
 export function createKrokiUrl(type: string, text: string, host?: string): string {
     // Map aliases
     if (type === 'dot') type = 'graphviz';

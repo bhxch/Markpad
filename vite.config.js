@@ -1,6 +1,5 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
-// @ts-expect-error url module is available at runtime
 import { fileURLToPath } from "url";
 import { monacoImePatch } from "./scripts/monacoImePatch.mjs";
 

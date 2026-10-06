@@ -101,6 +101,12 @@ pub mod markdown_ext {
     /// Convert LaTeX delimiters \[...\] to $$...$$ and \(...\) to $...$
     /// This is needed because comrak only supports $...$$ and $...$ natively
     /// Skips content inside code blocks (`...` and ```...```)
+    ///
+    /// 继承性边界（Task 14 审查补记，只记录不改行为）：状态机只识别反引号
+    /// 围栏（```）与单反引号行内码，以下形态内的 \[…\]/\(…\) 仍会被转换——
+    /// - 4 空格缩进码块：无缩进跟踪，转换先于 comrak 解析发生；
+    /// - 双反引号 ``...`` 行内码：单反引号状态翻转两次后失同步，内容按普通文本转换；
+    /// - ~~~ 波浪线围栏：完全不识别。
 	// 接线点（Task 14，D8 落地）：上游注册入口 render_markdown（commands.rs）在进入
 	// convert_markdown 前调用本函数，把用户输入的 \[…\]/\(…\) 统一成上游 math 词汇 $/$$。
     pub fn process_latex_delimiters(content: &str) -> String {

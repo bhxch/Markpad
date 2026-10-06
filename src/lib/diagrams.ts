@@ -309,14 +309,3 @@ export function getRustRenderer(diagramId: string, rendererId: string): Renderer
 	if (!diagram?.rustRenderers) return undefined;
 	return diagram.rustRenderers.find(r => r.id === rendererId);
 }
-
-// Kroki 支持的语言列表
-export const KROKI_LANGUAGES = [
-	'plantuml', 'c4plantuml', 
-	'graphviz', 'dot', 
-	'ditaa', 
-	'excalidraw', 
-	'blockdiag', 'nwdiag', 'actdiag', 'seqdiag', 
-	'erd', 'nomnoml', 'bpmn', 'pikchr', 'svgbob', 'vega', 'vegalite',
-	'mermaid'
-];

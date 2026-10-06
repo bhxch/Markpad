@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 
 // highlight_code 命令不可用时应回退 hljs 而非抛错（保持现网行为）
 vi.mock('$app/paths', () => ({}));
-vi.mock('tauri', () => ({ invoke: vi.fn().mockRejectedValue('no runtime') }), { virtual: true });
+// vitest 4 移除 vi.mock 第三参 virtual 选项：不可解析模块本就按 virtual 处理。
+vi.mock('tauri', () => ({ invoke: vi.fn().mockRejectedValue('no runtime') }));
 
 describe('highlightBlocks', () => {
   it('对无 pre>code 的根不抛错（幂等空转）', async () => {
