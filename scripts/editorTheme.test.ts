@@ -20,9 +20,12 @@ const emittedTokens = (() => {
 
 /** A `--color-*` value, read out of the block that defines the given appearance. */
 function paletteColor(appearance: 'light' | 'dark', name: string): string {
+	// The light block opens as a `:root,` selector list (the fork keeps local
+	// theme properties alongside the GitHub palette), so anchor on the first
+	// `:root` selector rather than a single-spelling literal.
 	const block = appearance === 'dark'
 		? styles.slice(styles.indexOf(':root[data-theme="dark"] {'))
-		: styles.slice(styles.indexOf(':root {'));
+		: styles.slice(styles.search(/:root\s*[,{]/));
 	const match = block.match(new RegExp(`--color-${name}:\\s*(#[0-9a-fA-F]{6})`));
 	assert.ok(match, `styles.css must define --color-${name} for ${appearance}`);
 	return match[1].slice(1).toLowerCase();
