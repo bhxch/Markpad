@@ -294,7 +294,14 @@ export async function renderRichContent(options: RenderRichContentOptions): Prom
 	const doc = roots[0].ownerDocument ?? document;
 	const idFactory = options.idFactory ?? defaultIdFactory;
 
-	const codeBlocks = roots.flatMap((root) => selfAndDescendants(root, 'pre code'));
+	const codeBlocks = roots
+		.flatMap((root) => selfAndDescendants(root, 'pre code'))
+		// 接线点（Task 14，D12 图表分发接管；上游文件唯一判定改动）：已由本地图表
+		// 管线（pipeline/diagrams，先于本函数装配）收进 `.diagram-wrapper` 的代码块归
+		// 本地多引擎分发所有——上游不再对它们做高亮/包壳/lang-label/mermaid 替换，
+		// 预览的 mermaid 分支因此空转。导出通路（renderExportRichContent 的 detached
+		// 根不含 wrapper）不受影响，仍走上游 mermaid 渲染与打印主题重绘。
+		.filter((block) => !block.closest('.diagram-wrapper'));
 	const isDiagram = (block: Element) => block.classList.contains('language-mermaid');
 	const languageOf = (block: Element) =>
 		Array.from(block.classList).find((c) => c.startsWith('language-'))?.replace('language-', '') ?? '';

@@ -31,7 +31,13 @@
 	import { exportAsHtml, exportAsPdf, type ExportFormat, type PdfPageSize } from './export';
 	import { i18n } from './i18n';
 	import { runPipeline, setPipelineVersionSource } from './pipeline';
-	import { ensureMermaidInitialized, setDiagramVersionGate, syncMermaidTheme } from './pipeline/diagrams';
+	import {
+		ensureMermaidInitialized,
+		renderDiagramBlocks,
+		rerenderMermaidWrappers,
+		setDiagramVersionGate,
+		syncMermaidTheme,
+	} from './pipeline/diagrams';
 	import { getViewableItems, setLightboxOpener } from './pipeline/lightbox';
 	import { initTreeSitterLanguages } from './pipeline/highlight';
 import { processMarkdownHtml } from './utils/markdown';
@@ -503,7 +509,14 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		// 本地管线的 mermaid 单实例随主题同步（pipeline/diagrams；上游 mermaid 图重绘仍由
 		// renderRichContent 自己承担，这里只保证本实例的后续渲染取到新主题）。
 		syncMermaidTheme();
-		const recolourDiagrams = () => untrack(() => { if (markdownBody) renderRichContent(); });
+		const recolourDiagrams = () => untrack(() => {
+			if (!markdownBody) return;
+			renderRichContent();
+			// D12 主题重绘缺口（Task 14 ③）：图表分发接管后，预览的 mermaid 活在本地
+			// .diagram-wrapper 内，上游 staleDiagrams（.mermaid-diagram 选择器）扫不到，
+			// 本地 wrapper 内已烘焙主题色的 SVG 须由本地管线以新主题重画。
+			void rerenderMermaidWrappers(markdownBody, previewRevision);
+		});
 
 		if (theme === 'system' || theme === 'light' || theme === 'dark') {
 			if (theme === 'system') {
@@ -1521,24 +1534,33 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		// patches to nothing, and its host is in the set from that first render.
 		const cold = patch.inserted.length > 0 && !enrichedHosts.has(host);
 		if (cold) enrichedHosts.add(host);
-		// 本地管线挂接（Task 13，spec D5/D7 骨架形态）：上游 richContent 富化完成后，
-		// 在同一 host 上串行跑本地管线（tree-sitter 高亮 → 多引擎图表 → KaTeX → 复制 →
-		// lightbox）。链在 enrichment 之后保证顺序（如 mermaid 块已被上游先消费，本地
-		// 图表步只处理上游不认识的引擎）。
-		// blocks 实参形态说明：patch.inserted 是块级宿主元素（p/pre/ul…），而管线各步骤
-		// 的 blocks 语义是叶子选择器命中集（pre code / img），直接传入会错配——故传
-		// undefined 走全根扫描（各装配步骤均有去重守卫，重复扫描幂等）。
-		// inserted→叶子的 per-block 映射、图表在 richContent diagram 判定处的分发（D12）
-		// 与复制按钮的两侧统一由 Task 14 深化。
+		// 本地管线挂接（Task 13 骨架 → Task 14 深化，spec D5/D7/D12）：
+		// 1) 图表分发先行（D12 接管）：本地图表分发在上游 richContent 之前对 inserted
+		//    逐宿主跑——language-mermaid 等图表块由本地多引擎分发（source/kroki/local/
+		//    rust，尊重用户逐语言渲染模式）装配为 .diagram-wrapper。上游 richContent
+		//    的 diagram 判定已让位（richContent.ts 接线点：跳过 wrapper 内代码块），
+		//    其 mermaid 分支在预览空转；导出通路（detached 根，无 wrapper）不受影响。
+		// 2) 上游 richContent 富化（高亮/数学/嵌入），3) 本地管线收尾。
+		// blocks 实参（Task 14 ⑦）：patch.inserted 是块级宿主（p/pre/ul…），管线各
+		// 步骤包装层经宿主→叶子映射（pipeline/index 的 leavesOfBlocks，各步骤自带
+		// 选择器）取自己的命中集——高亮/KaTeX/复制按新块集工作；图表步（分发已先行）
+		// 与 lightbox 步（items 全局收集契约）按自身语义保持 root 级。
 		// 链尾 supersede 检查：本次 run 将要发布的修订号先按普通计数器算出（上游
 		// `previewRevision = ++previewPatches;` 语句形状由 scripts/tocRenderSignal.spec.ts
-		// 守护，保持在 enrichment 启动之后原位）——链尾到达时 revision 已被更新的 patch
-		// 推进则本次管线就地退出；否则 runPipeline 内部经版本源捕获，期间到来的新 patch
-		// 仍可逐块取消本 run。
+		// 守护，保持在 enrichment 启动之后原位）——分发/富化/链尾任一到达时 revision
+		// 已被更新的 patch 推进则本次就地退出；期间到来的新 patch 仍可经版本闸逐块
+		// 取消在途渲染。
 		const revisionOfThisRun = previewPatches + 1;
-		const enrichment = renderRichContent(patch.inserted).then(() => {
-			if (previewRevision !== revisionOfThisRun) return; // 已被更新的 patch 取代
-			return runPipeline(host);
+		const enrichment = Promise.resolve().then(async () => {
+			// 分发自微任务启动（此时修订号已发布），versionGate 以 revisionOfThisRun 比对：
+			// 新 patch 到来即 previewRevision 前进，在途分发逐块取消。
+			for (const block of patch.inserted) {
+				await renderDiagramBlocks(block, revisionOfThisRun);
+				if (previewRevision !== revisionOfThisRun) return; // 已被更新的 patch 取代
+			}
+			await renderRichContent(patch.inserted);
+			if (previewRevision !== revisionOfThisRun) return;
+			await runPipeline(host, patch.inserted);
 		});
 		if (cold) restoreAfterColdEnrichment(enrichment, tabManager.activeTabId);
 		previewRevision = ++previewPatches;
@@ -2198,7 +2220,10 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
             return;
         }
 
-        const mermaidDiv = target.closest('.mermaid-diagram');
+        // 图表点击放大（D12 消费者适配）：上游 .mermaid-diagram（导出/其他通路产物）
+        // 与本地 .diagram-wrapper 的渲染面板（分发接管后的预览形态）都认。
+        // 只匹配渲染面板本身：点代码面板（查看源码态）不应打开隐藏 SVG 的 lightbox。
+        const mermaidDiv = target.closest('.mermaid-diagram, .diagram-wrapper [data-diagram-render="true"]');
         if (mermaidDiv) {
             const svg = mermaidDiv.querySelector('svg');
             if (svg) {
@@ -3091,7 +3116,11 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 				} }] : [])]
 				: [];
 
-		const mermaidDiag = (e.target as HTMLElement).closest('.mermaid-diagram');
+		// 图表右键另存（D12 消费者适配）：上游 .mermaid-diagram 与本地 .diagram-wrapper
+		// 渲染面板都认；saveDiagramAs 取容器内首个 svg，对两种形态等价。
+		const mermaidDiag = (e.target as HTMLElement).closest(
+			'.mermaid-diagram, .diagram-wrapper [data-diagram-render="true"]',
+		);
 		if (mermaidDiag) {
 			mediaItems = [
 				{ label: t('menu.saveDiagramAsSvg', settings.language), onClick: () => saveDiagramAs(mermaidDiag as HTMLElement) },

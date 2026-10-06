@@ -170,9 +170,13 @@ test('the theme effect re-colours in every mode, and does not re-run on a mode c
 	// The mode is not a reason to re-apply a theme, and this is the only read
 	// that ever made it one.
 	expect(effect).not.toMatch(/isEditing/);
+	// 接线更新（Task 14，D12 图表分发接管）：预览的 mermaid 活在本地 .diagram-wrapper
+	// 内，上游 staleDiagrams（.mermaid-diagram 选择器）扫不到——recolourDiagrams 在
+	// renderRichContent 之后追加本地管线一侧的 wrapper 重绘（rerenderMermaidWrappers）。
 	expect(effect).toMatch(
-		/const recolourDiagrams = \(\) => untrack\(\(\) => \{ if \(markdownBody\) renderRichContent\(\); \}\);/,
+		/const recolourDiagrams = \(\) => untrack\(\(\) => \{\n\t\t\tif \(!markdownBody\) return;\n\t\t\trenderRichContent\(\);/,
 	);
+	expect(effect).toMatch(/rerenderMermaidWrappers\(markdownBody, previewRevision\)/);
 
 	// Once per branch: the `vscode:` branch does not know its own appearance
 	// until `parseAndApplyVscodeTheme` has published `dataset.themeType`, which

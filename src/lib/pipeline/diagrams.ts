@@ -24,7 +24,10 @@ export function getMermaid(): any {
 }
 
 // 缓存 mermaid 动态 import 结果并做初始 initialize（原 MV onMount 初始 init 段原样搬移；
-// promise 级缓存保证并发调用下也只 import/initialize 一次）
+// promise 级缓存保证并发调用下也只 import/initialize 一次）。
+// 加载失败不清缓存会把首次失败固化成永久失败（负缓存）——失败后置回 null 允许重试，
+// 与 ensureHljs/ensureKatex 及上游 richContent lazyLibrary 的"A failed import is not
+// cached: the next render asks again"语义对齐（Task 14 ⑥）。
 export async function ensureMermaidInitialized(): Promise<void> {
   if (!mermaidPromise) {
     mermaidPromise = import('mermaid').then((module) => {
@@ -34,6 +37,10 @@ export async function ensureMermaidInitialized(): Promise<void> {
         theme: 'default',
         securityLevel: 'loose',
       });
+    });
+    mermaidPromise.catch(() => {
+      mermaidPromise = null;
+      mermaidInstance = null;
     });
   }
   await mermaidPromise;
@@ -238,6 +245,24 @@ export function setupDiagramWrappers(root: ParentNode): void {
 // renderRichContent 图表分发步（原样搬移；markdownBody → root 参数化，版本比对经 versionGate 注入）
 // ---------------------------------------------------------------------------
 
+// mermaid SVG 响应式规范化（原 renderDiagramBlocks local 分支内联段抽取：
+// 确保 viewBox 存在并约束宽度，供首绘与主题重绘 rerenderMermaidWrappers 共用）
+function normalizeMermaidSvg(container: HTMLElement): void {
+  const svgEl = container.querySelector('svg');
+  if (!svgEl) return;
+  const w = svgEl.getAttribute('width');
+  const h = svgEl.getAttribute('height');
+  if (w && h && !svgEl.getAttribute('viewBox')) {
+    svgEl.setAttribute('viewBox', `0 0 ${parseFloat(w)} ${parseFloat(h)}`);
+  }
+  svgEl.removeAttribute('width');
+  svgEl.removeAttribute('height');
+  svgEl.removeAttribute('style');
+  svgEl.style.width = '100%';
+  svgEl.style.height = 'auto';
+  svgEl.style.display = 'block';
+}
+
 export async function renderDiagramBlocks(root: ParentNode, version: number): Promise<void> {
   // 1. Diagram Rendering (Mermaid + Kroki + Local renderers)
   const allCodeBlocks = root.querySelectorAll('pre code');
@@ -290,6 +315,10 @@ export async function renderDiagramBlocks(root: ParentNode, version: number): Pr
 
             // Mermaid has special handling（mermaid 实例来自本模块单例，spec D12）
             if (normalizedLang === 'mermaid' && mermaid) {
+              // 单例配置再同步（D12）：导出通路（上游 richContent，打印主题）会
+              // re-initialize 同一 mermaid 单例，这里渲染前取回本地主题词汇，
+              // 消除"导出后新块按打印主题绘制"的漂移。
+              syncMermaidTheme();
               const div = document.createElement('div');
               div.className = 'mermaid';
 
@@ -298,20 +327,7 @@ export async function renderDiagramBlocks(root: ParentNode, version: number): Pr
                 const { svg } = await mermaid.render(id, code);
                 div.innerHTML = svg;
                 // Make SVG responsive: ensure viewBox and constrain width
-                const svgEl = div.querySelector('svg');
-                if (svgEl) {
-                  const w = svgEl.getAttribute('width');
-                  const h = svgEl.getAttribute('height');
-                  if (w && h && !svgEl.getAttribute('viewBox')) {
-                    svgEl.setAttribute('viewBox', `0 0 ${parseFloat(w)} ${parseFloat(h)}`);
-                  }
-                  svgEl.removeAttribute('width');
-                  svgEl.removeAttribute('height');
-                  svgEl.removeAttribute('style');
-                  svgEl.style.width = '100%';
-                  svgEl.style.height = 'auto';
-                  svgEl.style.display = 'block';
-                }
+                normalizeMermaidSvg(div);
               } catch (e) {
                 console.error('Failed to render Mermaid diagram:', e);
                 div.innerHTML = `<div class="mermaid-error" style="color: var(--color-danger-fg); font-size: 12px; padding: 10px; border: 1px dashed var(--color-danger-border)">Mermaid Syntax Error: ${e}</div>`;
@@ -382,6 +398,47 @@ export async function renderDiagramBlocks(root: ParentNode, version: number): Pr
           }
         }
       }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 主题重绘（D12 主题重绘缺口，Task 14 ③）
+// ---------------------------------------------------------------------------
+
+// 主题切换后以新主题重画已装配 wrapper 内的 mermaid SVG。
+//
+// mermaid 把主题色烘焙进 SVG（fills/strokes 是元素属性，不是可重定向的变量），
+// 主题切换必须重画。上游 richContent 的 staleDiagrams 重绘只认 `.mermaid-diagram`
+// 容器；图表分发接管（D12）后预览的 mermaid 活在本地 `.diagram-wrapper` 内，
+// 上游重绘触达不到——这里补上本地一侧：源码仍记录在 wrapper 的
+// [data-diagram-code] 代码块里，只替换 [data-diagram-render] 的内容，
+// 装配结构（切换按钮/代码面板）原样保留。
+//
+// 重绘失败保留旧主题渲染（旧配色的图好过空图，与上游 staleDiagrams 的取舍一致）。
+// 非 mermaid 分支无需重绘：kroki 是主题无关的远程 URL，本地图表引擎与 KaTeX
+// 的配色来自 settings 而非应用主题。
+export async function rerenderMermaidWrappers(root: ParentNode, version: number): Promise<void> {
+  const mermaid = getMermaid();
+  if (!mermaid) return;
+  const wrappers = Array.from(
+    (root as HTMLElement).querySelectorAll?.('.diagram-wrapper[data-diagram-lang="mermaid"]') ?? [],
+  );
+  if (wrappers.length === 0) return;
+  // 渲染前取回本地主题配置（导出通路会以打印主题 re-initialize 同一单例）
+  syncMermaidTheme();
+  for (const wrapper of wrappers) {
+    if (versionGate(version)) return;
+    const renderEl = wrapper.querySelector('[data-diagram-render="true"]') as HTMLElement | null;
+    const codeEl = wrapper.querySelector('[data-diagram-code="true"] code');
+    if (!renderEl || !codeEl?.textContent?.trim()) continue;
+    try {
+      const id = 'mermaid-' + Math.random().toString(36).substring(2, 11);
+      const { svg } = await mermaid.render(id, codeEl.textContent);
+      renderEl.innerHTML = svg;
+      normalizeMermaidSvg(renderEl);
+    } catch (e) {
+      console.error('Failed to re-render Mermaid diagram for the new theme:', e);
     }
   }
 }

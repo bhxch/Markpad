@@ -10,7 +10,8 @@ import { DIAGRAM_ALIASES, getDiagramType } from '../diagrams';
 // 合并后（Task 13，D5/D6 过渡形态）：上游 richContent 会把每个 pre 包进 .code-block-shell
 // 并在壳上装配自己的 .lang-label（经 MV 的 onCopyCode 走 Tauri 剪贴板）。凡上游已装配
 // 的块，本地注入让位（否则同块双按钮），本步骤只服务无壳的 pre（ detached/导出场景）。
-// 两侧复制按钮的统一由 Task 14 深化。
+// blocks 语义保持"叶子命中集"（'pre code'）；宿主→叶子的映射集中在 index.ts 步骤
+// 包装层（Task 14 ⑦），本模块不感知宿主形态。
 export async function injectCopyButtons(root: ParentNode, blocks?: Element[]): Promise<void> {
 	const codeBlocks = blocks ?? root.querySelectorAll('pre code');
 	for (const block of Array.from(codeBlocks)) {

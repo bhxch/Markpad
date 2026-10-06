@@ -1,8 +1,10 @@
 // pipeline/index.ts — MarkdownViewer 渲染管线统一入口（feat/upstream-merge-2 P1 插件化）
 //
 // 有序步骤：highlight → diagrams → katex → copyCode → lightbox（brief 固定顺序）。
-// - runPipeline(root, blocks?) 的 blocks 是 post-merge per-block 挂接的接口预留（spec D5）：
-//   各步骤实现内部用 blocks ?? root.querySelectorAll(选择器)。
+// - runPipeline(root, blocks?) 的 blocks 是 post-merge per-block 挂接（spec D5）：
+//   Task 14 ⑦ 起语义定为"块级宿主集"（即 patch.inserted），各步骤内部用
+//   leavesOfBlocks(blocks, 自己的叶子选择器) 映射命中集，或按自身契约保持 root 级
+//   （diagrams：分发已先行；lightbox：items 全局收集契约）；undefined 仍全根扫描。
 // - 渲染版本仍属 MarkdownViewer 组件状态：经 setPipelineVersionSource 注入读取，
 //   runPipeline 开始时捕获一次；diagrams 的在途取消语义由其自身 versionGate 承担
 //   （见 pipeline/diagrams 的 setDiagramVersionGate，MarkdownViewer 继续注入 (v) => v !== renderVersion）。
@@ -16,6 +18,18 @@ import { injectLightboxButtons } from './lightbox';
 export interface PipelineStep {
 	name: string;
 	run(root: ParentNode, blocks?: Element[]): Promise<void>;
+}
+
+// 宿主→叶子映射（Task 14 ⑦）：patch.inserted 是块级宿主元素（p/pre/ul…），各步骤的
+// 叶子选择器在宿主内仍可命中。映射 = 宿主自身命中 + 宿主内后代（与上游 richContent
+// 的 selfAndDescendants 同形——"a root that IS a block"不能只靠 querySelectorAll）。
+export function leavesOfBlocks(hosts: Element[], selector: string): Element[] {
+	const out: Element[] = [];
+	for (const host of hosts) {
+		if (host.matches(selector)) out.push(host);
+		out.push(...host.querySelectorAll(selector));
+	}
+	return out;
 }
 
 // hljs 懒加载（原 MarkdownViewer 组件 $state 自持；动态 import 全局缓存同一模块实例，行为等价）
@@ -46,8 +60,11 @@ type VersionedRun = (root: ParentNode, blocks?: Element[], version?: number) => 
 // 'highlight' 步：原 renderRichContent "3. Code Highlighting" 循环原样搬移
 // （tree-sitter 优先 + hljs 兜底；Task 2 预留的“hljs 兜底逻辑随迁移并入”在此并入，
 // 故不直接复用只做 tree-sitter 的 highlightBlocks——后者保留为独立导出）。
+// blocks 语义（Task 14 ⑦）：块级宿主集（patch.inserted）→ 本步骤经 leavesOfBlocks
+// 取 'pre code' 命中集，逐键只处理新块（tree-sitter 逐块 Tauri IPC，全根重扫代价
+// 不可忽略）；undefined 仍全根扫描（detached/导出场景）。
 async function runHighlight(root: ParentNode, blocks?: Element[], version: number = versionSource()): Promise<void> {
-	const codeBlocks = blocks ?? root.querySelectorAll('pre code');
+	const codeBlocks = blocks ? leavesOfBlocks(blocks, 'pre code') : root.querySelectorAll('pre code');
 	for (const block of Array.from(codeBlocks)) {
 		if (version !== versionSource()) return; // stale render（原 version !== renderVersion）
 		if (block.closest('.diagram-wrapper')) continue; // Skip diagrams
@@ -72,6 +89,9 @@ async function runHighlight(root: ParentNode, blocks?: Element[], version: numbe
 
 // 'diagrams' 步：确保全局切换委托已安装（幂等，内部无 per-wrapper 动作）；
 // 逐 wrapper 装配在 renderDiagramBlocks 内，捕获版本透传给其内部 versionGate。
+// Task 14 分发接管（D12）后，预览的图表分发在上游 richContent 之前对 inserted 发生
+// （MarkdownViewer 挂接链），本步保留为 root 级兜底：.diagram-wrapper 守卫使其对
+// 已装配 wrapper 幂等空转，detached/导出场景仍可用。
 async function runDiagrams(root: ParentNode, _blocks?: Element[], version: number = versionSource()): Promise<void> {
 	setupDiagramWrappers(root);
 	await renderDiagramBlocks(root, version);
@@ -80,16 +100,28 @@ async function runDiagrams(root: ParentNode, _blocks?: Element[], version: numbe
 // 'copyCode' 步：stale render 检查（原与高亮同循环、逐块检查；本步纯同步，步级检查与之等价）
 async function runCopyCode(root: ParentNode, blocks?: Element[], version: number = versionSource()): Promise<void> {
 	if (version !== versionSource()) return;
-	await injectCopyButtons(root, blocks);
+	await injectCopyButtons(root, blocks ? leavesOfBlocks(blocks, 'pre code') : undefined);
+}
+
+// 'katex' 步：blocks（宿主）→ span[data-math-style] 叶子映射；定界符扫描保持 root 级
+// （原本地实现形态：文本树遍历、跳过 code/pre/.katex，未命中定界符时零写入）。
+async function runKatex(root: ParentNode, blocks?: Element[]): Promise<void> {
+	await renderKatex(root, blocks ? leavesOfBlocks(blocks, 'span[data-math-style]') : undefined);
+}
+
+// 'lightbox' 步：忽略 blocks——items 是"当前文档全部可查看项"的全局收集（图片点击
+// 委托按 src 反查索引），须整根重收集；:scope 按钮清理守卫使其幂等不累积。
+async function runLightbox(root: ParentNode): Promise<void> {
+	await injectLightboxButtons(root);
 }
 
 // katex / lightbox 步无版本检查（原实现即无），签名 (root, blocks?) 可赋给 VersionedRun（多传实参被忽略）
 const stepEntries: [name: string, run: VersionedRun][] = [
 	['highlight', runHighlight],
 	['diagrams', runDiagrams],
-	['katex', renderKatex],
+	['katex', runKatex],
 	['copyCode', runCopyCode],
-	['lightbox', injectLightboxButtons],
+	['lightbox', runLightbox],
 ];
 
 export function getPipeline(): PipelineStep[] {

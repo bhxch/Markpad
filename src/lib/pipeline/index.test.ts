@@ -41,4 +41,33 @@ describe('runPipeline', () => {
 
     setPipelineVersionSource(() => 0); // 还原版本源，避免影响同文件后续用例
   });
+
+  // Task 14 ⑦：blocks 语义 = 块级宿主集（patch.inserted），各步骤经 leavesOfBlocks
+  // 映射自己的叶子命中集——宿主外的旧块不被重复处理。
+  it('leavesOfBlocks：宿主自身命中 + 后代（与 richContent selfAndDescendants 同形）', async () => {
+    const { leavesOfBlocks } = await import('./index');
+    const root = document.createElement('div');
+    root.innerHTML = '<pre><code>a</code></pre><p>text</p>';
+    const pre = root.querySelector('pre')!;
+    expect(leavesOfBlocks([pre], 'pre code')).toEqual([pre.querySelector('code')]);
+    // 宿主自身即叶子
+    const img = document.createElement('img');
+    expect(leavesOfBlocks([img], 'img')).toEqual([img]);
+  });
+
+  it('blocks 为宿主集：仅处理宿主内叶子，宿主外旧块不被重复装配', async () => {
+    const { runPipeline, setPipelineVersionSource } = await import('./index');
+    setPipelineVersionSource(() => 0);
+    const root = document.createElement('div');
+    root.innerHTML = `
+      <pre><code class="language-js">old</code></pre>
+      <pre><code class="language-js">new</code></pre>`;
+    const newPre = root.querySelectorAll('pre')[1];
+    await runPipeline(root, [newPre]);
+    const labels = root.querySelectorAll('.lang-label');
+    expect(labels.length).toBe(1);
+    expect(labels[0].textContent).toBe('js');
+    expect(labels[0].closest('pre')!.textContent).toContain('new');
+    setPipelineVersionSource(() => 0);
+  });
 });
