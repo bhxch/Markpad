@@ -1534,7 +1534,9 @@ export async function exportAsHtml(
 	if (!filePath) return false;
 
 	const html = await generateExportHtml(container, showToc, 'a4', false, defaultFileName);
-	await invoke('save_file_content', { path: filePath, content: html });
+	// save_file_content 的 encoding 为三参必填（见 src-tauri/src/commands.rs），
+	// 缺 key 在 Tauri v2 反序列化阶段确定性报错，导出保存必败。
+	await invoke('save_file_content', { path: filePath, content: html, encoding: 'UTF-8' });
 	return true;
 }
 

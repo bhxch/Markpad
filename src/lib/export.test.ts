@@ -1,6 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { generateExportHtml, computeFitScale, convertAssetImagesToDataUri } from './export';
 
+// save_file_content 契约测试用（见文件末尾独立 describe）。vi.mock 会被提升到
+// 文件顶部，作用于本文件整个模块图；现有用例不触发 invoke/save，不受影响。
+const { invokeMock, saveDialogMock } = vi.hoisted(() => ({
+	invokeMock: vi.fn(async () => null),
+	saveDialogMock: vi.fn(async () => '/tmp/markpad-export.html'),
+}));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ save: saveDialogMock }));
+
 // 构造一个接近真实结构的 .markdown-container：浮动目录栏 + 正文区。
 function makeContainer(inner = ''): HTMLElement {
 	const container = document.createElement('div');
@@ -289,5 +298,28 @@ describe('TOC 新交互类清理（Task 16）', () => {
 		const out = await generateExportHtml(makeContainerWithTocHandle(), true, 'a4', true, '测试');
 		expect(out).not.toMatch(/toc-resize-handle/);
 		expect(out).not.toMatch(/class="[^"]*toc-overlay-wrapper/);
+	});
+});
+
+describe('exportAsHtml: save_file_content 契约', () => {
+	it('HTML 导出保存以 save_file_content 落盘且携带 encoding: UTF-8', async () => {
+		// Rust 端 save_file_content 为三参必填 (path, content, encoding)，Tauri v2
+		// 对缺失 key 在反序列化阶段确定性报 missing required key encoding，
+		// 导出保存必败——本用例锁定 encoding 参数防回归。
+		const { exportAsHtml } = await import('./export');
+		invokeMock.mockClear();
+		saveDialogMock.mockClear();
+
+		const ok = await exportAsHtml(makeContainer(), false, '测试文档');
+
+		expect(ok).toBe(true);
+		expect(saveDialogMock).toHaveBeenCalledTimes(1);
+		expect(invokeMock).toHaveBeenCalledTimes(1);
+
+		const [command, args] = invokeMock.mock.calls[0];
+		expect(command).toBe('save_file_content');
+		expect(args).toMatchObject({ path: '/tmp/markpad-export.html', encoding: 'UTF-8' });
+		expect(typeof args.content).toBe('string');
+		expect(args.content).toContain('markdown-body');
 	});
 });
