@@ -32,6 +32,25 @@ export interface PaginationResult {
 }
 
 /**
+ * 多 tab 宿主剥离（Task 17 ⑨）：上游骨架在 .markdown-body 内为每个打开的 tab
+ * 挂一个 .markdown-blocks 宿主（MarkdownViewer 的 previewHosts，块补丁绕过
+ * Svelte 直接填充子节点；非活动 tab 仅 inline display:none 隐藏，内容仍挂载
+ * 在 DOM）。克隆 .viewer-content 会把所有 tab 的正文一并带进导出物。这里只
+ * 保留非 display:none 的活动宿主——那是 DOM 上唯一的活动判据（previewHosts
+ * 是组件内部状态，export 层拿不到）；宿主唯一或判据不唯一（结构变动）时
+ * 保守不动，等同旧行为。
+ */
+function stripInactiveTabHosts(clone: HTMLElement): void {
+	const hosts = Array.from(clone.querySelectorAll<HTMLElement>('.markdown-blocks'));
+	if (hosts.length <= 1) return;
+	const active = hosts.filter((el) => el.style.display !== 'none');
+	if (active.length !== 1) return;
+	for (const el of hosts) {
+		if (el !== active[0]) el.remove();
+	}
+}
+
+/**
  * Smart pagination algorithm
  * Splits content into pages, avoiding breaking unsplittable elements
  */
@@ -42,7 +61,8 @@ export function paginateContent(
 ): PaginationResult {
 	// Clone the container
 	const clone = container.cloneNode(true) as HTMLElement;
-	
+	stripInactiveTabHosts(clone);
+
 	// Remove interactive elements
 	clone.querySelectorAll('.toc-sidebar, .toc-container, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
 	// frontmatter 面板（Task 14 ①）：viewer-content 克隆会带出预览的交互式
@@ -1120,6 +1140,7 @@ export async function generateExportHtml(
 ): Promise<string> {
 	// Clone the container
 	const clone = container.cloneNode(true) as HTMLElement;
+	stripInactiveTabHosts(clone);
 
 	// Remove interactive elements (but keep diagram-toggle-btn for HTML export)
 	if (forPrint) {

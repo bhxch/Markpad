@@ -227,6 +227,46 @@ describe('.md→.html 链接改写（Task 16 吸收 rewriteMarkdownHrefForExport
 	});
 });
 
+describe('多 tab 宿主剥离（Task 17 ⑨）', () => {
+	// 上游骨架：.markdown-body 内每个打开的 tab 挂一个 .markdown-blocks 宿主
+	//（MV 的 previewHosts），非活动 tab 仅 inline display:none 但内容仍挂载。
+	// 导出物只允许含活动 tab 的正文。
+	function makeContainerWithTabs(): HTMLElement {
+		return makeContainer(`
+			<div class="markdown-blocks" style="display: none;"><h2>其他tab标题</h2><p>inactive-tab-content</p></div>
+			<div class="markdown-blocks"><h2>活动tab标题</h2><p>active-tab-content</p></div>`);
+	}
+
+	it('HTML 导出只保留非 display:none 的活动宿主', async () => {
+		const out = await generateExportHtml(makeContainerWithTabs(), false, 'a4', false, '测试');
+		expect(out).toContain('active-tab-content');
+		expect(out).not.toContain('inactive-tab-content');
+	});
+
+	it('PDF 导出同样剥离非活动宿主', async () => {
+		const out = await generateExportHtml(makeContainerWithTabs(), true, 'a4', true, '测试');
+		expect(out).toContain('active-tab-content');
+		expect(out).not.toContain('inactive-tab-content');
+	});
+
+	it('单一宿主时不剥离（正常导出）', async () => {
+		const out = await generateExportHtml(
+			makeContainer('<div class="markdown-blocks"><p>only-tab-content</p></div>'),
+			false, 'a4', false, '测试',
+		);
+		expect(out).toContain('only-tab-content');
+	});
+
+	it('判据不唯一（无可见宿主）时保守保留全部，不误删', async () => {
+		const container = makeContainer(`
+			<div class="markdown-blocks" style="display: none;"><p>tab-a-content</p></div>
+			<div class="markdown-blocks" style="display: none;"><p>tab-b-content</p></div>`);
+		const out = await generateExportHtml(container, false, 'a4', false, '测试');
+		expect(out).toContain('tab-a-content');
+		expect(out).toContain('tab-b-content');
+	});
+});
+
 describe('TOC 新交互类清理（Task 16）', () => {
 	function makeContainerWithTocHandle(): HTMLElement {
 		const container = makeContainer();
