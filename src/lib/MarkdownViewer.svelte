@@ -29,7 +29,9 @@
 	// D5 统一渲染管线在上游 blockPatch 富化之后挂接。
 	import ExportModal from './components/ExportModal.svelte';
 	import { exportAsHtml, exportAsPdf, type ExportFormat, type PdfPageSize } from './export';
-	import { runPipeline, setPipelineVersionSource } from './pipeline';
+	// 显式 /index：上游 monacoStartupGraph 测试的 resolveLocal 把无扩展名导入按文件
+	// readFileSync，目录形态在此抛 EISDIR（Task 18 控制器裁决，零行为变化）。
+	import { runPipeline, setPipelineVersionSource } from './pipeline/index';
 	import {
 		ensureMermaidInitialized,
 		renderDiagramBlocks,
