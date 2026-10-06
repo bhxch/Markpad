@@ -4,8 +4,8 @@ import { generateExportHtml, computeFitScale, convertAssetImagesToDataUri } from
 // save_file_content 契约测试用（见文件末尾独立 describe）。vi.mock 会被提升到
 // 文件顶部，作用于本文件整个模块图；现有用例不触发 invoke/save，不受影响。
 const { invokeMock, saveDialogMock } = vi.hoisted(() => ({
-	invokeMock: vi.fn(async () => null),
-	saveDialogMock: vi.fn(async () => '/tmp/markpad-export.html'),
+	invokeMock: vi.fn<(command: string, args: Record<string, unknown>) => Promise<null>>(async () => null),
+	saveDialogMock: vi.fn<() => Promise<string | null>>(async () => '/tmp/markpad-export.html'),
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: saveDialogMock }));
