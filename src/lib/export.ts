@@ -242,31 +242,6 @@ ${contentHtml}
 	};
 }
 
-// Platform detection (cached)
-let currentPlatform: 'windows' | 'macos' | 'linux' | 'unknown' = 'unknown';
-
-/**
- * Detect current platform
- */
-export async function detectPlatform(): Promise<'windows' | 'macos' | 'linux' | 'unknown'> {
-	if (currentPlatform !== 'unknown') return currentPlatform;
-	
-	try {
-		const ua = navigator.userAgent.toLowerCase();
-		if (ua.includes('windows')) {
-			currentPlatform = 'windows';
-		} else if (ua.includes('mac')) {
-			currentPlatform = 'macos';
-		} else if (ua.includes('linux')) {
-			currentPlatform = 'linux';
-		}
-	} catch {
-		currentPlatform = 'unknown';
-	}
-	
-	return currentPlatform;
-}
-
 /**
  * Export as PDF using browser print dialog
  */
