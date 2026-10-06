@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { DiagramRenderMode } from '../diagrams';
-import { getDefaultDiagramSettings, getDefaultRendererSettings, getDefaultRustRendererSettings, getDiagramType } from '../diagrams';
+import { krokiSettingsSlice } from './slices/krokiSettings.svelte.js';
+import { diagramSettingsSlice } from './slices/diagramSettings.svelte.js';
 
 export type OSType = 'macos' | 'windows' | 'linux' | 'unknown';
 export type LanguageCode =
@@ -132,7 +133,6 @@ export class SettingsStore {
 	
 	// Our theme system
 	themeScheme = $state<string>('github-dark');
-	codeTheme = $state<string>('auto'); // 'auto' | 'dark-modern' | 'light-modern'
 	
 	toolbarLayout = $state<{ visible: string[]; hidden: string[] }>({
 		visible: ['zoom', 'open_loc', 'split', 'sync', 'live', 'metadata', 'toc', 'export', 'vim_mode', 'zen_mode', 'theme_scheme', 'code_theme', 'settings', 'edit'],
@@ -190,18 +190,48 @@ export class SettingsStore {
 	previewFontSize = $state(16);
 	codeFont = $state('Consolas');
 	codeFontSize = $state(14);
-	
+
+	// ==== 本地独有键切片透传（kroki.host / code.theme / diagram.*）====
+	// 状态本体在 slices/ 下的切片单例中；上游合并重写本文件后，恢复这些透传即可找回本地设置。
 	// Kroki 自定义 host（支持自托管）
-	krokiHost = $state('https://kroki.io');
-	
+	get krokiHost() {
+		return krokiSettingsSlice.krokiHost;
+	}
+	set krokiHost(value: string) {
+		krokiSettingsSlice.krokiHost = value;
+	}
+
+	// 代码块主题：'auto' | 'dark-modern' | 'light-modern'（applyTheme/setCodeTheme 仍在下方本文件中）
+	get codeTheme() {
+		return krokiSettingsSlice.codeTheme;
+	}
+	set codeTheme(value: string) {
+		krokiSettingsSlice.codeTheme = value;
+	}
+
 	// 图表渲染设置：每种图表的渲染模式
-	diagramSettings = $state<Record<string, DiagramRenderMode>>(getDefaultDiagramSettings());
-	
+	get diagramSettings() {
+		return diagramSettingsSlice.diagramSettings;
+	}
+	set diagramSettings(value: Record<string, DiagramRenderMode>) {
+		diagramSettingsSlice.diagramSettings = value;
+	}
+
 	// 图表渲染器选择：每种图表使用的本地渲染库 (JS/WASM)
-	diagramRendererSettings = $state<Record<string, string>>(getDefaultRendererSettings());
-	
+	get diagramRendererSettings() {
+		return diagramSettingsSlice.diagramRendererSettings;
+	}
+	set diagramRendererSettings(value: Record<string, string>) {
+		diagramSettingsSlice.diagramRendererSettings = value;
+	}
+
 	// 图表 Rust 渲染器选择：每种图表使用的 Rust 渲染库
-	diagramRustRendererSettings = $state<Record<string, string>>(getDefaultRustRendererSettings());
+	get diagramRustRendererSettings() {
+		return diagramSettingsSlice.diagramRustRendererSettings;
+	}
+	set diagramRustRendererSettings(value: Record<string, string>) {
+		diagramSettingsSlice.diagramRustRendererSettings = value;
+	}
 
 	constructor() {
 		if (typeof localStorage !== 'undefined') {
@@ -210,7 +240,6 @@ export class SettingsStore {
 			const savedLineNumbers = localStorage.getItem('editor.lineNumbers');
 			const savedThemeScheme = localStorage.getItem('theme.scheme');
 			const savedToolbarLayout = localStorage.getItem('ui.toolbarLayout');
-			const savedCodeTheme = localStorage.getItem('code.theme');
 			const savedVimMode = localStorage.getItem('editor.vimMode');
 			const savedStatusBar = localStorage.getItem('editor.statusBar');
 
@@ -238,10 +267,6 @@ export class SettingsStore {
 			const savedPreviewFontSize = localStorage.getItem('preview.fontSize');
 			const savedCodeFont = localStorage.getItem('preview.codeFont');
 			const savedCodeFontSize = localStorage.getItem('preview.codeFontSize');
-			const savedKrokiHost = localStorage.getItem('kroki.host');
-			const savedDiagramSettings = localStorage.getItem('diagram.settings');
-			const savedDiagramRendererSettings = localStorage.getItem('diagram.rendererSettings');
-			const savedDiagramRustRendererSettings = localStorage.getItem('diagram.rustRendererSettings');
 
 			const parseFontSize = (value: string | null, fallback: number, min: number, max: number) => {
 				if (value === null) return fallback;
@@ -254,7 +279,6 @@ export class SettingsStore {
 			if (savedWordWrap !== null) this.wordWrap = savedWordWrap;
 			if (savedLineNumbers !== null) this.lineNumbers = savedLineNumbers;
 			if (savedThemeScheme !== null) this.themeScheme = savedThemeScheme;
-			if (savedCodeTheme !== null) this.codeTheme = savedCodeTheme;
 			if (savedToolbarLayout !== null) {
 				try {
 					const parsed = JSON.parse(savedToolbarLayout);
@@ -331,35 +355,9 @@ export class SettingsStore {
 				this.codeFontSize = parseFontSize(savedCodeFontSize, 14, 10, 24);
 			});
 
-			// Load diagram settings
-			if (savedKrokiHost !== null) this.krokiHost = savedKrokiHost;
-			if (savedDiagramSettings !== null) {
-				try {
-					const parsed = JSON.parse(savedDiagramSettings);
-					// Merge with defaults to ensure all diagram types exist
-					this.diagramSettings = { ...getDefaultDiagramSettings(), ...parsed };
-				} catch (e) {
-					console.error('Failed to parse diagram settings', e);
-				}
-			}
-			if (savedDiagramRendererSettings !== null) {
-				try {
-					const parsed = JSON.parse(savedDiagramRendererSettings);
-					// Merge with defaults
-					this.diagramRendererSettings = { ...getDefaultRendererSettings(), ...parsed };
-				} catch (e) {
-					console.error('Failed to parse diagram renderer settings', e);
-				}
-			}
-			if (savedDiagramRustRendererSettings !== null) {
-				try {
-					const parsed = JSON.parse(savedDiagramRustRendererSettings);
-					// Merge with defaults
-					this.diagramRustRendererSettings = { ...getDefaultRustRendererSettings(), ...parsed };
-				} catch (e) {
-					console.error('Failed to parse diagram rust renderer settings', e);
-				}
-			}
+			// Load locally-owned slices (kroki.host / code.theme / diagram.*) from localStorage
+			krokiSettingsSlice.load();
+			diagramSettingsSlice.load();
 
 			$effect.root(() => {
 				$effect(() => {
@@ -368,8 +366,7 @@ export class SettingsStore {
 					localStorage.setItem('editor.lineNumbers', this.lineNumbers);
 					localStorage.setItem('theme.scheme', this.themeScheme);
 					localStorage.setItem('ui.toolbarLayout', JSON.stringify(this.toolbarLayout));
-					localStorage.setItem('code.theme', this.codeTheme);
-					
+
 					// Apply theme to document
 					this.applyTheme();
 					
@@ -398,10 +395,9 @@ export class SettingsStore {
 					localStorage.setItem('preview.fontSize', String(this.previewFontSize));
 					localStorage.setItem('preview.codeFont', this.codeFont);
 					localStorage.setItem('preview.codeFontSize', String(this.codeFontSize));
-					localStorage.setItem('kroki.host', this.krokiHost);
-					localStorage.setItem('diagram.settings', JSON.stringify(this.diagramSettings));
-					localStorage.setItem('diagram.rendererSettings', JSON.stringify(this.diagramRendererSettings));
-					localStorage.setItem('diagram.rustRendererSettings', JSON.stringify(this.diagramRustRendererSettings));
+					// Persist locally-owned slices (kroki.host / code.theme / diagram.*)
+					krokiSettingsSlice.persist();
+					diagramSettingsSlice.persist();
 					if (this.preZenState) {
 						localStorage.setItem('editor.preZenState', JSON.stringify(this.preZenState));
 					} else {
@@ -554,33 +550,27 @@ export class SettingsStore {
 	}
 
 	setDiagramRenderMode(diagramId: string, mode: DiagramRenderMode) {
-		this.diagramSettings[diagramId] = mode;
+		diagramSettingsSlice.setDiagramRenderMode(diagramId, mode);
 	}
 
 	getDiagramRenderMode(diagramId: string): DiagramRenderMode {
-		// First check if user has a saved setting
-		if (this.diagramSettings[diagramId]) {
-			return this.diagramSettings[diagramId];
-		}
-		// Fallback to default mode from DIAGRAM_TYPES
-		const diagramType = getDiagramType(diagramId);
-		return diagramType?.defaultMode || 'kroki';
+		return diagramSettingsSlice.getDiagramRenderMode(diagramId);
 	}
 
 	setDiagramRenderer(diagramId: string, rendererId: string) {
-		this.diagramRendererSettings[diagramId] = rendererId;
+		diagramSettingsSlice.setDiagramRenderer(diagramId, rendererId);
 	}
 
 	getDiagramRenderer(diagramId: string): string {
-		return this.diagramRendererSettings[diagramId] || '';
+		return diagramSettingsSlice.getDiagramRenderer(diagramId);
 	}
 
 	setDiagramRustRenderer(diagramId: string, rendererId: string) {
-		this.diagramRustRendererSettings[diagramId] = rendererId;
+		diagramSettingsSlice.setDiagramRustRenderer(diagramId, rendererId);
 	}
 
 	getDiagramRustRenderer(diagramId: string): string {
-		return this.diagramRustRendererSettings[diagramId] || '';
+		return diagramSettingsSlice.getDiagramRustRenderer(diagramId);
 	}
 
 	async initOSType() {
