@@ -1,6 +1,8 @@
 // pipeline/index.ts — MarkdownViewer 渲染管线统一入口（feat/upstream-merge-2 P1 插件化）
 //
-// 有序步骤：highlight → diagrams → katex → copyCode → lightbox（brief 固定顺序）。
+// 有序步骤：highlight → diagrams → copyCode → lightbox（brief 固定顺序；原 'katex' 步
+// 已退役：span[data-math-style] 合并后零生产端，\[…\]/\(…\) 由后端 markdown_ext 预处理
+// 为 $ 词汇、渲染由上游 richContent 的 renderMathInElement 接管，本地分支三重死代码）。
 // - runPipeline(root, blocks?) 的 blocks 是 post-merge per-block 挂接（spec D5）：
 //   Task 14 ⑦ 起语义定为"块级宿主集"（即 patch.inserted），各步骤内部用
 //   leavesOfBlocks(blocks, 自己的叶子选择器) 映射命中集，或按自身契约保持 root 级
@@ -11,7 +13,6 @@
 import { highlightCodeWithTreeSitterBlock } from './highlight';
 import { setupDiagramWrappers, renderDiagramBlocks } from './diagrams';
 import { DIAGRAM_ALIASES, getDiagramType } from '../diagrams';
-import { renderKatex } from './katex';
 import { injectCopyButtons } from './copyCode';
 import { injectLightboxButtons } from './lightbox';
 
@@ -103,23 +104,16 @@ async function runCopyCode(root: ParentNode, blocks?: Element[], version: number
 	await injectCopyButtons(root, blocks ? leavesOfBlocks(blocks, 'pre code') : undefined);
 }
 
-// 'katex' 步：blocks（宿主）→ span[data-math-style] 叶子映射；定界符扫描保持 root 级
-// （原本地实现形态：文本树遍历、跳过 code/pre/.katex，未命中定界符时零写入）。
-async function runKatex(root: ParentNode, blocks?: Element[]): Promise<void> {
-	await renderKatex(root, blocks ? leavesOfBlocks(blocks, 'span[data-math-style]') : undefined);
-}
-
 // 'lightbox' 步：忽略 blocks——items 是"当前文档全部可查看项"的全局收集（图片点击
 // 委托按 src 反查索引），须整根重收集；:scope 按钮清理守卫使其幂等不累积。
 async function runLightbox(root: ParentNode): Promise<void> {
 	await injectLightboxButtons(root);
 }
 
-// katex / lightbox 步无版本检查（原实现即无），签名 (root, blocks?) 可赋给 VersionedRun（多传实参被忽略）
+// lightbox 步无版本检查（原实现即无），签名 (root, blocks?) 可赋给 VersionedRun（多传实参被忽略）
 const stepEntries: [name: string, run: VersionedRun][] = [
 	['highlight', runHighlight],
 	['diagrams', runDiagrams],
-	['katex', runKatex],
 	['copyCode', runCopyCode],
 	['lightbox', runLightbox],
 ];

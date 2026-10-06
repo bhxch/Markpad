@@ -5,7 +5,7 @@ describe('runPipeline', () => {
   it('步骤有序且全部执行（light smoke：对空 root 幂等）', async () => {
     const { runPipeline, getPipeline } = await import('./index');
     expect(getPipeline().map(s => s.name)).toEqual([
-      'highlight', 'diagrams', 'katex', 'copyCode', 'lightbox',
+      'highlight', 'diagrams', 'copyCode', 'lightbox',
     ]);
     const root = document.createElement('div');
     await expect(runPipeline(root)).resolves.toBeUndefined();
