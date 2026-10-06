@@ -71,19 +71,28 @@ function getYoutubeId(url: string): string | null {
 	return match && match[2].length === 11 ? match[2] : null;
 }
 
-function replaceWithYoutubeLink(element: Element, videoId: string, href: string) {
-	const link = element.ownerDocument.createElement("a");
-	link.className = "youtube-link";
-	carrySourcepos(element, link);
-	link.href = href;
-	link.setAttribute("aria-label", "Open YouTube video in browser");
+/**
+ * D15：保留本地 YouTube 内嵌 iframe 播放，不采用上游的缩略图外链方案。
+ * iframe 由 DOM API 在 sanitize 之后创建（导出线先 sanitize 再进本函数），
+ * 因此 DOMPurify 策略无需为它开口子；CSP 的 frame-src 在 tauri.conf.json。
+ */
+function replaceWithYoutubeEmbed(element: Element, videoId: string) {
+	const container = element.ownerDocument.createElement("div");
+	container.className = "video-container";
+	carrySourcepos(element, container);
 
-	const thumbnail = element.ownerDocument.createElement("img");
-	thumbnail.src = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-	thumbnail.alt = "YouTube video thumbnail";
-	link.appendChild(thumbnail);
+	const iframe = element.ownerDocument.createElement("iframe");
+	iframe.setAttribute("src", `https://www.youtube.com/embed/${videoId}`);
+	iframe.setAttribute("title", "YouTube video player");
+	iframe.setAttribute("frameborder", "0");
+	iframe.setAttribute(
+		"allow",
+		"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
+	);
+	iframe.setAttribute("allowfullscreen", "");
+	container.appendChild(iframe);
 
-	element.replaceWith(link);
+	element.replaceWith(container);
 }
 
 /**
@@ -790,7 +799,7 @@ export function processMarkdownHtml(
 
 			if (isYoutubeLink(src)) {
 				const videoId = getYoutubeId(src);
-				if (videoId) replaceWithYoutubeLink(img, videoId, src);
+				if (videoId) replaceWithYoutubeEmbed(img, videoId);
 			}
 		}
 	}
@@ -805,7 +814,7 @@ export function processMarkdownHtml(
 				parent.childNodes.length === 1
 			) {
 				const videoId = getYoutubeId(href);
-				if (videoId) replaceWithYoutubeLink(a, videoId, href);
+				if (videoId) replaceWithYoutubeEmbed(a, videoId);
 			}
 		}
 	}

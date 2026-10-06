@@ -4674,19 +4674,22 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		--measure: 100cqi;
 	}
 
-
-
-	:global(.youtube-link) {
-		display: block;
+	/* YouTube 内嵌播放（D15）：16:9 容器 + 铺满的 iframe。 */
+	:global(.video-container) {
+		position: relative;
+		padding-bottom: 56.25%;
+		height: 0;
+		overflow: hidden;
 		max-width: 100%;
 		margin: 1em 0;
 	}
 
-	:global(.youtube-link img) {
-		display: block;
+	:global(.video-container iframe) {
+		position: absolute;
+		top: 0;
+		left: 0;
 		width: 100%;
-		aspect-ratio: 16 / 9;
-		object-fit: cover;
+		height: 100%;
 		border-radius: 8px;
 	}
 
