@@ -12,24 +12,8 @@ export class KrokiSettingsSlice {
 	// 代码块主题：'auto' | 'dark-modern' | 'light-modern'
 	codeTheme = $state<string>('auto');
 
-	/** 从 localStorage 恢复（键名与历史版本保持一致）；须在响应式上下文之外、持久化 effect 建立之前调用 */
-	load() {
-		if (typeof localStorage === 'undefined') return;
-
-		const savedKrokiHost = localStorage.getItem('kroki.host');
-		const savedCodeTheme = localStorage.getItem('code.theme');
-
-		if (savedKrokiHost !== null) this.krokiHost = savedKrokiHost;
-		if (savedCodeTheme !== null) this.codeTheme = savedCodeTheme;
-	}
-
-	/** 持久化到 localStorage（键名不变）；须在 $effect 内调用以建立响应依赖 */
-	persist() {
-		if (typeof localStorage === 'undefined') return;
-
-		localStorage.setItem('kroki.host', this.krokiHost);
-		localStorage.setItem('code.theme', this.codeTheme);
-	}
+	// 持久化统一走 stores/settings.svelte.ts 的 createSettingsPersistence() 注册表
+	// （kroki.host / code.theme 两组键均已登记），本切片只承载状态，不直接读写 localStorage。
 }
 
 export const krokiSettingsSlice = new KrokiSettingsSlice();

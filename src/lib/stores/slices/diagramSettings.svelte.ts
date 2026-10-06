@@ -24,51 +24,9 @@ export class DiagramSettingsSlice {
 	// 图表 Rust 渲染器选择：每种图表使用的 Rust 渲染库
 	diagramRustRendererSettings = $state<Record<string, string>>(getDefaultRustRendererSettings());
 
-	/** 从 localStorage 恢复（键名与历史版本保持一致，缺省键与默认值合并）；须在持久化 effect 建立之前调用 */
-	load() {
-		if (typeof localStorage === 'undefined') return;
-
-		const savedDiagramSettings = localStorage.getItem('diagram.settings');
-		const savedDiagramRendererSettings = localStorage.getItem('diagram.rendererSettings');
-		const savedDiagramRustRendererSettings = localStorage.getItem('diagram.rustRendererSettings');
-
-		if (savedDiagramSettings !== null) {
-			try {
-				const parsed = JSON.parse(savedDiagramSettings);
-				// Merge with defaults to ensure all diagram types exist
-				this.diagramSettings = { ...getDefaultDiagramSettings(), ...parsed };
-			} catch (e) {
-				console.error('Failed to parse diagram settings', e);
-			}
-		}
-		if (savedDiagramRendererSettings !== null) {
-			try {
-				const parsed = JSON.parse(savedDiagramRendererSettings);
-				// Merge with defaults
-				this.diagramRendererSettings = { ...getDefaultRendererSettings(), ...parsed };
-			} catch (e) {
-				console.error('Failed to parse diagram renderer settings', e);
-			}
-		}
-		if (savedDiagramRustRendererSettings !== null) {
-			try {
-				const parsed = JSON.parse(savedDiagramRustRendererSettings);
-				// Merge with defaults
-				this.diagramRustRendererSettings = { ...getDefaultRustRendererSettings(), ...parsed };
-			} catch (e) {
-				console.error('Failed to parse diagram rust renderer settings', e);
-			}
-		}
-	}
-
-	/** 持久化到 localStorage（键名不变）；须在 $effect 内调用以建立响应依赖 */
-	persist() {
-		if (typeof localStorage === 'undefined') return;
-
-		localStorage.setItem('diagram.settings', JSON.stringify(this.diagramSettings));
-		localStorage.setItem('diagram.rendererSettings', JSON.stringify(this.diagramRendererSettings));
-		localStorage.setItem('diagram.rustRendererSettings', JSON.stringify(this.diagramRustRendererSettings));
-	}
+	// 持久化统一走 stores/settings.svelte.ts 的 createSettingsPersistence() 注册表
+	// （diagram.settings / diagram.rendererSettings / diagram.rustRendererSettings 三组键均已登记），
+	// 本切片只承载状态与访问器，不直接读写 localStorage。
 
 	setDiagramRenderMode(diagramId: string, mode: DiagramRenderMode) {
 		this.diagramSettings[diagramId] = mode;
