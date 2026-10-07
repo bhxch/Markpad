@@ -75,11 +75,11 @@ fn create_color_map() -> HashMap<String, String> {
 
     // Other
     m.insert("property".to_string(), "#001080".to_string());
-    m.insert("constructor".to_string(), "#267F99".to_string());
+    m.insert("constructor".to_string(), "#795E26".to_string());
     m.insert("label".to_string(), "#000000".to_string());
     m.insert("namespace".to_string(), "#267F99".to_string());
-    m.insert("special".to_string(), "#AF00DB".to_string());
-    m.insert("attribute".to_string(), "#FF0000".to_string());
+    m.insert("special".to_string(), "#A31515".to_string());
+    m.insert("attribute".to_string(), "#E50000".to_string());
     m.insert("tag".to_string(), "#800000".to_string());
     m.insert("tag.error".to_string(), "#F44747".to_string());
 

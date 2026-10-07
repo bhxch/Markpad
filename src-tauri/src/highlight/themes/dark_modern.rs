@@ -41,7 +41,7 @@ fn create_color_map() -> HashMap<String, String> {
     m.insert("constant.builtin".to_string(), "#569CD6".to_string());
     m.insert("constant.builtin.boolean".to_string(), "#569CD6".to_string());
     m.insert("constant.character".to_string(), "#CE9178".to_string());
-    m.insert("constant.character.escape".to_string(), "#D7A635".to_string());
+    m.insert("constant.character.escape".to_string(), "#D7BA7D".to_string());
     m.insert("constant.numeric".to_string(), "#B5CEA8".to_string());
     m.insert("constant.numeric.integer".to_string(), "#B5CEA8".to_string());
     m.insert("constant.numeric.float".to_string(), "#B5CEA8".to_string());
@@ -75,10 +75,10 @@ fn create_color_map() -> HashMap<String, String> {
 
     // Other
     m.insert("property".to_string(), "#9CDCFE".to_string());
-    m.insert("constructor".to_string(), "#4EC9B0".to_string());
+    m.insert("constructor".to_string(), "#DCDCAA".to_string());
     m.insert("label".to_string(), "#C8C8C8".to_string());
     m.insert("namespace".to_string(), "#4EC9B0".to_string());
-    m.insert("special".to_string(), "#C586C0".to_string());
+    m.insert("special".to_string(), "#CE9178".to_string());
     m.insert("attribute".to_string(), "#9CDCFE".to_string());
     m.insert("tag".to_string(), "#569CD6".to_string());
     m.insert("tag.error".to_string(), "#F44747".to_string());

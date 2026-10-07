@@ -1643,12 +1643,12 @@ body {
 	--ts-operator: #D4D4D4;
 	--ts-punctuation: #D4D4D4;
 	--ts-bracket: #FFD700;
-	--ts-constructor: #4EC9B0;
+	--ts-constructor: #DCDCAA;
 	--ts-namespace: #4EC9B0;
 	--ts-tag: #569CD6;
 	--ts-attribute: #9CDCFE;
-	--ts-special: #C586C0;
-	--ts-escape: #D7A635;
+	--ts-special: #CE9178;
+	--ts-escape: #D7BA7D;
 }
 
 :root[data-code-theme="light-modern"] {
@@ -1674,11 +1674,11 @@ body {
 	--ts-operator: #000000;
 	--ts-punctuation: #000000;
 	--ts-bracket: #000000;
-	--ts-constructor: #267F99;
+	--ts-constructor: #795E26;
 	--ts-namespace: #267F99;
 	--ts-tag: #800000;
-	--ts-attribute: #FF0000;
-	--ts-special: #AF00DB;
+	--ts-attribute: #E50000;
+	--ts-special: #A31515;
 	--ts-escape: #EE0000;
 }
 
