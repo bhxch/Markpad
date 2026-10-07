@@ -1,6 +1,7 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { rewriteMarkdownHrefForExport } from './utils/exportHtml';
+import { buildKatexExportStyles } from './utils/exportKatex.js'; // T1: 导出 KaTeX 样式内联
 
 export type ExportFormat = 'html' | 'pdf';
 export type PdfPageSize = 'a4' | 'a3' | 'letter' | 'legal';
@@ -1472,6 +1473,9 @@ export async function generateExportHtml(
 		await convertAssetImagesToDataUri(clone);
 	}
 
+	// T1: 含公式的文档内联 KaTeX 样式与字体子集（HTML 与单页 PDF 共用本模板）
+	const katexStyles = await buildKatexExportStyles(clone);
+
 	// Build HTML
 	const html = `<!DOCTYPE html>
 <html lang="zh-CN" data-theme-mode="${themeMode}" data-theme-scheme="${themeScheme}">
@@ -1488,6 +1492,7 @@ ${getBaseStyles(themeMode, contentWidth)}
 
 ${forPrint ? getPrintStyles(pageSize) : ''}
 	</style>
+	${katexStyles}
 </head>
 <body>
 		${clone.outerHTML}
@@ -1570,6 +1575,16 @@ async function exportMultiPagePdf(
 	pages: PdfPage[],
 	title: string
 ): Promise<{ success: boolean; message: string }> {
+	// T1: 各页正文合并为临时根元素，KaTeX 样式只算一次注入分页模板 head
+	const pageContents = pages.map(page => {
+		// Extract body content from each page HTML
+		const bodyMatch = page.html.match(/<div class="markdown-body">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>\s*<\/div>/);
+		return bodyMatch ? bodyMatch[1] : '';
+	});
+	const mergedRoot = document.createElement('div');
+	mergedRoot.innerHTML = pageContents.join('\n');
+	const katexStyles = await buildKatexExportStyles(mergedRoot);
+
 	return new Promise((resolve) => {
 		try {
 			// Combine all pages into one HTML with page breaks
@@ -1624,15 +1639,14 @@ ${getBaseStyles(themeMode)}
 	}
 }
 	</style>
+	${katexStyles}
 </head>
 <body>
 	<div class="markdown-container">
 		<div class="layout-container">
 			<div class="viewer-pane">
 ${pages.map((page, i) => {
-	// Extract body content from each page HTML
-	const bodyMatch = page.html.match(/<div class="markdown-body">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>\s*<\/div>/);
-	const content = bodyMatch ? bodyMatch[1] : '';
+	const content = pageContents[i];
 	const pageBreakClass = i > 0 ? ' page-break' : '';
 	return `				<div class="markdown-body${pageBreakClass}">
 ${content}

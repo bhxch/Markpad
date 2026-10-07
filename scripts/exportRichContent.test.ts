@@ -28,6 +28,19 @@
  *     calls, which the diagram test below covers from the other side.
  */
 
+// D6/T1 fork 化：导出走本地引擎（src/lib/export.ts），math/字体断言随迁；
+// 退役上游引擎（utils/export.ts）其余断言不动。
+//
+// 本地引擎的 KaTeX 样式注入点是 src/lib/utils/exportKatex.ts 的
+// buildKatexExportStyles：样式全文与字体资产来自构建期 ?raw / ?url 导入，
+// 依赖 Vite 管线——node --test（tsx）无法加载该模块（.css 扩展名不可解析，
+// 已实测）。math/字体契约因此改为按同一数据流在真实 katex.min.css 上复验：
+// css 全文 + exportFonts.ts 纯函数（本地引擎自身调用的同一模块）+ fetch 字节，
+// 语义不变——导出物含排版公式（.katex-html 存在）、携带 .katex-mathml clip
+// 隐藏、只嵌所需 KaTeX 字体族且保留的 @font-face 源是 data URI。
+// live 引擎的端到端覆盖在 src/lib/utils/exportKatex.test.ts 与
+// src/lib/export.integration.test.ts。
+
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -46,6 +59,7 @@ DOMPurify.sanitize = (html: string) => html;
 const {
 	absolutizeKatexFontUrls,
 	collectUsedKatexFamilies,
+	fetchFontDataUrls,
 	findKatexFontFaces,
 	inlineKatexFontFaces,
 	katexFontUrlsToEmbed,
@@ -275,28 +289,49 @@ test('the export still assembles the same document around the rendered article',
 });
 
 test('a document with math carries only the KaTeX fonts it uses', async () => {
-	const run = await runExport();
+	// T1 fork: the live engine builds its `<style>` in
+	// src/lib/utils/exportKatex.ts (buildKatexExportStyles) from katex.min.css
+	// via a build-time ?raw import and its fonts via ?url assets — both are
+	// Vite-only, so this track re-verifies the same contract on the real
+	// stylesheet through the same pure functions the engine calls.
+	const katex = ((await import('katex')) as any).default;
+	const css = readSource('node_modules/katex/dist/katex.min.css');
 
-	// `.katex` implies KaTeX_Main; the `mathnormal` span implies KaTeX_Math.
-	// KaTeX_Caligraphic is declared in the stylesheet and referenced by nothing,
-	// so it must not be paid for.
-	//
-	// The URLs are fetched absolute, resolved against the *stylesheet* rather
-	// than the page. Resolving against `location.href` — the obvious thing, and
-	// what the first draft did — silently produces
-	// `http://tauri.localhost/KaTeX_Main-Regular…woff2`, which 404s, drops the
-	// face and leaves the formula in Times without anything looking broken.
-	assert.deepEqual(run.fetched, [
-		'http://tauri.localhost/_app/immutable/assets/KaTeX_Main-Regular.B22Nviop.woff2',
-		'http://tauri.localhost/_app/immutable/assets/KaTeX_Math-Italic.woff2',
-	]);
+	// What the export ships is typeset math, not its source.
+	const root = (globalThis as any).document.createElement('div');
+	root.innerHTML = katex.renderToString('E = mc^2', { throwOnError: false });
+	assert.match(root.innerHTML, /class="katex-html"/);
+	// The inlined stylesheet carries the MathML clip hiding — without it the
+	// exported page shows the formula twice (MathML text + typeset markup).
+	assert.match(css, /\.katex-mathml\s*\{[^}]*clip(-path)?:/);
 
-	assert.match(run.document, /font-family: KaTeX_Main; src: url\(data:font\/woff2;base64,d09GMg==\) format\("woff2"\)/);
-	assert.match(run.document, /font-family: KaTeX_Math; src: url\(data:font\/woff2;base64,d09GMg==\) format\("woff2"\)/);
-	assert.doesNotMatch(run.document, /KaTeX_Caligraphic-Regular\.woff2/);
-	// No app-internal URL survives into the file, absolute or relative.
-	assert.doesNotMatch(run.document, /tauri\.localhost/);
-	assert.doesNotMatch(run.document, /url\("\.\//);
+	const families = collectUsedKatexFamilies(root, css);
+	assert.ok(families.has('KaTeX_Main'), `expected the base family among ${[...families].join(', ') || '(none)'}`);
+
+	// Only the used families' woff2 bytes are fetched and inlined; every other
+	// face is deleted rather than left pointing next to the file.
+	const urls = katexFontUrlsToEmbed(css, families);
+	assert.ok(urls.length > 0, 'expected at least one woff2 to embed for the used families');
+	(globalThis as any).fetch = async () => ({
+		ok: true,
+		// Deterministic bytes so the base64 in the assertions is stable.
+		arrayBuffer: async () => new Uint8Array([119, 79, 70, 50]).buffer,
+	});
+	const dataUrls = await fetchFontDataUrls(urls);
+	assert.equal(dataUrls.size, urls.length);
+
+	const styles = inlineKatexFontFaces(css, families, dataUrls);
+	assert.match(
+		styles,
+		/font-family:KaTeX_Main;[^}]*src: url\(data:font\/woff2;base64,d09GMg==\) format\("woff2"\)/,
+	);
+	// No internal asset path survives into the self-contained file.
+	assert.doesNotMatch(styles, /url\(["']?(\.\/|fonts\/|_app\/|node_modules\/)/);
+	// Families nothing referenced must not be paid for.
+	const kept = [...styles.matchAll(/@font-face\s*\{[^}]*font-family:\s*(KaTeX_[A-Za-z]+)/g)].map(
+		(match) => match[1],
+	);
+	assert.ok(kept.length > 0 && kept.every((family) => families.has(family)));
 });
 
 test('a document with no math carries no KaTeX fonts at all', async () => {

@@ -23,6 +23,14 @@ import { generateExportHtml } from './export';
 
 const DEMO_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../docs/demo');
 
+// vitest 的 CSS 管线默认关闭，'katex/dist/katex.min.css?raw' 会被替换为空串；
+// 与 exportKatex.test.ts 同款替身：把包内同一文件全文注入（生产 Vite 不受影响）。
+const { katexCssText } = await vi.hoisted(async () => {
+	const { readFileSync } = await import('node:fs');
+	return { katexCssText: readFileSync('node_modules/katex/dist/katex.min.css', 'utf8') };
+});
+vi.mock('katex/dist/katex.min.css?raw', () => ({ default: katexCssText }));
+
 // demo_features.md 中出现的图表语言 + diagrams.ts 的其余类型
 const DIAGRAM_LANGS = new Set([
 	'mermaid', 'dot', 'graphviz', 'plantuml', 'svgbob', 'nomnoml',
@@ -271,20 +279,24 @@ function mdToPreviewContainer(mdRaw: string, mdDir: string): HTMLElement {
 }
 
 // asset:// → 真实文件字节（图片转换走真盘上的 codeblock.png）
-beforeAll(() => {
-	vi.stubGlobal(
-		'fetch',
-		vi.fn(async (input: string | URL | Request) => {
-			const url = String(input);
-			let p = '';
-			if (url.startsWith('asset://localhost/')) p = url.slice('asset://localhost/'.length);
-			else if (/^https?:\/\/asset\.localhost\//.test(url)) p = url.split('asset.localhost/')[1];
-			else throw new Error(`unexpected fetch in export integration test: ${url}`);
-			const bytes = readFileSync(decodeURIComponent(p));
-			return new Response(bytes, { headers: { 'content-type': 'image/png' } });
-		}),
-	);
-});
+	beforeAll(() => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (input: string | URL | Request) => {
+				const url = String(input);
+				// T1: katex 字体资产（Vite ?url 资产 URL），返回确定的假 woff2 字节
+				if (/\.woff2($|\?)/.test(url)) {
+					return new Response(new Uint8Array([0x77, 0x4f, 0x46, 0x32]), { status: 200 });
+				}
+				let p = '';
+				if (url.startsWith('asset://localhost/')) p = url.slice('asset://localhost/'.length);
+				else if (/^https?:\/\/asset\.localhost\//.test(url)) p = url.split('asset.localhost/')[1];
+				else throw new Error(`unexpected fetch in export integration test: ${url}`);
+				const bytes = readFileSync(decodeURIComponent(p));
+				return new Response(bytes, { headers: { 'content-type': 'image/png' } });
+			}),
+		);
+	});
 afterAll(() => {
 	vi.unstubAllGlobals();
 });
@@ -474,5 +486,35 @@ describe('导出集成: 逐文件特性', () => {
 			const marker = d!.code.split('\n').find((l) => l.trim())!.trim();
 			expect($.text()).toContain(marker);
 		}
+	});
+});
+
+// T1: 导出物是自包含文件——含公式的文档必须携带 katex.min.css（.katex-mathml
+// 靠它的 clip 规则隐藏、.katex-html 靠它排版）与所用字体族的 data URI；纯文本
+// 文档零负担（不携带任何 KaTeX 痕迹）。
+describe('导出集成: KaTeX 样式内联（T1）', () => {
+	const md = readFileSync(path.join(DEMO_DIR, 'testfile.md'), 'utf-8');
+
+	function withKatex(): HTMLElement {
+		const container = mdToPreviewContainer(md, DEMO_DIR);
+		const body = container.querySelector('.markdown-body') as HTMLElement;
+		body.innerHTML +=
+			'<span class="katex"><span class="katex-mathml"><math>…</math></span>' +
+			'<span class="katex-html">x</span></span>';
+		return container;
+	}
+
+	it('含公式文档导出 HTML 携带 clip 隐藏规则与 data URI 字体；纯文本文档不携带', async () => {
+		const withMath = await exportHtml(withKatex(), 'testfile');
+		expect(withMath).toMatch(/\.katex-mathml\s*\{[^}]*clip(-path)?:/);
+		expect(withMath).toContain('KaTeX_Main');
+		expect(withMath).toContain('data:font/woff2;base64,');
+		// 保留的 @font-face 源已改写，内部资产路径与 css 相对路径都不外泄
+		expect(withMath).not.toContain('/node_modules/');
+		expect(withMath).not.toMatch(/url\(["']?fonts\//);
+
+		const plain = await exportHtml(mdToPreviewContainer(md, DEMO_DIR), 'testfile');
+		expect(plain).not.toContain('KaTeX_Main');
+		expect(plain).not.toContain('.katex-mathml');
 	});
 });
