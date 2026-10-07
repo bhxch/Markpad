@@ -1,9 +1,11 @@
 <!-- 本地组件（T8）：代码高亮主题下拉——静态 3 项 + 已导入 VSCode 主题分组（空则不渲染），
-	当前项判定 themeSettingsSlice.currentCodeTheme，选择走 setCodeTheme。结构对齐 ThemeSchemeMenu。 -->
+	当前项判定 themeSettingsSlice.currentCodeTheme，选择走 setCodeTheme。结构对齐 ThemeSchemeMenu。
+	Minor5b：'auto' 行与分组标题走 i18n（静态表 name 退役为数据）。 -->
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { settings } from '../../stores/settings.svelte.js';
 	import { themeSettingsSlice } from '../../stores/slices/themeSettings.svelte.js';
+	import { t } from '../../utils/i18n.js';
 
 	let { onclose }: { onclose: () => void } = $props();
 
@@ -22,19 +24,27 @@
 	}
 </script>
 
-<div class="code-menu" role="menu" tabindex="-1">
+<div
+	class="code-menu"
+	role="menu"
+	tabindex="-1"
+	onkeydown={(e) => {
+		// Minor5a：Escape 关闭（对齐上游 theme-menu 形态）。
+		if (e.key === 'Escape') onclose();
+	}}
+>
 	{#each settings.codeThemes as row (row.id)}
 		<button
 			class="code-option {themeSettingsSlice.currentCodeTheme === row.id ? 'selected' : ''}"
 			role="menuitem"
 			onclick={() => pick(row.id)}>
-			{row.name}
+			{row.id === 'auto' ? t('toolbar.codeThemeAuto', settings.language) : row.name}
 			{#if themeSettingsSlice.currentCodeTheme === row.id}<span class="check">✓</span>{/if}
 		</button>
 	{/each}
 	{#if savedVscodeThemes.length > 0}
 		<div class="menu-divider"></div>
-		<div class="group-label">VSCode 主题</div>
+		<div class="group-label">{t('theme.vscodeThemes', settings.language)}</div>
 		{#each savedVscodeThemes as name (name)}
 			<button
 				class="code-option {themeSettingsSlice.currentCodeTheme === `vscode:${name}` ? 'selected' : ''}"

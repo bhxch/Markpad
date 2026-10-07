@@ -236,7 +236,12 @@ const RULES: Rule[] = [
 		// appends to rather than a scalar preference — but its write already goes
 		// through `writeStoredSetting`, so it does not match this marker at all.
 		marker: /localStorage\.setItem\s*\(/g,
-		allowed: ['src/lib/stores/settings.svelte.ts'],
+		// 测试文件两处（2026-10-07 修复波）：存量 fixture 必须先于模块 import 落盘
+		// ——settings 单例在模块求值时构造，届时 writeStoredSetting 还不可用（导入
+		// 它就错过了 seed 窗口），所以只能裸 setItem 写"另一会话已写入的键"。
+		// titlebarBridge.test.ts：I1 placement 迁移的 seed；themeSettings.test.ts：
+		// 注册表槽值白名单的 seed。生产写入路径未新增。
+		allowed: ['src/lib/stores/settings.svelte.ts', 'src/lib/utils/titlebarBridge.test.ts', 'src/lib/stores/slices/themeSettings.test.ts'],
 	},
 	{
 		name: 'the app writes an image embed in one place',

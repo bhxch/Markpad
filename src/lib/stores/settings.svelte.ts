@@ -692,6 +692,8 @@ export class SettingsStore {
 
 	/** The `$effect.root` disposer from the constructor. See {@link dispose}. */
 	#disposeEffects: (() => void) | null = null;
+	/** Minor3：系统明暗监听 disposer（themeApply 幂等重装语义的返回值），dispose 时卸载。 */
+	#systemThemeWatcherDisposer: (() => void) | null = null;
 
 	constructor() {
 		if (!hasStorage()) return;
@@ -736,7 +738,9 @@ export class SettingsStore {
 				this.applyTheme();
 			});
 			// T4: 跟随系统监听随 store 生命周期安装（dispose 时随根销毁）
-			installSystemThemeWatcher();
+			// Minor3：收口返回的 disposer，dispose() 显式卸载（该安装不是 effect，
+			// 根销毁不会自动摘除 matchMedia 监听）。
+			this.#systemThemeWatcherDisposer = installSystemThemeWatcher();
 		});
 	}
 
@@ -760,6 +764,9 @@ export class SettingsStore {
 	dispose(): void {
 		this.#disposeEffects?.();
 		this.#disposeEffects = null;
+		// Minor3：系统明暗监听随 store 销毁卸载（jsdom 多实例测试防监听泄漏）。
+		this.#systemThemeWatcherDisposer?.();
+		this.#systemThemeWatcherDisposer = null;
 	}
 
 	// ==== 本地主题方法（styles.css 的 :root[data-theme-*] 与 .ts-* 配色类依赖它们）====
@@ -1222,7 +1229,11 @@ export function createSettingsPersistence(): PersistedSetting<SettingsStore>[] {
 			read: (s) => JSON.stringify(s.themeSchemes),
 			load: (_s, raw) => {
 				const v = parseStoredRecord(raw);
-				if (v?.light) themeSettingsSlice.themeSchemes = { light: String(v.light), dark: String(v.dark ?? 'github-dark') };
+				if (!v?.light) return;
+				// deferred：槽值白名单——只接受主题表内 id，非法（损坏/手改存量）回落默认。
+				const light = themeSettingsSlice.isKnownSchemeId(String(v.light)) ? String(v.light) : 'github-light';
+				const dark = themeSettingsSlice.isKnownSchemeId(String(v.dark)) ? String(v.dark) : 'github-dark';
+				themeSettingsSlice.themeSchemes = { light, dark };
 			},
 		},
 		{
@@ -1230,7 +1241,13 @@ export function createSettingsPersistence(): PersistedSetting<SettingsStore>[] {
 			read: (s) => JSON.stringify(s.codeThemesByMode),
 			load: (_s, raw) => {
 				const v = parseStoredRecord(raw);
-				if (v?.light) themeSettingsSlice.codeThemesByMode = { light: String(v.light), dark: String(v.dark ?? 'auto') };
+				if (!v?.light) return;
+				// deferred：槽值白名单——'auto'|'dark-modern'|'light-modern'|'vscode:*' 前缀，非法回落 auto。
+				const pick = (value: unknown) => {
+					const id = String(value);
+					return themeSettingsSlice.isKnownCodeThemeId(id) ? id : 'auto';
+				};
+				themeSettingsSlice.codeThemesByMode = { light: pick(v.light), dark: pick(v.dark) };
 			},
 		},
 		// T4: mode 先恢复（只接受合法枚举，损坏存量回退切片自身缺省）。

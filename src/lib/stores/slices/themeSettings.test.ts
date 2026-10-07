@@ -113,6 +113,26 @@ describe('主题双槽契约（T3/T4，spec §4 矩阵）', () => {
 		expect(slice.followSystem).toBe(true);
 		expect(slice.uiThemeSource).toBe('scheme');
 	});
+
+	it('Minor1 currentCodeThemeName：auto 返回 null（消费端 i18n）、表内取名、vscode 剥前缀', async () => {
+		const { slice } = await load();
+		expect(slice.currentCodeThemeName).toBeNull(); // auto：消费端 t('toolbar.codeThemeAuto')
+		slice.setCodeTheme('dark-modern');
+		expect(slice.currentCodeThemeName).toBe('VSCode Dark Modern');
+		slice.setCodeTheme('vscode:My Theme');
+		expect(slice.currentCodeThemeName).toBe('My Theme');
+	});
+
+	it('deferred 白名单：isKnownSchemeId 只认主题表内 id；isKnownCodeThemeId 认 auto/内置/vscode:*', async () => {
+		const { slice } = await load();
+		expect(slice.isKnownSchemeId('one-dark')).toBe(true);
+		expect(slice.isKnownSchemeId('not-a-theme')).toBe(false);
+		expect(slice.isKnownCodeThemeId('auto')).toBe(true);
+		expect(slice.isKnownCodeThemeId('dark-modern')).toBe(true);
+		expect(slice.isKnownCodeThemeId('light-modern')).toBe(true);
+		expect(slice.isKnownCodeThemeId('vscode:Whatever')).toBe(true);
+		expect(slice.isKnownCodeThemeId('javascript')).toBe(false);
+	});
 });
 
 describe('注册表恢复顺序（T4：followSystem 行须在 mode 行之后 load）', () => {
@@ -154,6 +174,38 @@ describe('注册表恢复顺序（T4：followSystem 行须在 mode 行之后 loa
 		try {
 			expect(store.themeFollowSystem).toBe(false);
 			expect(store.themeMode).toBe('dark');
+		} finally {
+			store.dispose();
+		}
+	});
+});
+
+// deferred（2026-10-07 修复波）：theme.schemes / theme.codeThemes 注册表 load 的
+// 槽值白名单——只接受主题表内 id 与 auto/内置/vscode:* 形态，损坏或手改的存量
+// 回落默认，而非把非法值写进槽位（非法方案 id 会令 applyTheme 落出无匹配 CSS 块）。
+describe('注册表槽值白名单（deferred）', () => {
+	const seedAndLoad = async (key: string, value: unknown) => {
+		localStorage.setItem(key, JSON.stringify(value));
+		const { SettingsStore } = await import('../settings.svelte.ts');
+		const store = new SettingsStore();
+		return store;
+	};
+
+	it('存量方案槽含表外 id：非法回落默认，合法保留', async () => {
+		localStorage.clear();
+		const store = await seedAndLoad('theme.schemes', { light: 'github-light', dark: 'not-a-theme' });
+		try {
+			expect(store.themeSchemes).toEqual({ light: 'github-light', dark: 'github-dark' });
+		} finally {
+			store.dispose();
+		}
+	});
+
+	it('存量代码主题槽含非法 id：回落 auto；vscode:* 前缀保留', async () => {
+		localStorage.clear();
+		const store = await seedAndLoad('theme.codeThemes', { light: 'harmless', dark: 'vscode:Kept' });
+		try {
+			expect(store.codeThemesByMode).toEqual({ light: 'auto', dark: 'vscode:Kept' });
 		} finally {
 			store.dispose();
 		}

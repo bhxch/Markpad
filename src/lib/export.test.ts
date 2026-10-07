@@ -77,6 +77,38 @@ describe('默认页面大小 (已移除 dynamic)', () => {
 	});
 });
 
+// Minor2（spec 2026-10-07-theme-restore）：vscode UI 主题激活时 applyTheme 不设
+// data-theme-scheme（T7 特异性修复的前提），导出 html 元数据的 scheme 兜底
+// 'vscode' 保真，而非误标 github-light；视觉不受影响（cssVariables 取自活 DOM）。
+describe('readExportTheme vscode 兜底（Minor2）', () => {
+	it('data-theme=vscode 且无 scheme 属性：导出元 data-theme-scheme=vscode', async () => {
+		const root = document.documentElement;
+		root.setAttribute('data-theme', 'vscode');
+		root.setAttribute('data-theme-mode', 'dark');
+		root.removeAttribute('data-theme-scheme');
+		try {
+			const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+			expect(out).toContain('data-theme-scheme="vscode"');
+			expect(out).toContain('data-theme-mode="dark"');
+		} finally {
+			root.removeAttribute('data-theme');
+			root.removeAttribute('data-theme-mode');
+		}
+	});
+
+	it('缺 scheme 且非 vscode：维持 github-light 旧行为', async () => {
+		const root = document.documentElement;
+		root.removeAttribute('data-theme-scheme');
+		root.setAttribute('data-theme', 'light');
+		try {
+			const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+			expect(out).toContain('data-theme-scheme="github-light"');
+		} finally {
+			root.removeAttribute('data-theme');
+		}
+	});
+});
+
 describe('computeFitScale', () => {
 	it('ratio > 1: 缩放且起新页', () => {
 		expect(computeFitScale(2)).toEqual({ scale: 0.95 / 2, newPage: true });

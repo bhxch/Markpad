@@ -5,19 +5,16 @@
 // - highlightCodeWithTreeSitterBlock：DOM 适配器，保持 MarkdownViewer 原调用契约（原地替换 + 布尔回退信号）
 // - highlightBlocks：pipeline 步骤签名（spec D5）
 import { invoke } from '@tauri-apps/api/core';
-import { settings } from '../stores/settings.svelte.js';
+import { themeSettingsSlice } from '../stores/slices/themeSettings.svelte.js';
 
 // Tree-sitter supported languages (cached)
 let treeSitterLanguages: Set<string> = new Set();
 
-// Get the current code theme based on settings
+// Minor4：删除本地双实现，消费 themeSettingsSlice.resolveCodeTheme（双槽 + auto
+// 按当前模式解析的唯一实现；原实现按 settings.themeScheme 查表推导 mode，与切片
+// mode 恒一致——选方案即设模式，T3 方案即模式）。
 export function getCodeTheme(): string {
-  if (settings.codeTheme === 'auto') {
-    const currentThemeObj = settings.themes.find((t) => t.id === settings.themeScheme);
-    const mode = currentThemeObj ? currentThemeObj.mode : 'dark';
-    return mode === 'dark' ? 'dark-modern' : 'light-modern';
-  }
-  return settings.codeTheme;
+  return themeSettingsSlice.resolveCodeTheme();
 }
 
 // Highlight code using tree-sitter（纯核心，失败返回 null，由调用方回退 hljs）

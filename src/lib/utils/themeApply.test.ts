@@ -184,6 +184,33 @@ describe('installSystemThemeWatcher（T4）', () => {
 		expect(typeof dispose3).toBe('function');
 		dispose3();
 	});
+
+	it('Minor3 幂等重装：先卸旧再装新，旧 disposer 不误卸新监听，最终零监听', async () => {
+		const mqs: Array<{ matches: boolean; removed: boolean }> = [];
+		vi.stubGlobal('matchMedia', () => {
+			const mq = {
+				matches: false,
+				removed: false,
+				addEventListener: () => {},
+				removeEventListener: () => {
+					mq.removed = true;
+				},
+			};
+			mqs.push(mq);
+			return mq;
+		});
+		const { install } = await load();
+		const dispose1 = install();
+		const dispose2 = install(); // 重装：旧监听先卸
+		expect(mqs).toHaveLength(2);
+		expect(mqs[0].removed).toBe(true);
+		expect(mqs[1].removed).toBe(false);
+
+		dispose1(); // 旧 disposer：不得误卸新监听
+		expect(mqs[1].removed).toBe(false);
+		dispose2(); // 本次 disposer：卸载
+		expect(mqs[1].removed).toBe(true);
+	});
 });
 
 describe('buildVscodeCodeThemeStyle（T7）', () => {
@@ -479,5 +506,20 @@ describe('删除正用作代码主题的 VSCode 主题（I2）', () => {
 
 		expect(document.documentElement.getAttribute('data-code-theme')).toBe('dark-modern');
 		expect(document.getElementById('ts-vscode-theme-vscode:Temp')).toBeNull();
+	});
+});
+
+// deferred（2026-10-07 修复波）：applyTheme scheme 分支清理 vscode UI 主题留在
+// documentElement 上的内联空白色（--color-whitespace，theme.ts 设置；纯本地方案
+// 切换不经过 clearVscodeTheme，属性会残留）。
+describe('applyTheme scheme 分支清理内联残留（deferred）', () => {
+	it('vscode→scheme 切换后 --color-whitespace 被移除', async () => {
+		const { slice, applyTheme } = await load();
+		document.documentElement.style.setProperty('--color-whitespace', 'rgba(255, 255, 255, 0.15)');
+
+		slice.setThemeScheme('one-dark'); // uiThemeSource←scheme
+		applyTheme();
+
+		expect(document.documentElement.style.getPropertyValue('--color-whitespace')).toBe('');
 	});
 });

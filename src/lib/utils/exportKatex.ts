@@ -28,8 +28,12 @@ const fontAssetUrls = import.meta.glob<string>('/node_modules/katex/dist/fonts/*
 
 function resolveFontUrl(cssRelativeUrl: string): string | null {
 	// katex.min.css 里的 src 形如 url(fonts/KaTeX_Main-Regular.woff2)。
-	// glob 键形态以 Vite 实际产出为准，按后缀命中（键前缀跨 Vite 版本有差异）。
-	const hit = Object.entries(fontAssetUrls).find(([path]) => path.endsWith(cssRelativeUrl));
+	// glob 键形态以 Vite 实际产出为准，按后缀命中（键前缀跨 Vite 版本有差异）；
+	// deferred：路径锚定——比较 '/'+cssRelativeUrl，防无边界后缀误配到恰好以本名
+	// 结尾的其它资产；个别产出无前导分隔符时退化为全等比较。
+	const hit = Object.entries(fontAssetUrls).find(
+		([path]) => path.endsWith(`/${cssRelativeUrl}`) || path === cssRelativeUrl,
+	);
 	return hit ? hit[1] : null;
 }
 

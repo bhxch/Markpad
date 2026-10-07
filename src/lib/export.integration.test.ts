@@ -279,24 +279,25 @@ function mdToPreviewContainer(mdRaw: string, mdDir: string): HTMLElement {
 }
 
 // asset:// → 真实文件字节（图片转换走真盘上的 codeblock.png）
-	beforeAll(() => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn(async (input: string | URL | Request) => {
-				const url = String(input);
-				// T1: katex 字体资产（Vite ?url 资产 URL），返回确定的假 woff2 字节
-				if (/\.woff2($|\?)/.test(url)) {
-					return new Response(new Uint8Array([0x77, 0x4f, 0x46, 0x32]), { status: 200 });
-				}
-				let p = '';
-				if (url.startsWith('asset://localhost/')) p = url.slice('asset://localhost/'.length);
-				else if (/^https?:\/\/asset\.localhost\//.test(url)) p = url.split('asset.localhost/')[1];
-				else throw new Error(`unexpected fetch in export integration test: ${url}`);
-				const bytes = readFileSync(decodeURIComponent(p));
-				return new Response(bytes, { headers: { 'content-type': 'image/png' } });
-			}),
-		);
-	});
+// deferred：beforeAll 缩进对齐（顶层钩子，与下方 afterAll 同级同列）。
+beforeAll(() => {
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async (input: string | URL | Request) => {
+			const url = String(input);
+			// T1: katex 字体资产（Vite ?url 资产 URL），返回确定的假 woff2 字节
+			if (/\.woff2($|\?)/.test(url)) {
+				return new Response(new Uint8Array([0x77, 0x4f, 0x46, 0x32]), { status: 200 });
+			}
+			let p = '';
+			if (url.startsWith('asset://localhost/')) p = url.slice('asset://localhost/'.length);
+			else if (/^https?:\/\/asset\.localhost\//.test(url)) p = url.split('asset.localhost/')[1];
+			else throw new Error(`unexpected fetch in export integration test: ${url}`);
+			const bytes = readFileSync(decodeURIComponent(p));
+			return new Response(bytes, { headers: { 'content-type': 'image/png' } });
+		}),
+	);
+});
 afterAll(() => {
 	vi.unstubAllGlobals();
 });

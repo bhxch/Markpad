@@ -59,10 +59,10 @@
 				onchange={(e) => themeSettingsSlice.setCodeTheme(e.currentTarget.value)}
 			>
 				{#each settings.codeThemes as ct (ct.id)}
-					<option value={ct.id}>{ct.name}</option>
+					<option value={ct.id}>{ct.id === 'auto' ? t('toolbar.codeThemeAuto', settings.language) : ct.name}</option>
 				{/each}
 				{#if savedVscodeThemes.length > 0}
-					<optgroup label={t('settings.vsCodeThemes', settings.language)}>
+					<optgroup label={t('theme.vscodeThemes', settings.language)}>
 						{#each savedVscodeThemes as name (name)}
 							<option value={`vscode:${name}`}>{name}</option>
 						{/each}

@@ -33,6 +33,11 @@ export function applyTheme(): void {
 		// 删除是为防 vscode 主题的探测值残留进 mermaid 的 system 明暗判定）。改由
 		// themeApply 同步为当前生效明暗，currentMermaidTheme/resolveMermaidTheme 语义不变。
 		root.setAttribute('data-theme-type', slice.mode);
+		// deferred（本轮修复波）：vscode→scheme 切换时清理 parseAndApplyVscodeTheme
+		// 设置在 documentElement 上的内联空白色残留。clearVscodeTheme 只被上游 theme
+		// effect 的 system/light/dark 分支调用，纯本地方案切换（setThemeScheme）不经
+		// 它，属性会一直残留。属性名与 theme.ts 的 setProperty 对应。
+		root.style.removeProperty('--color-whitespace');
 	}
 	// T7：vscode:<name> 代码主题生效时挂载 .vsix tokenColors 派生的 --ts-* 覆盖块。
 	// fire-and-forget：加载失败静默（CSS 回落当前主题的 --ts-* 静态值），保持同步签名。
@@ -93,9 +98,15 @@ export function setThemeAppliedHook(hook: () => void): void {
 	themeAppliedHook = hook;
 }
 
-/** 跟随系统：prefers-color-scheme 变化时切槽位组合（T4）。重复安装幂等。 */
+/**
+ * 跟随系统：prefers-color-scheme 变化时切槽位组合（T4）。
+ * Minor3：幂等重装语义——已安装时先卸旧再装新，返回本次 disposer；旧 disposer
+ * 只摘自己那对 (mq, onChange)，不会误卸新监听；settings store 构造器收口返回值，
+ * dispose() 时随根卸载。
+ */
 export function installSystemThemeWatcher(): () => void {
-	if (systemWatcherDisposer || typeof matchMedia === 'undefined') return () => {};
+	systemWatcherDisposer?.();
+	if (typeof matchMedia === 'undefined') return () => {};
 	const mq = matchMedia('(prefers-color-scheme: dark)');
 	const onChange = () => {
 		if (themeSettingsSlice.followSystem) {
@@ -104,11 +115,12 @@ export function installSystemThemeWatcher(): () => void {
 		}
 	};
 	mq.addEventListener('change', onChange);
-	systemWatcherDisposer = () => {
+	const disposer = () => {
 		mq.removeEventListener('change', onChange);
-		systemWatcherDisposer = null;
+		if (systemWatcherDisposer === disposer) systemWatcherDisposer = null;
 	};
-	return systemWatcherDisposer;
+	systemWatcherDisposer = disposer;
+	return disposer;
 }
 
 /**

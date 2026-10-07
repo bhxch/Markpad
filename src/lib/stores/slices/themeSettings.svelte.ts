@@ -82,6 +82,28 @@ export class ThemeSettingsSlice {
 		return this.codeThemesByMode[this.mode];
 	}
 
+	/**
+	 * 当前代码主题的显示名（Minor1：原 TitleBar $derived 下沉为单一实现）。
+	 * 'auto' 行返回 null，由消费端以 t('toolbar.codeThemeAuto') 渲染
+	 * （Minor5b：静态表的中文名退役为数据，界面文案走 i18n）；
+	 * `vscode:<name>` 扩展位不在表内，剥前缀显示导入名。
+	 */
+	get currentCodeThemeName(): string | null {
+		const v = this.currentCodeTheme;
+		if (v === 'auto') return null;
+		return this.codeThemes.find((c) => c.id === v)?.name ?? v.replace(/^vscode:/, '');
+	}
+
+	/** deferred：注册表 load 的槽值白名单——方案槽只接受主题表内 id。 */
+	isKnownSchemeId(id: string): boolean {
+		return this.themes.some((t) => t.id === id);
+	}
+
+	/** deferred：代码主题槽白名单——'auto'|内置两项|'vscode:*' 动态前缀。 */
+	isKnownCodeThemeId(id: string): boolean {
+		return id === 'auto' || id === 'dark-modern' || id === 'light-modern' || id.startsWith('vscode:');
+	}
+
 	/** 当前方案的主题表行；表外 id（如损坏的存量数据）回退 github-dark，与旧 applyTheme 一致。 */
 	get currentScheme(): ThemeRow {
 		return this.themes.find((t) => t.id === this.currentSchemeId) ?? this.themes[1];

@@ -373,7 +373,9 @@ export default {
     theme: {
         followSystem: '跟随系统',
         defaultLight: '默认浅色',
-        defaultDark: '默认深色'
+        defaultDark: '默认深色',
+        // Minor5b：代码主题下拉的 VSCode 分组标题（CodeThemeMenu/ThemeSettingsSection）。
+        vscodeThemes: 'VSCode 主题'
     },
     // 标题栏本地回挂动作（D14）的标签。
     toolbar: {
@@ -381,7 +383,9 @@ export default {
         vimMode: 'Vim模式',
         metadata: '元数据',
         themeScheme: '配色方案',
-        codeTheme: '代码主题'
+        codeTheme: '代码主题',
+        // Minor5b：代码主题 'auto' 行的显示名（slice 静态表的中文名退役为数据）。
+        codeThemeAuto: '跟随全局主题'
     },
     // 导出弹窗与导出结果提示（本地 i18n 退役后迁入，§5.4）；HTML/PDF 两个格式名复用 menu.exportHtml / menu.exportPdf。
     export: {

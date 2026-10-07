@@ -13,7 +13,15 @@
 	}
 </script>
 
-<div class="scheme-menu" role="menu" tabindex="-1">
+<div
+	class="scheme-menu"
+	role="menu"
+	tabindex="-1"
+	onkeydown={(e) => {
+		// Minor5a：Escape 关闭（对齐上游 theme-menu 形态）。
+		if (e.key === 'Escape') onclose();
+	}}
+>
 	{#each settings.themes as row (row.id)}
 		<button
 			class="scheme-option {themeSettingsSlice.currentSchemeId === row.id ? 'selected' : ''}"

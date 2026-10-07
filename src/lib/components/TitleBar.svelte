@@ -421,11 +421,10 @@
 		themeMenuOpen = false;
 	}
 
-	// T8: code_theme 按钮的当前名——静态表行 name（'auto' 行内建"跟随全局主题"）；
-	// `vscode:<name>` 扩展位不在表内，剥前缀显示导入名。
+	// T8: code_theme 按钮的当前名——取名逻辑下沉 themeSettingsSlice.currentCodeThemeName
+	// （Minor1 单一实现）；'auto' 行消费端以 i18n 渲染（Minor5b，getter 返回 null）。
 	let currentCodeThemeName = $derived(
-		settings.codeThemes.find((c) => c.id === themeSettingsSlice.currentCodeTheme)?.name ??
-			themeSettingsSlice.currentCodeTheme.replace(/^vscode:/, ''),
+		themeSettingsSlice.currentCodeThemeName ?? t('toolbar.codeThemeAuto', currentLanguage),
 	);
 
 	// 上游 frontmatter 面板的显隐状态（frontMatterCollapsedByKey）在
@@ -1206,6 +1205,13 @@
 								codeMenuOpen = false;
 								if (schemeMenuOpen) hideTooltip();
 							}}
+							onkeydown={(e) => {
+								// T8/Minor5a：Escape 收起两个主题下拉（对齐上游 theme-menu 形态）。
+								if (e.key === 'Escape') {
+									schemeMenuOpen = false;
+									codeMenuOpen = false;
+								}
+							}}
 							aria-label={`${t('toolbar.themeScheme', currentLanguage)}: ${themeSettingsSlice.currentScheme.name}`}
 							onmouseenter={(e) => {
 								if (!schemeMenuOpen) showTooltip(e, `${t('toolbar.themeScheme', currentLanguage)}: ${themeSettingsSlice.currentScheme.name}`);
@@ -1232,6 +1238,13 @@
 								codeMenuOpen = !codeMenuOpen;
 								schemeMenuOpen = false;
 								if (codeMenuOpen) hideTooltip();
+							}}
+							onkeydown={(e) => {
+								// T8/Minor5a：Escape 收起两个主题下拉（对齐上游 theme-menu 形态）。
+								if (e.key === 'Escape') {
+									schemeMenuOpen = false;
+									codeMenuOpen = false;
+								}
 							}}
 							aria-label={`${t('toolbar.codeTheme', currentLanguage)}: ${currentCodeThemeName}`}
 							onmouseenter={(e) => {

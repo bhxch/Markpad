@@ -311,11 +311,15 @@ const PAGE_SIZES: Record<string, { width: number; height: number }> = {
  */
 function readExportTheme(): { mode: string; scheme: string } {
 	const root = document.documentElement;
+	// Minor2：vscode UI 主题激活时 applyTheme 不设 data-theme-scheme（T7 特异性
+	// 修复的前提），scheme 兜底 'vscode' 保真导出 html 元数据；视觉不受影响——
+	// cssVariables 取自活 DOM。非 vscode 的缺 scheme 场景维持 github-light 旧行为。
+	const scheme = root.getAttribute('data-theme-scheme');
 	return {
 		mode:
 			root.getAttribute('data-theme-mode') ||
 			(root.getAttribute('data-theme')?.includes('dark') ? 'dark' : 'light'),
-		scheme: root.getAttribute('data-theme-scheme') || 'github-light',
+		scheme: scheme || (root.getAttribute('data-theme') === 'vscode' ? 'vscode' : 'github-light'),
 	};
 }
 

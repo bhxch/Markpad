@@ -441,7 +441,9 @@ const en: Translation = {
     theme: {
         followSystem: 'Follow System',
         defaultLight: 'Default Light',
-        defaultDark: 'Default Dark'
+        defaultDark: 'Default Dark',
+        // Minor5b：代码主题下拉的 VSCode 分组标题（CodeThemeMenu/ThemeSettingsSection）。
+        vscodeThemes: 'VSCode Themes'
     },
     // Titlebar 本地回挂动作（D14）的标签。
     toolbar: {
@@ -449,7 +451,9 @@ const en: Translation = {
         vimMode: 'Vim Mode',
         metadata: 'Metadata',
         themeScheme: 'Color Scheme',
-        codeTheme: 'Code Theme'
+        codeTheme: 'Code Theme',
+        // Minor5b：代码主题 'auto' 行的显示名（slice 静态表的中文名退役为数据）。
+        codeThemeAuto: 'Follow Scheme'
     },
     // 导出弹窗与导出结果提示（本地 i18n 退役后迁入，§5.4）；HTML/PDF 两个格式名复用 menu.exportHtml / menu.exportPdf。
     export: {

@@ -41,6 +41,8 @@
 	} from './pipeline/diagrams';
 	import { getViewableItems, setLightboxOpener } from './pipeline/lightbox';
 	import { initTreeSitterLanguages } from './pipeline/highlight';
+	// deferred（2026-10-07 修复波）：mermaid 已渲染 SVG 随纯配色方案切换重绘（见下方切片 effect）。
+	import { themeSettingsSlice } from './stores/slices/themeSettings.svelte.js';
 import { processMarkdownHtml } from './utils/markdown';
 import { MARKDOWN_LINK_EXTENSIONS } from './utils/markdownLinks.js';
 import { sanitizeMarkdownFragment } from './utils/sanitize.js';
@@ -553,6 +555,30 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 				settings.theme = 'system';
 			});
 		}
+	});
+
+	// deferred（2026-10-07 修复波）：mermaid 已渲染 SVG 随纯配色方案切换重绘。
+	// 上游 theme effect 只依赖 settings.theme，setThemeScheme（写切片、不经
+	// settings.theme，C1 写穿回写的 mode 一致时甚至不触发它）后已渲染 SVG 仍带
+	// 旧主题色；applyTheme→syncMermaidTheme 钩子只刷新单例配置供后续渲染。本切片
+	// effect 追踪当前明暗（方案即模式 / 跟随系统切换 / 上游下拉都经过它），变化即
+	// 经 diagrams.rerenderMermaidWrappers 重绘本地管线已渲染的 wrapper（上游
+	// staleDiagrams 路径仍由 recolourDiagrams 承担，两者覆盖面互补）。首播只记基准
+	// 不重绘——挂载时的绘制由既有链路承担，避免与首渲竞争。
+	let lastMermaidRedrawMode: string | null = null;
+	$effect(() => {
+		const mode = themeSettingsSlice.mode;
+		if (lastMermaidRedrawMode === null) {
+			lastMermaidRedrawMode = mode;
+			return;
+		}
+		if (lastMermaidRedrawMode === mode) return;
+		lastMermaidRedrawMode = mode;
+		untrack(() => {
+			syncMermaidTheme(); // 重绘前取回当前主题配置（与 rerenderMermaidWrappers 内部再同步双保险）
+			if (!markdownBody) return;
+			void rerenderMermaidWrappers(markdownBody, previewRevision);
+		});
 	});
 
 	let tooltip = $state({ show: false, text: '', shortcut: '', html: '', isFootnote: false, x: 0, y: 0, align: 'top' as 'top' | 'right' | 'left' | 'below' });
