@@ -119,9 +119,16 @@ describe('注册表恢复顺序（T4：followSystem 行须在 mode 行之后 loa
 	// loadPersistedSettings 按注册表数组顺序同步执行。followSystem=true 时
 	// setFollowSystem 从 matchMedia 重推导 mode，若它先于 theme.mode 恢复，
 	// 存量 mode 会把刚推导的系统值盖回陈旧值（关机期间 OS 翻转过即触发）。
+	// 存量 fixture 经唯一写入口 writeStoredSetting 落盘（单实现规则）：
+	// 模拟的是"另一窗口/上次会话已写入的键"，首写（键不存在）在 CAS 下直接生效。
+	const seedStored = async (key: string, value: string) => {
+		const { writeStoredSetting } = await import('../settings.svelte.ts');
+		writeStoredSetting(key, value);
+	};
+
 	it('存量 followSystem=true：关机期间系统翻浅，启动后 mode=light 而非陈旧 dark', async () => {
-		localStorage.setItem('theme.mode', 'dark');
-		localStorage.setItem('theme.followSystem', 'true');
+		await seedStored('theme.mode', 'dark');
+		await seedStored('theme.followSystem', 'true');
 		// 系统现为浅色（matches:false）；监听桩只需可安装/退订。
 		vi.stubGlobal('matchMedia', () => ({
 			matches: false,
@@ -140,8 +147,8 @@ describe('注册表恢复顺序（T4：followSystem 行须在 mode 行之后 loa
 	});
 
 	it('存量 followSystem=false：mode 保持存量（顺序对调不伤手动选择）', async () => {
-		localStorage.setItem('theme.mode', 'dark');
-		localStorage.setItem('theme.followSystem', 'false');
+		await seedStored('theme.mode', 'dark');
+		await seedStored('theme.followSystem', 'false');
 		const { SettingsStore } = await import('../settings.svelte.ts');
 		const store = new SettingsStore();
 		try {

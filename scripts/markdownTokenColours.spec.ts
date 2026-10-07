@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 
 import { PREVIEW_KIND_VARS, markdownKindColors, monacoTokenRules } from '../src/lib/utils/theme.js';
 import { readSource } from './sourceTree.js';

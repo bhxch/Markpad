@@ -360,6 +360,8 @@ function createTitleBar(windowStub: WindowStub, invoke: (cmd: string, args: any)
 		let tagDraftColor = tagColors[1];
 		let tagError = '';
 		let themeMenuOpen = false;
+		let schemeMenuOpen = false; // T8: 配色方案下拉开关
+		let codeMenuOpen = false; // T8: 代码主题下拉开关
 		let kebabMenuOpen = false;
 		let homeMenuOpen = false;
 
