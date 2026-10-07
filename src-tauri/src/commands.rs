@@ -1076,55 +1076,6 @@ pub async fn list_directory_contents(path: String) -> Result<Vec<String>, String
     .await
 }
 
-// ---- 储备命令（设计文档 §6.8：上游 Editor 不再调用，按裁决保留注册待复用）----
-
-/// Writes raw bytes to a path.
-///
-/// Reserve: nothing invokes it since upstream dropped the image-bytes path
-/// (the webview-side guard lives in `saveImageAsAssetUrl.test.ts`).
-#[tauri::command]
-pub async fn save_file_binary(path: String, data: Vec<u8>) -> Result<(), String> {
-    blocking(move || fs::write(&path, data).map_err(|e| e.to_string())).await
-}
-
-/// Deletes a file, ignoring the already-absent case.
-///
-/// Reserve: the image-undo path deliberately stopped deleting the copied file
-/// (`imageUndoKeepsFile.spec.ts` holds that an undo moves text and nothing
-/// else); kept registered for future consumers per design §6.8.
-#[tauri::command]
-pub async fn delete_file(path: String) -> Result<(), String> {
-    blocking(move || {
-        let p = Path::new(&path);
-        if p.exists() {
-            fs::remove_file(p).map_err(|e| e.to_string())?;
-        }
-        Ok(())
-    })
-    .await
-}
-
-/// Removes the document's `img/` sibling directory when it holds no entries.
-///
-/// Reserve: companion cleanup for the image-copy flow, no active consumer.
-#[tauri::command]
-pub async fn cleanup_empty_img_dir(parent_dir: String) -> Result<(), String> {
-    blocking(move || {
-        let img_dir = Path::new(&parent_dir).join("img");
-        if img_dir.exists() && img_dir.is_dir() {
-            let is_empty = fs::read_dir(&img_dir)
-                .map_err(|e| e.to_string())?
-                .next()
-                .is_none();
-            if is_empty {
-                fs::remove_dir(img_dir).map_err(|e| e.to_string())?;
-            }
-        }
-        Ok(())
-    })
-    .await
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

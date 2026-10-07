@@ -255,10 +255,6 @@ pub fn run() {
             commands::copy_file_to_img,
             commands::copy_file,
             commands::list_directory_contents,
-            // 储备命令（设计文档 §6.8：上游 Editor 不再调用，保留注册待复用）
-            commands::save_file_binary,
-            commands::delete_file,
-            commands::cleanup_empty_img_dir,
             tab_transfer::stage_detached_tab,
             tab_transfer::claim_detached_tab,
             tab_transfer::complete_detached_tab,
