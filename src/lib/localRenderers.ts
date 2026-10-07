@@ -186,23 +186,28 @@ export async function renderExcalidraw(code: string): Promise<string> {
 	try {
 		// 解析 JSON 数据
 		const data = JSON.parse(code);
-		
+
 		// Excalidraw 数据格式：
 		// { type: "excalidraw", elements: [...], appState: {...} }
 		// 或者直接是 { elements: [...], appState: {...} }
 		const elements = data.elements || [];
 		const appState = data.appState || {};
-		
-		// 使用 exportToSvg 渲染
+
+		// @excalidraw/utils >= 0.1.4 的签名是 exportToSvg({ data, config })，
+		// elements/appState/files 包在 data 里；直接传扁平结构会在包内部
+		// 读 data.appState 时报 "Cannot read properties of undefined"。
 		const svg = await excalidrawUtils.exportToSvg({
-			elements,
-			appState: {
-				...appState,
-				exportBackground: true,
-				viewBackgroundColor: appState.viewBackgroundColor || '#ffffff'
+			data: {
+				elements,
+				appState: {
+					...appState,
+					exportBackground: true,
+					viewBackgroundColor: appState.viewBackgroundColor || '#ffffff'
+				},
+				files: data.files || null
 			}
 		});
-		
+
 		return svg.outerHTML;
 	} catch (e) {
 		throw new Error(`Excalidraw render error: ${e}`);
