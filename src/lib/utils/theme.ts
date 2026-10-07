@@ -1,4 +1,9 @@
 import { semanticTokenRules } from './editorTheme.js';
+// T5/T6/T7: 上游 vscode 主题的 DOM 属性落盘收编到 themeApply 唯一写者，
+// UI 主题来源切换走 themeSettings 切片（语义桥 applyAppearanceTheme）。
+import { themeSettingsSlice } from '../stores/slices/themeSettings.svelte.js';
+import { applyAppearanceTheme } from './themeBridge.js';
+import { applyTheme } from './themeApply.js';
 
 // Values taken from an imported VS Code theme end up concatenated into a global
 // `<style>` block. Anything that is not a colour literal could close the rule and
@@ -340,8 +345,14 @@ export async function parseAndApplyVscodeTheme(themeJsonStr: string, name: strin
 		.map(([k, v]) => `${k}: ${v};`)
 		.join('\n');
 	styleTag.textContent = `:root[data-theme="vscode"] {\n${rootStyles}\n}`;
-	document.documentElement.dataset.theme = 'vscode';
+	// T6 收编：data-theme='vscode' 改由 themeApply 唯一写者落（下方 applyTheme）。
+	// data-theme-type 的发布保留在此——明暗由主题 JSON 的 type 字段探测（isDark），
+	// 是 themeApply vscode 分支 data-theme-mode 的取值来源，也是 MarkdownViewer
+	// saveStartupAppearance 启动外观判定的依据，桥内无从得知。
 	document.documentElement.dataset.themeType = isDark ? 'dark' : 'light';
+	themeSettingsSlice.setVscodeUi(name); // T7: vscode UI 生效走 uiThemeSource
+	applyAppearanceTheme(`vscode:${name}`); // T5/T6: 语义桥切来源（vscode 分支不落 DOM）
+	applyTheme(); // T6: data-theme='vscode' 等由 themeApply 唯一落盘
 
 	const bgHex = (cssVars['--color-canvas-default'] || '').replace('#', '');
 	if (bgHex.length === 6) {

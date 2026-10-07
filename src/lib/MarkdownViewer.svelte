@@ -457,6 +457,8 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 	});
 
 	import { parseAndApplyVscodeTheme, clearVscodeTheme } from './utils/theme';
+	// T5/T6: 上游"更改主题"下拉语义化接入本地双槽模型（applyAppearanceTheme）。
+	import { applyAppearanceTheme } from './utils/themeBridge';
 
 	onMount(() => {
 		// Clear the forced background color from app.html
@@ -517,13 +519,7 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		});
 
 		if (theme === 'system' || theme === 'light' || theme === 'dark') {
-			if (theme === 'system') {
-				delete document.documentElement.dataset.theme;
-				delete document.documentElement.dataset.themeType;
-			} else {
-				document.documentElement.dataset.theme = theme;
-				document.documentElement.dataset.themeType = theme;
-			}
+			applyAppearanceTheme(theme); // T5/T6: 下拉语义化+属性唯一写者（themeBridge）
 			clearVscodeTheme();
 			saveStartupAppearance(theme);
 			recolourDiagrams();

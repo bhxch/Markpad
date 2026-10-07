@@ -32,6 +32,8 @@ describe('applyTheme 属性唯一写者（T6）', () => {
 		expect(root.getAttribute('data-theme-mode')).toBe('dark');
 		expect(root.getAttribute('data-theme-scheme')).toBe('one-dark');
 		expect(root.getAttribute('data-code-theme')).toBe('dark-modern');
+		// T6 收编后由 themeApply 同步发布（currentMermaidTheme 的 system 判定消费）。
+		expect(root.getAttribute('data-theme-type')).toBe('dark');
 	});
 
 	it('vscode UI 态：data-theme=vscode、移除 data-theme-scheme（T7 双用途的特异性修复点）', async () => {
@@ -60,6 +62,31 @@ describe('applyTheme 属性唯一写者（T6）', () => {
 		expect(root.getAttribute('data-theme')).toBe('light');
 		expect(root.getAttribute('data-theme-scheme')).toBe('vue');
 		expect(root.getAttribute('data-code-theme')).toBe('light-modern');
+	});
+});
+
+describe('applyAppearanceTheme 上游下拉语义化（T5）', () => {
+	it("light/dark：应用对应槽位方案并退出跟随", async () => {
+		const { applyAppearanceTheme } = await import('./themeBridge.js');
+		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		themeSettingsSlice.setFollowSystem(true);
+		applyAppearanceTheme('light');
+		expect(themeSettingsSlice.followSystem).toBe(false);
+		expect(themeSettingsSlice.mode).toBe('light');
+		expect(themeSettingsSlice.currentSchemeId).toBe('github-light');
+	});
+	it('system：开启跟随', async () => {
+		const { applyAppearanceTheme } = await import('./themeBridge.js');
+		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		applyAppearanceTheme('system');
+		expect(themeSettingsSlice.followSystem).toBe(true);
+	});
+	it('vscode:<name>：uiThemeSource 切 vscode', async () => {
+		const { applyAppearanceTheme } = await import('./themeBridge.js');
+		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		applyAppearanceTheme('vscode:Monokai Pro');
+		expect(themeSettingsSlice.uiThemeSource).toBe('vscode');
+		expect(themeSettingsSlice.vscodeUiName).toBe('Monokai Pro');
 	});
 });
 

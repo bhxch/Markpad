@@ -1,6 +1,8 @@
 /**
- * 主题属性唯一写者（spec T6）：data-theme / data-theme-mode /
- * data-theme-scheme / data-code-theme 四属性只从这里落 DOM。
+ * 主题属性唯一写者（spec T6）：scheme 态写 data-theme / data-theme-mode /
+ * data-theme-scheme / data-theme-type / data-code-theme，vscode 态写
+ * data-theme（并带出 data-theme-mode、移除 data-theme-scheme），
+ * 全部只从这里落 DOM（data-theme-type 的 vscode 探测发布除外，见 utils/theme.ts）。
  * 此前上游 MarkdownViewer 与本地 settings.applyTheme 双写者并存、
  * 本地 scheme 块特异性恒胜导致上游主题选择从不生效（spec §3.2-3）。
  */
@@ -25,6 +27,10 @@ export function applyTheme(): void {
 		root.setAttribute('data-theme', slice.mode);
 		root.setAttribute('data-theme-mode', slice.mode);
 		root.setAttribute('data-theme-scheme', slice.currentSchemeId);
+		// T6 收编点：上游 MarkdownViewer 原在此直写/删除 data-theme-type（system 分支
+		// 删除是为防 vscode 主题的探测值残留进 mermaid 的 system 明暗判定）。改由
+		// themeApply 同步为当前生效明暗，currentMermaidTheme/resolveMermaidTheme 语义不变。
+		root.setAttribute('data-theme-type', slice.mode);
 	}
 	root.setAttribute('data-code-theme', slice.resolveCodeTheme());
 }
