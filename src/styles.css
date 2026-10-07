@@ -209,7 +209,7 @@ body {
 }
 
 /* Solarized Dark */
-:root[data-theme-mode="dark"][data-theme-scheme="solarized"] {
+:root[data-theme-mode="dark"][data-theme-scheme="solarized-dark"] { /* T12: 对齐主题表 id，此前错位致该方案从未生效 */
 	--color-fg-default: #839496;
 	--color-fg-muted: #93a1a1;
 	--color-canvas-default: #002b36;

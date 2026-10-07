@@ -45,6 +45,10 @@ import {
 } from '../diagrams';
 import { krokiSettingsSlice } from './slices/krokiSettings.svelte.js';
 import { diagramSettingsSlice } from './slices/diagramSettings.svelte.js';
+// T3: 主题双槽状态本体在 slices/themeSettings 切片，本文件只透传（见下方主题段）。
+import { themeSettingsSlice } from './slices/themeSettings.svelte.js';
+// T6: data-theme-* / data-code-theme 属性唯一写者迁 utils/themeApply。
+import { applyTheme as applyThemeFromModule, installSystemThemeWatcher } from '../utils/themeApply.js';
 
 export type OSType = 'macos' | 'windows' | 'linux' | 'unknown';
 
@@ -595,7 +599,7 @@ export class SettingsStore {
 	// replaced and why the two of them were never independent.
 	autoSave = $state(DEFAULT_AUTO_SAVE);
 
-	// ==== 本地独有键切片透传（kroki.host / code.theme / diagram.*）====
+	// ==== 本地独有键切片透传（kroki.host / diagram.*；主题键见下方独立段）====
 	// 状态本体在 slices/ 下的切片单例中；持久化只走 createSettingsPersistence()
 	// 注册表条目（见文件底部），切片自身的 load()/persist() 不再调用，避免同一键双写。
 	// Kroki 自定义 host（支持自托管）
@@ -604,14 +608,6 @@ export class SettingsStore {
 	}
 	set krokiHost(value: string) {
 		krokiSettingsSlice.krokiHost = value;
-	}
-
-	// 代码块主题：'auto' | 'dark-modern' | 'light-modern'（applyTheme/setCodeTheme 在下方本文件中）
-	get codeTheme() {
-		return krokiSettingsSlice.codeTheme;
-	}
-	set codeTheme(value: string) {
-		krokiSettingsSlice.codeTheme = value;
 	}
 
 	// 图表渲染设置：每种图表的渲染模式
@@ -638,24 +634,60 @@ export class SettingsStore {
 		diagramSettingsSlice.diagramRustRendererSettings = value;
 	}
 
-	// ==== 本地主题体系（styles.css 的 data-theme-* / data-code-theme 属性链）====
-	themeScheme = $state<string>('github-dark');
+	// ==== 本地主题体系（T3：状态本体在 slices/themeSettings 切片，本文件只透传）====
+	// T3: themeScheme 即双槽 currentSchemeId；写走 setThemeScheme（方案即模式+退跟随）
+	get themeScheme() {
+		return themeSettingsSlice.currentSchemeId;
+	}
+	set themeScheme(v: string) {
+		themeSettingsSlice.setThemeScheme(v);
+	}
 
-	themes = [
-		{ id: 'github-light', name: 'GitHub Light', mode: 'light' },
-		{ id: 'github-dark', name: 'GitHub Dark', mode: 'dark' },
-		{ id: 'vue', name: 'Vue', mode: 'light' },
-		{ id: 'one-dark', name: 'One Dark', mode: 'dark' },
-		{ id: 'monokai', name: 'Monokai', mode: 'dark' },
-		{ id: 'nord', name: 'Nord', mode: 'dark' },
-		{ id: 'solarized-dark', name: 'Solarized Dark', mode: 'dark' }
-	];
+	setThemeScheme(scheme: string) {
+		themeSettingsSlice.setThemeScheme(scheme); // T3: 方案即模式+退跟随
+	}
 
-	codeThemes = [
-		{ id: 'auto', name: '跟随全局主题' },
-		{ id: 'dark-modern', name: 'VSCode Dark Modern' },
-		{ id: 'light-modern', name: 'VSCode Light Modern' }
-	];
+	// T3: codeTheme 即双槽 currentCodeTheme（原寄居 krokiSettings 切片，迁出）
+	get codeTheme() {
+		return themeSettingsSlice.currentCodeTheme;
+	}
+	set codeTheme(v: string) {
+		themeSettingsSlice.setCodeTheme(v);
+	}
+
+	setCodeTheme(theme: string) {
+		themeSettingsSlice.setCodeTheme(theme);
+	}
+
+	// T3: 7 方案静态表随切片迁入（只读）
+	get themes() {
+		return themeSettingsSlice.themes;
+	}
+
+	// T3: 代码主题静态表（只读）
+	get codeThemes() {
+		return themeSettingsSlice.codeThemes;
+	}
+
+	// T4: 注册表 read 经此追踪切片的跟随系统开关（只读）
+	get themeFollowSystem() {
+		return themeSettingsSlice.followSystem;
+	}
+
+	// T4: 注册表 read 经此追踪切片当前明暗（只读）
+	get themeMode() {
+		return themeSettingsSlice.mode;
+	}
+
+	// T3: 注册表 read 经此追踪方案双槽（只读；单字段契约见 settingsPersistence.spec）
+	get themeSchemes() {
+		return themeSettingsSlice.themeSchemes;
+	}
+
+	// T3: 注册表 read 经此追踪代码主题双槽（只读）
+	get codeThemesByMode() {
+		return themeSettingsSlice.codeThemesByMode;
+	}
 
 	/** The `$effect.root` disposer from the constructor. See {@link dispose}. */
 	#disposeEffects: (() => void) | null = null;
@@ -693,6 +725,8 @@ export class SettingsStore {
 			$effect(() => {
 				this.applyTheme();
 			});
+			// T4: 跟随系统监听随 store 生命周期安装（dispose 时随根销毁）
+			installSystemThemeWatcher();
 		});
 	}
 
@@ -721,26 +755,10 @@ export class SettingsStore {
 	// ==== 本地主题方法（styles.css 的 :root[data-theme-*] 与 .ts-* 配色类依赖它们）====
 
 	applyTheme() {
-		if (typeof document === 'undefined') return;
-		const currentTheme = this.themes.find(t => t.id === this.themeScheme) || this.themes[1];
-
-		document.documentElement.setAttribute('data-theme-mode', currentTheme.mode);
-		document.documentElement.setAttribute('data-theme-scheme', this.themeScheme);
-
-		// Apply code theme
-		const effectiveCodeTheme = this.codeTheme === 'auto'
-			? (currentTheme.mode === 'dark' ? 'dark-modern' : 'light-modern')
-			: this.codeTheme;
-		document.documentElement.setAttribute('data-code-theme', effectiveCodeTheme);
+		applyThemeFromModule(); // T6: 属性唯一写者迁 utils/themeApply（含 uiThemeSource 裁决）
 	}
 
-	setThemeScheme(scheme: string) {
-		this.themeScheme = scheme;
-	}
-
-	setCodeTheme(theme: string) {
-		this.codeTheme = theme;
-	}
+	// T3: setThemeScheme/setCodeTheme 已改为上方透传访问器（本体在切片）
 
 	toggleWordWrap() {
 		if (this.wordWrap === 'off') {
@@ -1179,13 +1197,31 @@ export function createSettingsPersistence(): PersistedSetting<SettingsStore>[] {
 			load: (s, raw) => { s.preZenState = normalizePreZenState(parseStoredRecord(raw)); },
 		},
 
-		// ==== 本地独有键（theme scheme / kroki / code theme / diagram）====
-		// themeScheme 的状态就在本 store 上；持久化它让本地统一主题系统
-		// (setThemeScheme/applyTheme) 跨启动保持，键名与本地原键一致。
-		stringSetting('theme.scheme', (s) => s.themeScheme, (s, v) => { s.themeScheme = v; }),
-		// kroki / code theme / diagram 的状态经透传访问器落在切片单例中。
+		// ==== 本地主题键（T3：双槽模型，旧 theme.scheme/code.theme 退役不迁移）====
+		// read 走透传 getter：单字段契约（settingsPersistence.spec）要求 read 恰触达
+		// 一个 store 字段，getter 内部落在切片 $state 上仍被写 effect 追踪。
+		{
+			key: 'theme.schemes',
+			read: (s) => JSON.stringify(s.themeSchemes),
+			load: (_s, raw) => {
+				const v = parseStoredRecord(raw);
+				if (v?.light) themeSettingsSlice.themeSchemes = { light: String(v.light), dark: String(v.dark ?? 'github-dark') };
+			},
+		},
+		{
+			key: 'theme.codeThemes',
+			read: (s) => JSON.stringify(s.codeThemesByMode),
+			load: (_s, raw) => {
+				const v = parseStoredRecord(raw);
+				if (v?.light) themeSettingsSlice.codeThemesByMode = { light: String(v.light), dark: String(v.dark ?? 'auto') };
+			},
+		},
+		// T4: read 经透传 getter 追踪切片状态；load 走 setFollowSystem（开启即取系统明暗）。
+		booleanSetting('theme.followSystem', (s) => s.themeFollowSystem, (s, v) => { themeSettingsSlice.setFollowSystem(v); }),
+		// T4: mode 只接受合法枚举，损坏存量回退切片自身缺省。
+		stringSetting('theme.mode', (s) => s.themeMode, (s, v) => { if (v === 'light' || v === 'dark') themeSettingsSlice.mode = v; }),
+		// kroki / diagram 的状态经透传访问器落在切片单例中。
 		stringSetting('kroki.host', (s) => s.krokiHost, (s, v) => { s.krokiHost = v; }),
-		stringSetting('code.theme', (s) => s.codeTheme, (s, v) => { s.codeTheme = v; }),
 		{
 			key: 'diagram.settings',
 			read: (s) => JSON.stringify(s.diagramSettings),
