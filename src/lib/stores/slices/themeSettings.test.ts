@@ -105,6 +105,14 @@ describe('主题双槽契约（T3/T4，spec §4 矩阵）', () => {
 		expect(slice.uiThemeSource).toBe('vscode');
 		expect(slice.vscodeUiName).toBe('Ayu Dark');
 	});
+
+	it('开启跟随系统退出 VSCode UI 激活态（T5/T7 裁定：跟随系统回到本地方案体系）', async () => {
+		const { slice } = await load();
+		slice.setVscodeUi('Ayu Dark');
+		slice.setFollowSystem(true);
+		expect(slice.followSystem).toBe(true);
+		expect(slice.uiThemeSource).toBe('scheme');
+	});
 });
 
 describe('注册表恢复顺序（T4：followSystem 行须在 mode 行之后 load）', () => {

@@ -88,6 +88,14 @@ describe('applyAppearanceTheme 上游下拉语义化（T5）', () => {
 		expect(themeSettingsSlice.uiThemeSource).toBe('vscode');
 		expect(themeSettingsSlice.vscodeUiName).toBe('Monokai Pro');
 	});
+	it('vscode 激活态下 system：退 uiThemeSource←scheme 且开启跟随（T5/T7 裁定）', async () => {
+		const { applyAppearanceTheme } = await import('./themeBridge.js');
+		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		applyAppearanceTheme('vscode:Monokai Pro');
+		applyAppearanceTheme('system');
+		expect(themeSettingsSlice.uiThemeSource).toBe('scheme');
+		expect(themeSettingsSlice.followSystem).toBe(true);
+	});
 });
 
 describe('installSystemThemeWatcher（T4）', () => {

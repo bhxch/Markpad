@@ -95,6 +95,10 @@ export class ThemeSettingsSlice {
 	setFollowSystem(on: boolean) {
 		this.followSystem = on;
 		if (on) {
+			// T5/T7 裁定：跟随系统=回到本地方案体系、由深/浅槽位驱动，与导入的
+			// VSCode UI 主题互斥；不退激活态则 applyTheme 恒走 vscode 分支，
+			// 开启"跟随系统"对 UI 无任何可见变化。
+			this.uiThemeSource = 'scheme';
 			// matchMedia 判空防 SSR/不可用环境；不可用时取浅色缺省。
 			const mq = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null;
 			this.mode = mq?.matches ? 'dark' : 'light';
