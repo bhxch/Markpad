@@ -41,14 +41,15 @@ const TITLEBAR_TOOLBAR_ACTIONS: TitlebarToolbarAction[] = [
 	{ id: 'zoom', labelKey: 'tooltip.resetZoom', fallbackName: 'Reset Zoom', sample: '%', defaultPlacement: 'menu', hintKey: 'settings.toolbarZoomedOnly' },
 	{ id: 'theme', labelKey: 'menu.changeTheme', fallbackName: 'Change Theme', sample: 'A', defaultPlacement: 'menu' },
 	// 本地回挂动作（D14）：导出走本地管线（onexport → ExportModal → handleExport），
-	// 其余为本地体验项（Vim 模式、frontmatter 面板、配色方案/代码主题循环）。
+	// 其余为本地体验项（Vim 模式、frontmatter 面板；配色方案/代码主题自 T8 起为
+	// 栏上常驻下拉，见 components/local/ 两个菜单组件）。
 	// 禅模式不在此列：上游 `zen` 动作（settings.toggleZenMode，含六项 chrome
 	// 快照/隐藏/恢复副作用）即完整本地特性，D9 机制跟上游。
 	{ id: 'export', labelKey: 'toolbar.export', fallbackName: 'Export', sample: 'E', defaultPlacement: 'menu', hintKey: 'settings.toolbarDiskFileOnly' },
 	{ id: 'vim_mode', labelKey: 'toolbar.vimMode', fallbackName: 'Vim Mode', sample: 'V', defaultPlacement: 'menu' },
 	{ id: 'metadata', labelKey: 'toolbar.metadata', fallbackName: 'Metadata', sample: 'M', defaultPlacement: 'menu', hintKey: 'settings.toolbarDiskFileOnly' },
-	{ id: 'theme_scheme', labelKey: 'toolbar.themeScheme', fallbackName: 'Theme Scheme', sample: 'TS', defaultPlacement: 'menu' },
-	{ id: 'code_theme', labelKey: 'toolbar.codeTheme', fallbackName: 'Code Theme', sample: 'CT', defaultPlacement: 'menu' },
+	{ id: 'theme_scheme', labelKey: 'toolbar.themeScheme', fallbackName: 'Theme Scheme', sample: 'TS', defaultPlacement: 'bar' }, // T8: 恢复 merge 前栏上常驻
+	{ id: 'code_theme', labelKey: 'toolbar.codeTheme', fallbackName: 'Code Theme', sample: 'CT', defaultPlacement: 'bar' },      // T8: 恢复 merge 前栏上常驻
 	{ id: 'settings', labelKey: 'tooltip.settings', fallbackName: 'Settings', sample: '...', defaultPlacement: 'menu', required: true },
 ];
 
@@ -235,7 +236,7 @@ export function visibleTitlebarActionIds(context: TitlebarActionContext): string
 		}
 		list.push('vim_mode');
 		list.push('zen');
-		// 本地回挂（D14）：配色方案/代码主题循环跟全局主题同域；Home 屏无文档
+		// 本地回挂（D14）：配色方案/代码主题下拉（T8）跟全局主题同域；Home 屏无文档
 		// 语境，与 zen 同款按 tab 上下文隐藏（上游契约：Home 精确列表）。
 		list.push('theme_scheme');
 		list.push('code_theme');

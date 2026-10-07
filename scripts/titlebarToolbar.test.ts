@@ -212,6 +212,13 @@ test('the mode is read off the two tab flags, split first', () => {
 	assert.equal(viewModeOf({ isEditing: false, isSplit: true }), 'split');
 });
 
+// T8: 主题两按钮恢复 merge 前栏上常驻（spec T8）
+test('theme_scheme / code_theme 默认在栏上（defaultPlacement bar）', () => {
+	const placement = normalizeTitlebarToolbarPlacement(null);
+	assert.equal(placement.theme_scheme, 'bar');
+	assert.equal(placement.code_theme, 'bar');
+});
+
 test('Settings gives a condition to exactly the buttons that can go missing in a Markdown document', () => {
 	const contexts = [
 		{ isEditing: false, isSplit: false },

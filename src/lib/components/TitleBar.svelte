@@ -5,8 +5,11 @@
 	import { fly } from 'svelte/transition';
 	import iconUrl from '../../assets/icon.png';
 	import TabList from './TabList.svelte';
+	import ThemeSchemeMenu from './local/ThemeSchemeMenu.svelte'; // T8: 配色方案下拉
+	import CodeThemeMenu from './local/CodeThemeMenu.svelte'; // T8: 代码主题下拉
 	import { tabManager } from '../stores/tabs.svelte.js';
 	import { settings } from '../stores/settings.svelte.js';
+	import { themeSettingsSlice } from '../stores/slices/themeSettings.svelte.js'; // T8: 标题栏主题按钮读当前方案/代码主题
 	import { t } from '../utils/i18n.js';
 	import { getConfiguredTitlebarToolbarIds, visibleTitlebarActionIds, type ViewMode, viewModeOf } from '../utils/titlebarToolbar.js';
 	import { modifierFor, shortcutLabel } from '../utils/shortcuts.js';
@@ -379,6 +382,8 @@
 	);
 
 	let themeMenuOpen = $state(false);
+	let schemeMenuOpen = $state(false); // T8: 配色方案下拉开关
+	let codeMenuOpen = $state(false); // T8: 代码主题下拉开关
 	let kebabMenuOpen = $state(false);
 	let homeMenuOpen = $state(false);
 	let pinnedTags = $state<Array<{ name: string; color: string }>>([]);
@@ -415,18 +420,12 @@
 		themeMenuOpen = false;
 	}
 
-	// 本地回挂动作（D14）的处理器：配色方案/代码主题在候选间循环。
-	function cycleThemeScheme() {
-		const schemes = settings.themes.map((theme) => theme.id);
-		const next = schemes[(schemes.indexOf(settings.themeScheme) + 1) % schemes.length];
-		settings.setThemeScheme(next);
-	}
-
-	function cycleCodeTheme() {
-		const themes = settings.codeThemes.map((theme) => theme.id);
-		const next = themes[(themes.indexOf(settings.codeTheme) + 1) % themes.length];
-		settings.setCodeTheme(next);
-	}
+	// T8: code_theme 按钮的当前名——静态表行 name（'auto' 行内建"跟随全局主题"）；
+	// `vscode:<name>` 扩展位不在表内，剥前缀显示导入名。
+	let currentCodeThemeName = $derived(
+		settings.codeThemes.find((c) => c.id === themeSettingsSlice.currentCodeTheme)?.name ??
+			themeSettingsSlice.currentCodeTheme.replace(/^vscode:/, ''),
+	);
 
 	// 上游 frontmatter 面板的显隐状态（frontMatterCollapsedByKey）在
 	// MarkdownViewer 内部，经 `<details class="frontmatter-panel">` 的 ontoggle
@@ -438,13 +437,16 @@
 
 	function handleGlobalDismiss() {
 		themeMenuOpen = false;
+		schemeMenuOpen = false; // T8: 点外部即收起
+		codeMenuOpen = false; // T8: 点外部即收起
 		kebabMenuOpen = false;
 		homeMenuOpen = false;
 		if (tagEditorOpen) applyTag();
 	}
 
 	$effect(() => {
-		if (themeMenuOpen || kebabMenuOpen || homeMenuOpen || tagEditorOpen) {
+		// T8: scheme/code 两下拉并入既有"任一菜单开启即挂全局 dismiss"回路。
+		if (themeMenuOpen || schemeMenuOpen || codeMenuOpen || kebabMenuOpen || homeMenuOpen || tagEditorOpen) {
 			window.addEventListener('click', handleGlobalDismiss);
 			window.addEventListener('contextmenu', handleGlobalDismiss);
 			window.addEventListener('blur', handleGlobalDismiss);
@@ -1171,31 +1173,57 @@
 						<span class="action-label">{t('toolbar.metadata', currentLanguage)}</span>
 					</button>
 				{:else if id === 'theme_scheme'}
-					<button
-						class="title-action-btn"
-						onclick={cycleThemeScheme}
-						aria-label={t('toolbar.themeScheme', currentLanguage)}
-						onmouseenter={(e) => showTooltip(e, t('toolbar.themeScheme', currentLanguage))}
-						onmousedown={(e) => e.preventDefault()}
-						onmouseleave={hideTooltip}
-						transition:fly={{ x: 10, duration: 200 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-							><circle cx="13.5" cy="6.5" r=".5"></circle><circle cx="17.5" cy="10.5" r=".5"></circle><circle cx="8.5" cy="7.5" r=".5"></circle><circle cx="6.5" cy="12.5" r=".5"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path></svg>
-						<span class="action-label">{t('toolbar.themeScheme', currentLanguage)}</span>
-					</button>
+					<!-- T8: 栏上常驻+当前方案名+弹下拉（本地组件，cycle 循环交互退役） -->
+					<div class="theme-dropdown-container">
+						<button
+							class="title-action-btn {schemeMenuOpen ? 'active' : ''}"
+							onclick={(e) => {
+								e.stopPropagation();
+								schemeMenuOpen = !schemeMenuOpen;
+								codeMenuOpen = false;
+								if (schemeMenuOpen) hideTooltip();
+							}}
+							aria-label={`${t('toolbar.themeScheme', currentLanguage)}: ${themeSettingsSlice.currentScheme.name}`}
+							onmouseenter={(e) => {
+								if (!schemeMenuOpen) showTooltip(e, `${t('toolbar.themeScheme', currentLanguage)}: ${themeSettingsSlice.currentScheme.name}`);
+							}}
+							onmousedown={(e) => e.preventDefault()}
+							onmouseleave={hideTooltip}
+							transition:fly={{ x: 10, duration: 200 }}>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+								><circle cx="13.5" cy="6.5" r=".5"></circle><circle cx="17.5" cy="10.5" r=".5"></circle><circle cx="8.5" cy="7.5" r=".5"></circle><circle cx="6.5" cy="12.5" r=".5"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path></svg>
+							<span class="action-label">{themeSettingsSlice.currentScheme.name}</span>
+						</button>
+						{#if schemeMenuOpen}
+							<ThemeSchemeMenu onclose={() => (schemeMenuOpen = false)} />
+						{/if}
+					</div>
 				{:else if id === 'code_theme'}
-					<button
-						class="title-action-btn"
-						onclick={cycleCodeTheme}
-						aria-label={t('toolbar.codeTheme', currentLanguage)}
-						onmouseenter={(e) => showTooltip(e, t('toolbar.codeTheme', currentLanguage))}
-						onmousedown={(e) => e.preventDefault()}
-						onmouseleave={hideTooltip}
-						transition:fly={{ x: 10, duration: 200 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-							><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
-						<span class="action-label">{t('toolbar.codeTheme', currentLanguage)}</span>
-					</button>
+					<!-- T8: 栏上常驻+当前代码主题名+弹下拉（本地组件，cycle 循环交互退役） -->
+					<div class="theme-dropdown-container">
+						<button
+							class="title-action-btn {codeMenuOpen ? 'active' : ''}"
+							onclick={(e) => {
+								e.stopPropagation();
+								codeMenuOpen = !codeMenuOpen;
+								schemeMenuOpen = false;
+								if (codeMenuOpen) hideTooltip();
+							}}
+							aria-label={`${t('toolbar.codeTheme', currentLanguage)}: ${currentCodeThemeName}`}
+							onmouseenter={(e) => {
+								if (!codeMenuOpen) showTooltip(e, `${t('toolbar.codeTheme', currentLanguage)}: ${currentCodeThemeName}`);
+							}}
+							onmousedown={(e) => e.preventDefault()}
+							onmouseleave={hideTooltip}
+							transition:fly={{ x: 10, duration: 200 }}>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+								><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+							<span class="action-label">{currentCodeThemeName}</span>
+						</button>
+						{#if codeMenuOpen}
+							<CodeThemeMenu onclose={() => (codeMenuOpen = false)} />
+						{/if}
+					</div>
 				{/if}
 			{/each}
 		{/snippet}
