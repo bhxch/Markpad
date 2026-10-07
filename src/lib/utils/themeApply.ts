@@ -33,20 +33,25 @@ export function applyTheme(): void {
 		// themeApply 同步为当前生效明暗，currentMermaidTheme/resolveMermaidTheme 语义不变。
 		root.setAttribute('data-theme-type', slice.mode);
 	}
-	root.setAttribute('data-code-theme', slice.resolveCodeTheme());
 	// T7：vscode:<name> 代码主题生效时挂载 .vsix tokenColors 派生的 --ts-* 覆盖块。
 	// fire-and-forget：加载失败静默（CSS 回落当前主题的 --ts-* 静态值），保持同步签名。
+	// fix(I1)：style 标签 id 同步可算，存在性检查前移到 invoke 之前——settings 变更
+	// 重放 applyTheme 时直接短路，不重复磁盘 IO + JSON 解析；.then 内二次查防竞态。
 	const codeTheme = slice.resolveCodeTheme();
+	root.setAttribute('data-code-theme', codeTheme);
 	if (codeTheme.startsWith('vscode:')) {
-		void buildVscodeCodeThemeStyle(codeTheme.slice('vscode:'.length)).then((style) => {
-			if (!style) return;
-			const id = `ts-vscode-theme-${codeTheme}`;
-			if (document.getElementById(id)) return;
-			const el = document.createElement('style');
-			el.id = id;
-			el.innerHTML = style;
-			document.head.appendChild(el);
-		});
+		const id = `ts-vscode-theme-${codeTheme}`;
+		if (!document.getElementById(id)) {
+			void buildVscodeCodeThemeStyle(codeTheme.slice('vscode:'.length)).then((style) => {
+				if (!style || document.getElementById(id)) return;
+				const el = document.createElement('style');
+				el.id = id;
+				// 裸规则文本写 textContent（fix C1）：innerHTML 会把文本当元素内容而非
+				// 样式表源码解析，且保留值含 </style> 的注入面。
+				el.textContent = style;
+				document.head.appendChild(el);
+			});
+		}
 	}
 }
 
@@ -79,9 +84,11 @@ export function installSystemThemeWatcher(): () => void {
 const TS_TOKEN_SCOPE_MAP: Record<string, string[]> = {
 	'--ts-comment': ['comment'],
 	'--ts-keyword': ['keyword'],
-	'--ts-keyword-control': ['keyword.control'],
+	// keyword-control / string-regexp 追加泛 scope 回退（fix M2）：主题只写泛化
+	// scope 时逼近 TextMate 的祖先继承语义，而非直接回落 CSS 静态值。
+	'--ts-keyword-control': ['keyword.control', 'keyword'],
 	'--ts-string': ['string'],
-	'--ts-string-regexp': ['string.regexp'],
+	'--ts-string-regexp': ['string.regexp', 'string'],
 	'--ts-number': ['constant.numeric'],
 	'--ts-constant': ['constant'],
 	'--ts-constant-builtin': ['constant.language'],
@@ -111,7 +118,12 @@ interface TokenRule {
 	settings?: { foreground?: string; fontStyle?: string };
 }
 
-/** T7（本任务实装）：vscode:<name> 代码主题的 --ts-* 注入。 */
+/**
+ * T7（本任务实装）：vscode:<name> 代码主题的 --ts-* 注入。
+ * 返回裸 CSS 规则文本（fix C1：不含 <style> 包裹——包裹由调用方写
+ * <style> 元素完成；若在此包裹，注入后样式表内容以字面量 '<' 开头，
+ * 首个选择器非法，整条规则被浏览器丢弃）。
+ */
 export async function buildVscodeCodeThemeStyle(name: string): Promise<string> {
 	try {
 		const json = JSON.parse(await invoke<string>('read_vscode_theme', { name })) as {
@@ -137,7 +149,7 @@ export async function buildVscodeCodeThemeStyle(name: string): Promise<string> {
 		if (!decls.length) return '';
 		// 选择器里的主题名是 CSS 字符串字面量，需转义引号与反斜杠以匹配原始值。
 		const cssName = name.replace(/[\\"]/g, '\\$&');
-		return `<style>:root[data-code-theme="vscode:${cssName}"] { ${decls.join('; ')}; }</style>`;
+		return `:root[data-code-theme="vscode:${cssName}"] { ${decls.join('; ')}; }`;
 	} catch {
 		return '';
 	}

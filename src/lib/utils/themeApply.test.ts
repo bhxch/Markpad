@@ -142,6 +142,8 @@ describe('buildVscodeCodeThemeStyle（T7）', () => {
 		const { buildVscodeCodeThemeStyle } = await import('./themeApply.js');
 		const style = await buildVscodeCodeThemeStyle('Test');
 		expect(style).toContain(':root[data-code-theme="vscode:Test"]');
+		expect(style.startsWith(':root')).toBe(true); // 裸规则文本（C1：不含 <style> 包裹）
+		expect(style).not.toContain('<style');
 		expect(style).toMatch(/--ts-comment:\s*#ABCDEF/i);
 		expect(style).toMatch(/--ts-keyword:\s*#123456/i);
 		expect(style).toContain('font-style: italic'); // fontStyle 保留
@@ -169,18 +171,35 @@ describe('buildVscodeCodeThemeStyle（T7）', () => {
 		await expect(buildVscodeCodeThemeStyle('Broken')).resolves.toBe('');
 	});
 
+	it('泛 scope 回退：仅泛化 scope 时 keyword-control/string-regexp 取泛色（逼近 TextMate 祖先继承）', async () => {
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'read_vscode_theme'
+				? JSON.stringify({
+						tokenColors: [
+							{ scope: 'keyword', settings: { foreground: '#020002' } },
+							{ scope: 'string', settings: { foreground: '#020004' } }
+						]
+					})
+				: '[]'
+		);
+		const { buildVscodeCodeThemeStyle } = await import('./themeApply.js');
+		const style = await buildVscodeCodeThemeStyle('Generic');
+		expect(style).toMatch(/--ts-keyword-control:\s*#020002/i);
+		expect(style).toMatch(/--ts-string-regexp:\s*#020004/i);
+	});
+
 	it('映射覆盖 styles.css --ts-* 变量全集（27 个，一个不多一个不少）', async () => {
-		// 规则按具体 scope 在前、泛 scope 在后排列（与真实 .vsix 的排列惯例一致），
-		// 确保 boolean/builtin 等取专属色而非被泛 scope 规则截胡。
+		// 规则按具体 scope 在前、泛 scope 在后排列（与真实 .vsix 的排列惯例一致，
+		// 也让泛回退候选不被泛规则截胡：keyword.control/keyword、string.regexp/string）。
 		const rules: { scope: string[]; settings: { foreground: string } }[] = [
 			{ scope: ['constant.language.boolean'], settings: { foreground: '#010016' } },
 			{ scope: ['variable.language'], settings: { foreground: '#010017' } },
 			{ scope: ['constant.language'], settings: { foreground: '#010015' } },
 			{ scope: ['comment'], settings: { foreground: '#010001' } },
-			{ scope: ['keyword'], settings: { foreground: '#010002' } },
 			{ scope: ['keyword.control'], settings: { foreground: '#010003' } },
-			{ scope: ['string'], settings: { foreground: '#010004' } },
+			{ scope: ['keyword'], settings: { foreground: '#010002' } },
 			{ scope: ['string.regexp'], settings: { foreground: '#010005' } },
+			{ scope: ['string'], settings: { foreground: '#010004' } },
 			{ scope: ['constant.numeric'], settings: { foreground: '#010006' } },
 			{ scope: ['constant'], settings: { foreground: '#010007' } },
 			{ scope: ['entity.name.type'], settings: { foreground: '#010008' } },
@@ -231,6 +250,12 @@ describe('applyTheme 的 vscode 代码主题注入（T7）', () => {
 		const el = document.getElementById(id);
 		expect(el).not.toBeNull();
 		expect(el?.innerHTML).toContain('--ts-comment: #ABCDEF');
+		// CSSOM 级防回归（C1）：双重 <style> 包裹会让样式表首条规则的
+		// selectorText 变成 '<style>:root…'（以 '<' 开头非法、整条规则被浏览器
+		// 丢弃），而字符串包含断言对此免疫——故必须断言规则真实可解析。
+		const sheet = (el as HTMLStyleElement | null)?.sheet as CSSStyleSheet | null | undefined;
+		const first = sheet?.cssRules?.[0] as CSSStyleRule | undefined;
+		expect(first?.selectorText).toBe(':root[data-code-theme="vscode:Test"]');
 		expect(document.documentElement.getAttribute('data-code-theme')).toBe('vscode:Test');
 		// 再次 applyTheme 不重复插入。
 		applyTheme();
