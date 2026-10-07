@@ -79,10 +79,15 @@ const spawnHost = async () => {
 afterEach(() => {
 	for (const host of liveHosts) host.dispose();
 	liveHosts.length = 0;
+	// C1 写穿用例 stub 过 matchMedia，逐用例回收防泄漏。
+	vi.unstubAllGlobals();
 });
 
 describe('上游 theme effect 不回滚配色方案选择（T6-fix）', () => {
-	it('上游 theme=light 时选暗色方案：mode/scheme 落地不被回弹，effect 不重放', async () => {
+	// C1 写穿后语义更新：本地动作 setThemeScheme 回写 settings.theme（T4 跨重启成立），
+	// theme effect 因此"按设计"重放一次（runs+1）；重放的 applyAppearanceTheme(新 theme)
+	// 落 setMode(同明暗)，与用户选择一致——断言核心仍是"方案不被回滚"。
+	it('上游 theme=light 时选暗色方案：mode/scheme 落地不被回弹，settings.theme 写穿', async () => {
 		const host = await spawnHost();
 		flushSync(); // 初始执行一次：theme=light → applyAppearanceTheme('light')
 		expect(host.runs).toBe(1);
@@ -92,31 +97,34 @@ describe('上游 theme effect 不回滚配色方案选择（T6-fix）', () => {
 		themeSettingsSlice.setThemeScheme('one-dark');
 		flushSync();
 
-		// 未修复时：切片读被误追踪 → effect 重放（runs=2）→
-		// applyAppearanceTheme('light')→setMode('light') 把方案弹回浅色。
-		expect(host.runs).toBe(1);
+		// 未修复时：切片读被误追踪 → effect 重放后 applyAppearanceTheme('light')
+		// →setMode('light') 把方案弹回浅色。C1 写穿使 effect 有意重放（runs=2），
+		// 但重放收到的是写穿后的 'dark'，不回滚。
+		expect(host.runs).toBe(2);
 		expect(themeSettingsSlice.mode).toBe('dark');
 		expect(themeSettingsSlice.currentSchemeId).toBe('one-dark');
 		const root = document.documentElement;
 		expect(root.getAttribute('data-theme-scheme')).toBe('one-dark');
 		expect(root.getAttribute('data-theme-mode')).toBe('dark');
-		// 上游下拉的选择本身不被修复路径改动。
-		expect(settings.theme).toBe('light');
+		// C1 写穿：本地动作同步回写上游 theme 字段（T4 手动选择跨重启成立的依据）。
+		expect(settings.theme).toBe('dark');
 
 	});
 
 	it('上游 theme=dark 时选亮色方案：双向同理不回弹', async () => {
 		settings.theme = 'dark';
+		themeSettingsSlice.mode = 'dark'; // 持久化态：手动选择过的深色
 		const host = await spawnHost();
 		flushSync();
-		expect(themeSettingsSlice.mode).toBe('dark'); // applyAppearanceTheme('dark')
+		expect(themeSettingsSlice.mode).toBe('dark');
 
 		themeSettingsSlice.setThemeScheme('vue'); // 亮色方案 → mode='light'
 		flushSync();
 
-		expect(host.runs).toBe(1);
+		expect(host.runs).toBe(2); // 写穿 theme='light' 后按设计重放
 		expect(themeSettingsSlice.mode).toBe('light');
 		expect(themeSettingsSlice.currentSchemeId).toBe('vue');
+		expect(settings.theme).toBe('light');
 		const root = document.documentElement;
 		expect(root.getAttribute('data-theme-scheme')).toBe('vue');
 		expect(root.getAttribute('data-theme-mode')).toBe('light');
@@ -130,14 +138,66 @@ describe('上游 theme effect 不回滚配色方案选择（T6-fix）', () => {
 		themeSettingsSlice.setVscodeUi('Monokai Pro');
 		flushSync();
 		expect(themeSettingsSlice.uiThemeSource).toBe('vscode');
+		expect(settings.theme).toBe('vscode:Monokai Pro'); // C1 写穿
 
 		themeSettingsSlice.setThemeScheme('one-dark');
 		flushSync();
 
-		expect(host.runs).toBe(1);
+		// 写穿两次 theme 变更（vscode:X、dark）→ 重放 3 次；重放的 setMode('dark')
+		// 与用户选择一致，不回滚方案、不把 uiThemeSource 拉回 vscode。
+		expect(host.runs).toBe(3);
 		expect(themeSettingsSlice.uiThemeSource).toBe('scheme');
 		expect(themeSettingsSlice.currentSchemeId).toBe('one-dark');
 
+	});
+});
+
+// C1：本地动作写穿 settings.theme 的状态机契约（store 在本文件 import 时构造、
+// 构造器已接线写穿钩子；接线在 loadPersistedSettings 之后，恢复路径不写穿）。
+describe('C1 写穿：本地动作同步回写 settings.theme', () => {
+	it('setFollowSystem(true) → "system"；setFollowSystem(false) → 当前 mode', () => {
+		themeSettingsSlice.setFollowSystem(true);
+		expect(settings.theme).toBe('system');
+
+		themeSettingsSlice.setFollowSystem(false);
+		expect(settings.theme).toBe(themeSettingsSlice.mode);
+		expect(['light', 'dark']).toContain(settings.theme);
+	});
+
+	it("setThemeScheme('one-dark') → 'dark'（按方案明暗写）", () => {
+		themeSettingsSlice.setThemeScheme('one-dark');
+		expect(settings.theme).toBe('dark');
+	});
+
+	it("setMode('light') → 'light'；setVscodeUi → 'vscode:<name>'", () => {
+		themeSettingsSlice.setMode('light');
+		expect(settings.theme).toBe('light');
+
+		themeSettingsSlice.setVscodeUi('Ayu Dark');
+		expect(settings.theme).toBe('vscode:Ayu Dark');
+	});
+
+	it('注册表 load 恢复路径不写穿（钩子接线于 loadPersistedSettings 之后）', async () => {
+		const { writeStoredSetting, SettingsStore } = await import('../stores/settings.svelte.js');
+		localStorage.clear();
+		writeStoredSetting('theme', 'light');
+		writeStoredSetting('theme.followSystem', 'true');
+		vi.stubGlobal('matchMedia', () => ({
+			matches: false,
+			addEventListener: () => {},
+			removeEventListener: () => {},
+		}));
+		const store = new SettingsStore();
+		try {
+			// 存量 load（followSystem=true 经 setFollowSystem 恢复）不得回写 theme 键：
+			// 写穿只覆盖用户动作路径，持久化恢复以存量值为准。
+			expect(store.theme).toBe('light');
+			expect(localStorage.getItem('theme')).toBe('light');
+			expect(store.themeFollowSystem).toBe(true);
+		} finally {
+			store.dispose();
+			localStorage.clear();
+		}
 	});
 });
 

@@ -10,6 +10,22 @@
  */
 export type ThemeMode = 'light' | 'dark';
 
+/**
+ * C1 写穿钩子：本地动作（四个 set 路径）同步回写上游 `settings.theme` 字段。
+ *
+ * why：不写穿则 MarkdownViewer 的 theme effect 每次重启都重放持久化的
+ * settings.theme（默认 'system'），经 applyAppearanceTheme 把 followSystem/mode
+ * 拉回，T4"手动选择退出跟随"跨重启失效（spec 2026-10-07-theme-restore §C1）。
+ * 由 settings.svelte.ts 构造器在 loadPersistedSettings 之后接线——注册表 load
+ * 恢复持久化值的路径不得触发写穿（接线行见 settings.svelte.ts 构造器）。
+ * 本切片不 import settings store：settings→slice 已是依赖方向，反向即成环。
+ */
+let onLocalMutation: ((theme: string) => void) | null = null;
+
+export function setLocalThemeWriter(fn: (theme: string) => void): void {
+	onLocalMutation = fn;
+}
+
 /** 主题表行：id 同时是 styles.css `data-theme-scheme` 选择器的键。 */
 export interface ThemeRow {
 	id: string;
@@ -79,6 +95,7 @@ export class ThemeSettingsSlice {
 		this.themeSchemes[this.mode] = id;
 		this.followSystem = false;
 		this.uiThemeSource = 'scheme';
+		onLocalMutation?.(row.mode); // C1 写穿：按方案明暗回写 settings.theme
 	}
 
 	// 写当前模式的代码主题槽（不动 mode/跟随）。
@@ -90,6 +107,7 @@ export class ThemeSettingsSlice {
 		this.mode = mode;
 		this.followSystem = false;
 		this.uiThemeSource = 'scheme';
+		onLocalMutation?.(mode); // C1 写穿
 	}
 
 	setFollowSystem(on: boolean) {
@@ -103,12 +121,15 @@ export class ThemeSettingsSlice {
 			const mq = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null;
 			this.mode = mq?.matches ? 'dark' : 'light';
 		}
+		// C1 写穿：开启回写 'system'；关闭按当前 mode 回写（重启重放即还原本选择）。
+		onLocalMutation?.(on ? 'system' : this.mode);
 	}
 
 	// uiThemeSource←'vscode'；明暗由 utils/theme.ts 解析 .vsix 后经 data-theme-type 发布。
 	setVscodeUi(name: string) {
 		this.vscodeUiName = name;
 		this.uiThemeSource = 'vscode';
+		onLocalMutation?.(`vscode:${name}`); // C1 写穿
 	}
 
 	// auto 按模式解析为具体代码主题（merge 前语义，供高亮管线与 themeApply 共用）。

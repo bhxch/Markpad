@@ -46,7 +46,7 @@ import {
 import { krokiSettingsSlice } from './slices/krokiSettings.svelte.js';
 import { diagramSettingsSlice } from './slices/diagramSettings.svelte.js';
 // T3: 主题双槽状态本体在 slices/themeSettings 切片，本文件只透传（见下方主题段）。
-import { themeSettingsSlice } from './slices/themeSettings.svelte.js';
+import { themeSettingsSlice, setLocalThemeWriter } from './slices/themeSettings.svelte.js'; // C1 写穿钩子接线（见构造器）
 // T6: data-theme-* / data-code-theme 属性唯一写者迁 utils/themeApply。
 import { applyTheme as applyThemeFromModule, installSystemThemeWatcher } from '../utils/themeApply.js';
 
@@ -707,6 +707,15 @@ export class SettingsStore {
 		};
 
 		loadPersistedSettings(this, entries);
+
+		// C1 写穿接线（spec 2026-10-07-theme-restore §Critical-1）：本地主题动作
+		// 回写上游 theme 字段，使 T4"手动选择退出跟随"跨重启成立（启动重放不再
+		// 把 followSystem/mode 拉回）。必须在 loadPersistedSettings 之后接线：
+		// 注册表 load 恢复持久化值的路径不得触发写穿。启动恢复语义的 hydrate
+		// 闸门在 utils/themeBridge（首播恢复完成后自推进），构造器不置位。
+		setLocalThemeWriter((v) => {
+			this.theme = v as ThemeSetting;
+		});
 
 		// Font families default per OS, and the OS is only known once the
 		// backend answers. Re-apply just the ones the user never picked.

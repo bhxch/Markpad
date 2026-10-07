@@ -76,9 +76,11 @@ describe('applyTheme 属性唯一写者（T6）', () => {
 });
 
 describe('applyAppearanceTheme 上游下拉语义化（T5）', () => {
+	// C1：以下均模拟"启动阶段结束后的用户动作"——先 markHydrated 推进过首播恢复槽。
 	it("light/dark：应用对应槽位方案并退出跟随", async () => {
-		const { applyAppearanceTheme } = await import('./themeBridge.js');
+		const { applyAppearanceTheme, markHydrated } = await import('./themeBridge.js');
 		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		markHydrated();
 		themeSettingsSlice.setFollowSystem(true);
 		applyAppearanceTheme('light');
 		expect(themeSettingsSlice.followSystem).toBe(false);
@@ -86,24 +88,84 @@ describe('applyAppearanceTheme 上游下拉语义化（T5）', () => {
 		expect(themeSettingsSlice.currentSchemeId).toBe('github-light');
 	});
 	it('system：开启跟随', async () => {
-		const { applyAppearanceTheme } = await import('./themeBridge.js');
+		const { applyAppearanceTheme, markHydrated } = await import('./themeBridge.js');
 		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		markHydrated();
 		applyAppearanceTheme('system');
 		expect(themeSettingsSlice.followSystem).toBe(true);
 	});
 	it('vscode:<name>：uiThemeSource 切 vscode', async () => {
-		const { applyAppearanceTheme } = await import('./themeBridge.js');
+		const { applyAppearanceTheme, markHydrated } = await import('./themeBridge.js');
 		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		markHydrated();
 		applyAppearanceTheme('vscode:Monokai Pro');
 		expect(themeSettingsSlice.uiThemeSource).toBe('vscode');
 		expect(themeSettingsSlice.vscodeUiName).toBe('Monokai Pro');
 	});
 	it('vscode 激活态下 system：退 uiThemeSource←scheme 且开启跟随（T5/T7 裁定）', async () => {
-		const { applyAppearanceTheme } = await import('./themeBridge.js');
+		const { applyAppearanceTheme, markHydrated } = await import('./themeBridge.js');
 		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		markHydrated();
 		applyAppearanceTheme('vscode:Monokai Pro');
 		applyAppearanceTheme('system');
 		expect(themeSettingsSlice.uiThemeSource).toBe('scheme');
+		expect(themeSettingsSlice.followSystem).toBe(true);
+	});
+});
+
+// C1（spec 2026-10-07-theme-restore §Critical-1）：启动重放不得改写用户状态。
+// 持久化的 settings.theme 在每次重启都被 MarkdownViewer 的 theme effect 重放
+// （theme='system' 时旧实现 setFollowSystem(true) 强制开跟随并把 mode 拉回系统值），
+// T4"手动选择退出跟随"的裁决因此跨重启失效。恢复语义：hydrate 前的重放只落 DOM
+// 属性（applyTheme），不改切片状态；首播完成后自推进 hydrate，其后是真实用户动作。
+describe('applyAppearanceTheme 启动恢复语义（C1）', () => {
+	it('未 hydrate 首播 system：不强制开跟随、mode 保持持久化值，DOM 按切片落', async () => {
+		const { applyAppearanceTheme } = await import('./themeBridge.js');
+		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		// 模拟注册表 load 后的持久化切片状态：用户手动选过方案（退出跟随 T4）、深色。
+		themeSettingsSlice.followSystem = false;
+		themeSettingsSlice.mode = 'dark';
+		themeSettingsSlice.themeSchemes = { light: 'github-light', dark: 'one-dark' };
+
+		applyAppearanceTheme('system'); // 重启重放 settings.theme='system'
+
+		expect(themeSettingsSlice.followSystem).toBe(false);
+		expect(themeSettingsSlice.mode).toBe('dark');
+		const root = document.documentElement;
+		expect(root.getAttribute('data-theme')).toBe('dark');
+		expect(root.getAttribute('data-theme-mode')).toBe('dark');
+		expect(root.getAttribute('data-theme-scheme')).toBe('one-dark');
+	});
+
+	it('未 hydrate 首播 light/dark：不调 setMode，mode 以持久化值为准', async () => {
+		const { applyAppearanceTheme } = await import('./themeBridge.js');
+		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		themeSettingsSlice.followSystem = true;
+		themeSettingsSlice.mode = 'dark';
+
+		applyAppearanceTheme('light'); // 陈旧 settings.theme='light' 的重启重放
+
+		expect(themeSettingsSlice.followSystem).toBe(true); // 跟随状态不被重放推翻
+		expect(themeSettingsSlice.mode).toBe('dark');
+		expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+	});
+
+	it('首播恢复完成后自推进 hydrate：后续 system 走用户语义（现状行为）', async () => {
+		const { applyAppearanceTheme } = await import('./themeBridge.js');
+		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		applyAppearanceTheme('light'); // 首播（恢复语义，消费 hydrate 槽）
+
+		themeSettingsSlice.followSystem = false;
+		applyAppearanceTheme('system'); // 真实用户动作
+
+		expect(themeSettingsSlice.followSystem).toBe(true);
+	});
+
+	it('markHydrated 显式推进后：system 走断言语义（现状行为）', async () => {
+		const { applyAppearanceTheme, markHydrated } = await import('./themeBridge.js');
+		const { themeSettingsSlice } = await import('../stores/slices/themeSettings.svelte.js');
+		markHydrated();
+		applyAppearanceTheme('system');
 		expect(themeSettingsSlice.followSystem).toBe(true);
 	});
 });
