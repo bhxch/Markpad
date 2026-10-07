@@ -285,18 +285,49 @@ impl TreeSitterHighlighter {
         injections: &str,
         locals: &str,
     ) -> HighlightResult<HighlightConfiguration> {
+        // HighlightConfiguration::new 一次性编译三个 query, 任一失败整体报错。
+        // 上游 Helix 存在 query 领先于 pinned grammar 的失配(如 pkl locals 引用
+        // 尚不存在的 functionLiteralExpr)或 nvim 风格嵌套 (set! ...) 语法
+        // (supercollider locals, 官方 tree-sitter 不支持), 这类语言在 Helix 里
+        // 也是整体放弃。这里改为逐文件预编译降级: highlights 失败才算语言失败,
+        // injections/locals 失败仅跳过该文件, 保住基础高亮。
+        let highlights = Self::sanitize_query(&language, name, "highlights", highlights);
+        let injections = Self::sanitize_query(&language, name, "injections", injections);
+        let locals = Self::sanitize_query(&language, name, "locals", locals);
+
         let mut config = HighlightConfiguration::new(
             language,
             name,
-            highlights,
-            injections,
-            locals,
+            &highlights,
+            &injections,
+            &locals,
         ).map_err(|e| HighlightError::QueryError(format!("Failed to create config: {:?}", e)))?;
-        
+
         // Configure recognized capture names based on our theme
         config.configure(&self.theme.captured_names_in(self.themes_dir.as_deref()));
-        
+
         Ok(config)
+    }
+
+    /// Pre-compile a query; returns the original text if valid, or an empty
+    /// string (with a warning) if the query does not compile against the
+    /// grammar, so a broken auxiliary query cannot sink the language.
+    fn sanitize_query(
+        language: &tree_sitter::Language,
+        name: &str,
+        kind: &str,
+        query: &str,
+    ) -> String {
+        if query.trim().is_empty() {
+            return String::new();
+        }
+        match tree_sitter::Query::new(language, query) {
+            Ok(_) => query.to_string(),
+            Err(e) => {
+                eprintln!("[highlight] Skipping incompatible {} query for {}: {}", kind, name, e);
+                String::new()
+            }
+        }
     }
     
     /// Check if a language is supported.
@@ -565,6 +596,34 @@ mod tests {
         let highlighter = TreeSitterHighlighter::new();
         // Should have some languages registered
         assert!(highlighter.supported_languages().len() > 0);
+    }
+
+    /// 全量兼容性冒烟: 对注册表内每个语言走一遍完整高亮流程
+    /// (query 继承合并 + ts_query_new 校验)。grammar rev 与 Helix queries
+    /// 同源更新, 理论上应 100% 匹配; 失败即说明 parser 与 query 脱节。
+    #[test]
+    fn test_all_languages_query_compatibility() {
+        let highlighter = TreeSitterHighlighter::new();
+        let languages = highlighter.supported_languages();
+        assert!(languages.len() >= 300, "expected >=300 languages, got {}", languages.len());
+
+        let mut failed: Vec<&str> = Vec::new();
+        for name in &languages {
+            let code = match *name {
+                "markdown" | "markdown_inline" => "# Head\n\ntext\n",
+                "json" => "{\"k\": 1}",
+                _ => "x",
+            };
+            if highlighter.highlight(code, name).is_err() {
+                failed.push(name);
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "query/parser mismatch for {} languages: {:?}",
+            failed.len(),
+            failed
+        );
     }
     
     #[test]
