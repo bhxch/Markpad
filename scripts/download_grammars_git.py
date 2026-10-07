@@ -48,8 +48,9 @@ def parse_languages_toml(content: str) -> dict:
 
             while i < len(lines) and not lines[i].strip().startswith('[['):
                 line = lines[i].strip()
-                if line.startswith('name = '):
-                    name = line.split('=', 1)[1].strip().strip('"')
+                name_match = re.match(r'name\s*=\s*"([^"]*)"', line)
+                if name_match:
+                    name = name_match.group(1)
                 elif line.startswith('source = {'):
                     source_line = line
                     while '}' not in source_line and i + 1 < len(lines):
@@ -96,7 +97,7 @@ def download_grammar_git(name: str, info: dict) -> tuple:
     temp_dir = GRAMMARS_DIR / f".tmp_{name}"
 
     try:
-        # Clone with depth 1 and specific revision
+        # Clone with depth 1 and specific revision (works for branches/tags)
         result = subprocess.run(
             ["git", "clone", "--depth", "1", "--branch", rev, git_url, str(temp_dir)],
             capture_output=True,
@@ -105,7 +106,9 @@ def download_grammar_git(name: str, info: dict) -> tuple:
         )
 
         if result.returncode != 0:
-            # Try without branch flag (for older git versions or commit hashes)
+            # Fallback for commit hashes: shallow clone, then verify checkout target
+            # is reachable. A depth-50 clone may not contain an older commit; if the
+            # checkout cannot be verified, fall back to a full (blob-filtered) clone.
             result = subprocess.run(
                 ["git", "clone", "--depth", "50", git_url, str(temp_dir)],
                 capture_output=True,
@@ -116,26 +119,46 @@ def download_grammar_git(name: str, info: dict) -> tuple:
             if result.returncode != 0:
                 return (name, False, f"git clone failed: {result.stderr[:100]}", "")
 
-            # Checkout specific revision
-            subprocess.run(["git", "checkout", rev], cwd=temp_dir, capture_output=True, timeout=30)
+            def _checkout_ok(cwd: str) -> bool:
+                probe = subprocess.run(
+                    ["git", "cat-file", "-e", f"{rev}^{{commit}}"],
+                    cwd=cwd, capture_output=True, timeout=30
+                )
+                if probe.returncode != 0:
+                    return False
+                co = subprocess.run(
+                    ["git", "checkout", rev], cwd=cwd, capture_output=True, timeout=60
+                )
+                return co.returncode == 0
 
-        # Copy the required files
+            if not _checkout_ok(str(temp_dir)):
+                # Commit not in shallow history: full clone with blob filter
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                result = subprocess.run(
+                    ["git", "clone", "--filter=blob:none", git_url, str(temp_dir)],
+                    capture_output=True,
+                    text=True,
+                    timeout=600
+                )
+                if result.returncode != 0:
+                    return (name, False, f"git clone failed: {result.stderr[:100]}", "")
+                if not _checkout_ok(str(temp_dir)):
+                    return (name, False, f"checkout {rev[:12]} failed in full clone", "")
+
+        # Copy the whole repo (excluding .git) so intra-repo shared assets stay
+        # reachable: subpath grammars reference sibling dirs like common/scanner.h
+        # from their scanners (fsharp/typescript/php/...), which would break if
+        # only the subpath/src tree were copied.
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        shutil.copytree(temp_dir, target_dir,
+                        ignore=shutil.ignore_patterns('.git'))
+
+        # Copy grammar-vendored queries if available
         if subpath:
             src_dir = temp_dir / subpath
         else:
             src_dir = temp_dir
-
-        # Copy src directory
-        src_path = src_dir / "src"
-        if src_path.exists():
-            # For grammars with subpath, build.rs expects grammars/<name>/<subpath>/src/
-            if subpath:
-                target_src = target_dir / subpath / "src"
-            else:
-                target_src = target_dir / "src"
-            shutil.copytree(src_path, target_src)
-
-        # Copy queries if available
         queries_path = src_dir / "queries"
         if queries_path.exists():
             target_queries = QUERIES_DIR / name
