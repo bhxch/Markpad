@@ -720,6 +720,7 @@ ${getTreeSitterStyles(theme)}
 	position: absolute;
 	top: 8px;
 	right: 8px;
+	z-index: 10; /* T2: 切 code 后 pre(position:relative) 按 DOM 序绘制，无此层按钮被盖住无法切回 */
 	width: 28px;
 	height: 28px;
 	background-color: var(--color-canvas-default);

@@ -115,6 +115,12 @@ describe('HTML 导出 diagram 切换按钮', () => {
 			/show-source[^{]*data-diagram-code[^{]*\{[^}]*display:\s*block/,
 		);
 	});
+
+	it('T2: 导出模板 .diagram-toggle-btn 带 z-index，切 code 后按钮不被 pre 盖住（可命中）', async () => {
+		const out = await generateExportHtml(makeContainerWithDiagram(), false, 'a4', false, '测试');
+		const btnRule = out.match(/\.diagram-toggle-btn\s*\{[^}]*\}/)?.[0] ?? '';
+		expect(btnRule).toMatch(/z-index:\s*10/);
+	});
 });
 
 describe('frontmatter 面板清理（Task 14 ①）', () => {
