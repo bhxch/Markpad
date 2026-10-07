@@ -599,7 +599,7 @@ export class SettingsStore {
 	// replaced and why the two of them were never independent.
 	autoSave = $state(DEFAULT_AUTO_SAVE);
 
-	// ==== 本地独有键切片透传（kroki.host / diagram.*；主题键见下方独立段）====
+	// ==== 本地独有键切片透传（T3 起 kroki.host / diagram.*；主题键见下方独立段）====
 	// 状态本体在 slices/ 下的切片单例中；持久化只走 createSettingsPersistence()
 	// 注册表条目（见文件底部），切片自身的 load()/persist() 不再调用，避免同一键双写。
 	// Kroki 自定义 host（支持自托管）
@@ -719,9 +719,9 @@ export class SettingsStore {
 
 		this.#disposeEffects = $effect.root(() => {
 			installPersistedSettings(this, entries);
-			// Apply the local theme scheme and code theme onto the document
-			// (`data-theme-*` / `data-code-theme`, see styles.css). Reading
-			// themeScheme and codeTheme here re-runs it whenever either changes.
+			// T6: applyTheme 委托 utils/themeApply 唯一写者落 data-theme-* / data-code-theme；
+			// effect 经透传 getter 追踪切片状态（mode/双槽/followSystem/uiThemeSource），
+			// 任一变化即重放全部四属性。
 			$effect(() => {
 				this.applyTheme();
 			});
@@ -1216,11 +1216,12 @@ export function createSettingsPersistence(): PersistedSetting<SettingsStore>[] {
 				if (v?.light) themeSettingsSlice.codeThemesByMode = { light: String(v.light), dark: String(v.dark ?? 'auto') };
 			},
 		},
-		// T4: read 经透传 getter 追踪切片状态；load 走 setFollowSystem（开启即取系统明暗）。
-		booleanSetting('theme.followSystem', (s) => s.themeFollowSystem, (s, v) => { themeSettingsSlice.setFollowSystem(v); }),
-		// T4: mode 只接受合法枚举，损坏存量回退切片自身缺省。
+		// T4: mode 先恢复（只接受合法枚举，损坏存量回退切片自身缺省）。
 		stringSetting('theme.mode', (s) => s.themeMode, (s, v) => { if (v === 'light' || v === 'dark') themeSettingsSlice.mode = v; }),
-		// kroki / diagram 的状态经透传访问器落在切片单例中。
+		// T4: followSystem 必须后于 mode 恢复——loadPersistedSettings 按数组顺序同步执行，
+		// setFollowSystem(true) 会从系统明暗重推导 mode，先恢复会被随后的存量 mode 盖回陈旧值。
+		booleanSetting('theme.followSystem', (s) => s.themeFollowSystem, (s, v) => { themeSettingsSlice.setFollowSystem(v); }),
+		// T3: kroki / diagram 的状态经透传访问器落在切片单例中（原 code.theme 键退役，迁主题段）。
 		stringSetting('kroki.host', (s) => s.krokiHost, (s, v) => { s.krokiHost = v; }),
 		{
 			key: 'diagram.settings',
