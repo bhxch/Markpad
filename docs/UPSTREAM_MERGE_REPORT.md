@@ -189,7 +189,7 @@ cargo check
 | D12 | 图表分发由本地 pipeline 接管，上游 `rememberDiagramSource` 单写者约定不适用 |
 | D13 | `stores/tabs.svelte.ts` 整文件取上游（1241 行为本地 372 行语义超集），分屏/滚动同步/最近关闭由上游版承接 |
 | D14 | Home 菜单 / MoreMenu / metadata 弹窗由上游承接退役；本地 `export`/`vim_mode`/`zen_mode`/`metadata`/`theme_scheme`/`code_theme` 六动作注册进上游 `titlebarToolbar.ts` 注册表；Home 菜单仅保留 fork URL（`bhxch/Markpad`） |
-| D15 | YouTube 保留本地内嵌（`replaceWithYoutubeEmbed` + frame-src youtube.com），不采纳上游缩略图方案。初版合并曾静默丢失渲染端（仅剩无生产端的 frame-src），审查修复已回挂（`18dbf78`）并 fork 化对应测试（`9e5c5ef`） |
+| D15 | **已废弃（2026-10-07 用户终裁）**：内嵌 iframe 系上游 #47 旧特性而非本地独有，上游 #338/#388 已自行演进为缩略图外链方案，按"本地从上游移植的副本回归上游原版"规则跟随上游。初版合并曾静默丢失渲染端，审查修复曾回挂（`18dbf78`），终裁后反转回归上游版（`c6803dd`）：`replaceWithYoutubeLink` + CSP 删 frame-src，测试恢复上游契约并新增本地轨缩略图行为测试 |
 | D17 | 测试三轨：上游 node --test 轨 + upstream-spec vitest 轨 + local-unit vitest 轨 |
 
 ## 验证（四门 + 差分归类）
@@ -211,7 +211,7 @@ cargo check
 终审代码审查发现并修复的问题（按批次）：
 
 1. **export.ts 域**：`save_file_content` 调用补 `encoding` 参数（缺失会使 HTML 导出保存必败，spec §6.8 规划项被初版遗漏）；导出 HTML 内容宽度随预览设置派生（吸收上游 #467）；删零调用 `detectPlatform`；导出宽度契约改指本地管线。
-2. **D15 恢复**：回挂 YouTube 内嵌 iframe 播放与 `.video-container` CSS（初版合并静默丢失），删除上游缩略图方案，本地轨新增行为测试填补守护盲区。
+2. **D15**：审查修复曾回挂内嵌播放（`18dbf78`/`9e5c5ef`）；经用户终裁确认内嵌系上游旧特性后反转回归上游缩略图外链方案（`c6803dd`），CSP 删 frame-src，本地轨保留行为测试。
 3. **测试收敛**：editorTheme 定位、previewAnchorRestore 形状、mermaid/iframe/connect-src/PDF 导出五条规则按 fork 契约改写；local-unit 超时放宽至 15s 消除全量并行 flaky；导出接线测试加固。
 4. **后端与配置**：删 slices 死持久化方法与 chrono/directories 零消费者依赖；CSP 收紧零消费者 Google Fonts 项；VSCode 主题读端改用 `app_config_dir` 同源路径（修复导入 .vsix 主题后代码块不着色的既有缺陷，Linux/Windows 双平台错位）；按 spec §6.8 注册 save_file_binary/delete_file/cleanup_empty_img_dir 储备命令（三命令实现自上游 v2.6.2 `79b697e` 恢复并改写为本仓现行风格）；退役本地 KaTeX 死分支（math 渲染由后端预处理 + 上游 richContent 完整接管）；semantic.rs 补记 latex 定界符预处理的着色差异注释。
 5. **a11y**：ZoomOverlay/ExportModal 的 4 处 svelte-check 警告治理，基线归零。
@@ -225,7 +225,7 @@ Task 18 交接的人工冒烟清单（acceptance-smoke 报告 §4）存在两处
 
 ### updater 端点提示
 
-`src-tauri/tauri.conf.json` 的 updater endpoint 指向上游 `https://github.com/sftwrdotdev/Markpad/releases/latest/download/latest.json`（spec D10 采纳上游配置）。后果：fork 用户在应用内"检查更新"会拉到**上游构建**并可能被上游版本号覆盖。若需指向自己的发布渠道，需同时修改 endpoint 与 `plugins.updater.pubkey`（当前 pubkey 为上游签名密钥，自建发布必须换自己的密钥对）。记录为已知事项，本次不改动。
+`src-tauri/tauri.conf.json` 的 updater endpoint 指向上游 `https://github.com/sftwrdotdev/Markpad/releases/latest/download/latest.json`（spec D10 采纳上游配置）。后果：fork 用户在应用内"检查更新"会拉到**上游构建**并可能被上游版本号覆盖。若需指向自己的发布渠道，需同时修改 endpoint 与 `plugins.updater.pubkey`（当前 pubkey 为上游签名密钥，自建发布必须换自己的密钥对）。2026-10-07 用户终裁：维持现状（fork 暂不自主发版）。
 
 ## 遗留已知问题与限制
 
@@ -236,7 +236,7 @@ Task 18 交接的人工冒烟清单（acceptance-smoke 报告 §4）存在两处
    - `themeScheme` 跨窗口同步依赖上游窗口体系，多窗口场景未专项验证；
    - 导出 `rewriteMarkdownHrefForExport` 将相对 `.txt` 链接一并改写为 `.html`（语义吸收，已披露接受）；
    - 导出截断守卫存在 tab 切换竞态（窗口极小概率触发）；
-   - i18n 迁移词条仅 en/zh 双语；口径说明：本地合并前活键 26 个（spec §5.4 实测），其中 7 键新增迁入上游 locales、19 键复用上游现有键或由上游动作承接，仅预览右键菜单 undo/redo 两键未随迁移（编辑器 Ctrl+Z/Y 与 Monaco 自带右键菜单为等价物，是否补回预览侧入口待裁决）；
+   - i18n 迁移词条仅 en/zh 双语；口径说明：本地合并前活键 26 个（spec §5.4 实测），其中 7 键新增迁入上游 locales、19 键复用上游现有键或由上游动作承接，仅预览右键菜单 undo/redo 两键未随迁移（2026-10-07 用户终裁接受现状：编辑操作属编辑器侧，Monaco 自带右键与 Ctrl+Z/Y 为等价物）；
    - 上游轨测试的 monacoStartupGraph 依赖显式文件路径导入（`./pipeline/index`），后续新增目录导入需沿用该写法。
 
 ## 文件变更摘要（相对 master 30ee4f3）
