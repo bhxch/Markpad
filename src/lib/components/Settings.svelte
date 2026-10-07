@@ -29,6 +29,7 @@
 	import type { LanguageCode } from '../utils/i18n.js';
 	import DiagramSettingsSection from './local/DiagramSettingsSection.svelte';
 	import ThemeSettingsSection from './local/ThemeSettingsSection.svelte';
+	import { themeSettingsSlice } from '../stores/slices/themeSettings.svelte.js';
 	import { getEditorToolbarTools } from '../utils/editorToolbar.js';
 	import { getTitlebarToolbarActions, type TitlebarToolbarPlacement } from '../utils/titlebarToolbar.js';
 	import {
@@ -643,6 +644,7 @@
 	async function deleteTheme(name: string) {
 		try {
 			await invoke('delete_vscode_theme', { name });
+			themeSettingsSlice.pruneDeletedVscodeCodeTheme(name); // T7/I2: 删除正用作代码主题的 VSCode 主题，双槽引用回落 auto
 			if (theme === `vscode:${name}`) onSetTheme?.('system');
 			await loadVscodeThemes();
 		} catch (e) {

@@ -132,6 +132,18 @@ export class ThemeSettingsSlice {
 		onLocalMutation?.(`vscode:${name}`); // C1 写穿
 	}
 
+	/**
+	 * I2：删除 VSCode 主题时调用——两槽中值恰为 `vscode:<name>` 的槽回落 'auto'
+	 * （直接字段赋值，不经写穿：代码主题不映射 settings.theme）。currentCodeTheme
+	 * 受影响时由 settings store 的 applyTheme effect 自动重放 data-code-theme。
+	 */
+	pruneDeletedVscodeCodeTheme(name: string) {
+		const id = `vscode:${name}`;
+		for (const mode of ['light', 'dark'] as const) {
+			if (this.codeThemesByMode[mode] === id) this.codeThemesByMode[mode] = 'auto';
+		}
+	}
+
 	// auto 按模式解析为具体代码主题（merge 前语义，供高亮管线与 themeApply 共用）。
 	resolveCodeTheme(mode: ThemeMode = this.mode): string {
 		const v = this.codeThemesByMode[mode];

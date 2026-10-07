@@ -44,7 +44,12 @@ export function applyTheme(): void {
 		const id = `ts-vscode-theme-${codeTheme}`;
 		if (!document.getElementById(id)) {
 			void buildVscodeCodeThemeStyle(codeTheme.slice('vscode:'.length)).then((style) => {
-				if (!style || document.getElementById(id)) return;
+				// I2：构建返回空串（主题已删/读取失败）时移除同 id 旧标签，不留孤儿样式。
+				if (!style) {
+					document.getElementById(id)?.remove();
+					return;
+				}
+				if (document.getElementById(id)) return;
 				const el = document.createElement('style');
 				el.id = id;
 				// 裸规则文本写 textContent（fix C1）：innerHTML 会把文本当元素内容而非
@@ -53,6 +58,11 @@ export function applyTheme(): void {
 				document.head.appendChild(el);
 			});
 		}
+	} else {
+		// I2：代码主题离开 vscode:<name>（含删除主题回落 auto）时，遗留的 --ts-*
+		// 注入标签选择器不再命中 data-code-theme，但不残留——活动代码主题唯一，
+		// 非 vscode 态下现存 ts 标签全部为陈旧项。
+		document.querySelectorAll('style[id^="ts-vscode-theme-"]').forEach((el) => el.remove());
 	}
 	// T6-fix（mermaid 触发链补偿）：untrack 修复后，MarkdownViewer 的上游 theme
 	// effect 只依赖 settings.theme，纯配色方案切换（setThemeScheme 直写切片、不经

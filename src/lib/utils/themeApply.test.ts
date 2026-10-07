@@ -435,3 +435,49 @@ describe('buildVscodeCodeThemeStyle 注入校验（C2/P1-C-3）', () => {
 	});
 });
 
+
+// I2（spec 2026-10-07-theme-restore §Important-2）：删除正用作代码主题的 VSCode
+// 主题。a) slice 两槽中引用被删主题的槽回落 'auto'（applyTheme effect 随状态重放，
+// data-code-theme 解析回内置主题）；b) 注入路径在构建返回空串（主题已删/读取失败）
+// 时移除同 id 旧标签，不留孤儿样式。
+describe('删除正用作代码主题的 VSCode 主题（I2）', () => {
+	const tick = () => new Promise((r) => setTimeout(r, 0));
+
+	it('pruneDeletedVscodeCodeTheme：受影响槽回落 auto，重放解析为内置主题', async () => {
+		const { slice, applyTheme } = await load();
+		slice.mode = 'dark';
+		slice.setCodeTheme('vscode:Gone');
+		slice.mode = 'light';
+		slice.setCodeTheme('vscode:Alive');
+		slice.mode = 'dark'; // 当前生效槽即被删主题
+
+		slice.pruneDeletedVscodeCodeTheme('Gone');
+
+		expect(slice.codeThemesByMode.dark).toBe('auto');
+		expect(slice.codeThemesByMode.light).toBe('vscode:Alive'); // 未被删主题不受影响
+
+		applyTheme(); // 状态变化重放（真实应用由 store 的 applyTheme effect 承担）
+		expect(document.documentElement.getAttribute('data-code-theme')).toBe('dark-modern');
+	});
+
+	it('回落 auto（删除主题）后重放：data-code-theme 解析内置主题且旧 --ts-* 标签不残留', async () => {
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'read_vscode_theme'
+				? JSON.stringify({ tokenColors: [{ scope: 'comment', settings: { foreground: '#ABCDEF' } }] })
+				: '[]'
+		);
+		const { slice, applyTheme } = await load();
+		slice.setCodeTheme('vscode:Temp');
+		applyTheme();
+		await tick();
+		expect(document.getElementById('ts-vscode-theme-vscode:Temp')).not.toBeNull();
+
+		// 主题被删：prune 回落 auto（Settings.deleteTheme 接线的行为）→ 状态变化重放。
+		slice.pruneDeletedVscodeCodeTheme('Temp');
+		applyTheme();
+		await tick();
+
+		expect(document.documentElement.getAttribute('data-code-theme')).toBe('dark-modern');
+		expect(document.getElementById('ts-vscode-theme-vscode:Temp')).toBeNull();
+	});
+});

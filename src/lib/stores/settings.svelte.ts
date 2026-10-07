@@ -27,6 +27,7 @@ import {
 	normalizeTitlebarToolbarPlacement,
 	type TitlebarToolbarPlacement,
 } from '../utils/titlebarToolbar.js';
+import { migrateLegacyThemePlacement } from '../utils/titlebarMigration.js'; // I1: 存量 placement 一次性迁移（见 titlebar.toolbarPlacement load）
 import {
 	DEFAULT_PREVIEW_MAX_WIDTH,
 	getStoredPreviewFullWidth,
@@ -1174,7 +1175,14 @@ export function createSettingsPersistence(): PersistedSetting<SettingsStore>[] {
 		{
 			key: 'titlebar.toolbarPlacement',
 			read: (s) => JSON.stringify(normalizeTitlebarToolbarPlacement(s.titlebarToolbarPlacement)),
-			load: (s, raw) => { s.titlebarToolbarPlacement = normalizeTitlebarToolbarPlacement(parseStoredRecord(raw)); },
+			load: (s, raw) => {
+				const parsed = parseStoredRecord(raw);
+				// I1: 存量表恰为旧默认表（theme_scheme/code_theme 为 'menu'）= 从未自定义，
+				// 重置为新默认表（T8 栏上常驻对存量安装生效）；真自定义过则原样归一化。
+				s.titlebarToolbarPlacement = normalizeTitlebarToolbarPlacement(
+					migrateLegacyThemePlacement(parsed) ? null : parsed,
+				);
+			},
 		},
 		stringSetting('editor.font', (s) => s.editorFont, (s, v) => { s.editorFont = v; }),
 		numberSetting('editor.fontSize', EDITOR_FONT_SIZE_RANGE, (s) => s.editorFontSize, (s, v) => { s.editorFontSize = v; }),
