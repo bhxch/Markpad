@@ -595,11 +595,8 @@ test('a checkbox outside a list item is left alone by the task pass', () => {
 const MEDIA_FIXTURES = [
 	{ name: 'videoImage', selector: 'video' },
 	{ name: 'audioImage', selector: 'audio' },
-	// The source range lives on the container — the block scroll sync maps —
-	// while the iframe inside it is a pure viewport; youtubeExternalFallback
-	// pins the iframe itself.
-	{ name: 'youtubeImage', selector: '.video-container' },
-	{ name: 'youtubeLink', selector: '.video-container' },
+	{ name: 'youtubeImage', selector: 'a.youtube-link' },
+	{ name: 'youtubeLink', selector: 'a.youtube-link' },
 ] as const satisfies readonly { name: FixtureName; selector: string }[];
 
 /** The range comrak put on the element the substitution consumed. */
