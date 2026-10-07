@@ -8,6 +8,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { themeSettingsSlice } from '../stores/slices/themeSettings.svelte.js';
+import { isSafeCssColor } from './cssColor.js'; // C2：P1-C-3 校验器（叶子模块，见 cssColor.ts 头注）
 
 let systemWatcherDisposer: (() => void) | null = null;
 
@@ -146,6 +147,24 @@ interface TokenRule {
 }
 
 /**
+ * C2：fontStyle 白名单（P1-C-3 同规格）。.vsix 的 fontStyle 是自由文本，直接插值
+ * 可闭合声明块注入新规则（`italic; } *{...}`）。只接受词表成员的空白分隔组合，
+ * 含任何表外词整段丢弃；命中词映射为合法 CSS 声明（font-style: bold 非法）。
+ */
+const FONT_STYLE_DECLARATIONS: Record<string, string> = {
+	italic: 'font-style: italic',
+	bold: 'font-weight: bold',
+	underline: 'text-decoration-line: underline',
+	strikethrough: 'text-decoration-line: line-through',
+};
+
+function safeFontStyleDeclarations(value: string): string[] {
+	const words = value.trim().split(/\s+/).filter(Boolean);
+	if (!words.length || !words.every((w) => w in FONT_STYLE_DECLARATIONS)) return [];
+	return words.map((w) => FONT_STYLE_DECLARATIONS[w]);
+}
+
+/**
  * T7（本任务实装）：vscode:<name> 代码主题的 --ts-* 注入。
  * 返回裸 CSS 规则文本（fix C1：不含 <style> 包裹——包裹由调用方写
  * <style> 元素完成；若在此包裹，注入后样式表内容以字面量 '<' 开头，
@@ -169,13 +188,15 @@ export async function buildVscodeCodeThemeStyle(name: string): Promise<string> {
 		const decls: string[] = [];
 		for (const [variable, scopes] of Object.entries(TS_TOKEN_SCOPE_MAP)) {
 			const settings = settingsOf(scopes);
-			if (!settings?.foreground) continue; // 未命中不产声明，CSS 回落
-			const font = settings.fontStyle ? `; font-style: ${settings.fontStyle}` : '';
-			decls.push(`${variable}: ${settings.foreground}${font}`);
+			// C2：foreground 过 P1-C-3 颜色校验，非颜色字面量不产声明（CSS 回落）。
+			if (!settings?.foreground || !isSafeCssColor(settings.foreground)) continue;
+			const extra = settings.fontStyle ? safeFontStyleDeclarations(settings.fontStyle) : [];
+			decls.push([`${variable}: ${settings.foreground.trim()}`, ...extra].join('; '));
 		}
 		if (!decls.length) return '';
-		// 选择器里的主题名是 CSS 字符串字面量，需转义引号与反斜杠以匹配原始值。
-		const cssName = name.replace(/[\\"]/g, '\\$&');
+		// 选择器里的主题名是 CSS 字符串字面量，需转义引号、反斜杠与 `]`
+		// （C2：防属性选择器被截断/伪造），以匹配原始值。
+		const cssName = name.replace(/[\\\]"]/g, '\\$&');
 		return `:root[data-code-theme="vscode:${cssName}"] { ${decls.join('; ')}; }`;
 	} catch {
 		return '';

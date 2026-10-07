@@ -4,61 +4,10 @@ import { semanticTokenRules } from './editorTheme.js';
 import { themeSettingsSlice } from '../stores/slices/themeSettings.svelte.js';
 import { applyAppearanceTheme } from './themeBridge.js';
 import { applyTheme } from './themeApply.js';
-
-// Values taken from an imported VS Code theme end up concatenated into a global
-// `<style>` block. Anything that is not a colour literal could close the rule and
-// open a new one (`#fff; } * { display:none; background-image:url(https://evil) } :root {`),
-// which repaints or hides the whole UI on every launch because the theme name is
-// persisted. Validate before the value is ever interpolated.
-const hexColorPattern = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
-const numericComponent = String.raw`(?:\d{1,3}(?:\.\d+)?%?)`;
-const alphaComponent = String.raw`(?:\d{1,3}(?:\.\d+)?%?|\.\d+)`;
-const rgbColorPattern = new RegExp(
-	`^rgba?\\(\\s*${numericComponent}\\s*(?:,\\s*${numericComponent}\\s*){2}(?:,\\s*${alphaComponent}\\s*)?\\)$`,
-	'i',
-);
-const rgbSpaceColorPattern = new RegExp(
-	`^rgba?\\(\\s*${numericComponent}\\s+${numericComponent}\\s+${numericComponent}\\s*(?:\\/\\s*${alphaComponent}\\s*)?\\)$`,
-	'i',
-);
-
-const namedColors = new Set([
-	'transparent',
-	'currentcolor',
-	'black',
-	'silver',
-	'gray',
-	'grey',
-	'white',
-	'maroon',
-	'red',
-	'purple',
-	'fuchsia',
-	'green',
-	'lime',
-	'olive',
-	'yellow',
-	'navy',
-	'blue',
-	'teal',
-	'aqua',
-	'cyan',
-	'magenta',
-	'orange',
-]);
-
-export function isSafeCssColor(value: unknown): value is string {
-	if (typeof value !== 'string') return false;
-	const trimmed = value.trim();
-	if (!trimmed || trimmed.length > 64) return false;
-	if (hexColorPattern.test(trimmed)) return true;
-	if (rgbColorPattern.test(trimmed) || rgbSpaceColorPattern.test(trimmed)) return true;
-	return namedColors.has(trimmed.toLowerCase());
-}
-
-export function isHexColor(value: unknown): value is string {
-	return typeof value === 'string' && hexColorPattern.test(value.trim());
-}
+// P1-C-3 校验器迁出为叶子模块（C2：themeApply 的代码主题注入共用，避免环），
+// 此处重导出保持既有消费点（scripts/themeCssValidation.spec.ts 等）不变。
+import { isSafeCssColor, isHexColor } from './cssColor.js';
+export { isSafeCssColor, isHexColor };
 
 /**
  * Drop every entry whose value is not a colour literal. Callers then fall through

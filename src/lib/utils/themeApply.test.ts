@@ -342,3 +342,96 @@ describe('applyTheme 的 vscode 代码主题注入（T7）', () => {
 	});
 });
 
+// C2（P1-C-3 同规格移植到代码主题注入路径）：vscode:<name> 的 --ts-* 注入把
+// .vsix 的 foreground/fontStyle/主题名插值进全局样式表，主题名持久化——未校验值
+// 是"每次启动重放的永久 UI 接管"（scripts/themeCssValidation.spec.ts 同源威胁模型）。
+describe('buildVscodeCodeThemeStyle 注入校验（C2/P1-C-3）', () => {
+	it('恶意 foreground 不产声明：无法闭合规则块或注入新规则', async () => {
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'read_vscode_theme'
+				? JSON.stringify({
+						tokenColors: [
+							{ scope: 'comment', settings: { foreground: 'red; } body { background: url(evil)' } },
+							{ scope: 'keyword', settings: { foreground: '#123456' } }
+						]
+					})
+				: '[]'
+		);
+		const { buildVscodeCodeThemeStyle } = await import('./themeApply.js');
+		const style = await buildVscodeCodeThemeStyle('Evil');
+		expect(style).not.toContain('url(evil)');
+		expect(style).not.toContain('body {');
+		expect(style).toMatch(/--ts-keyword:\s*#123456/i); // 合法值不受影响
+		// CSSOM 级：payload 未能分裂规则——整条可解析且恰一条、选择器未被逃逸。
+		const el = document.createElement('style');
+		el.textContent = style;
+		document.head.appendChild(el);
+		try {
+			expect(el.sheet?.cssRules).toHaveLength(1);
+			expect((el.sheet?.cssRules?.[0] as CSSStyleRule)?.selectorText).toBe(
+				':root[data-code-theme="vscode:Evil"]',
+			);
+		} finally {
+			el.remove();
+		}
+	});
+
+	it('白名单外 fontStyle 整段丢弃，颜色保留', async () => {
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'read_vscode_theme'
+				? JSON.stringify({
+						tokenColors: [
+							{ scope: 'comment', settings: { foreground: '#ABCDEF', fontStyle: 'italic; } *{behavior:url(evil)' } }
+						]
+					})
+				: '[]'
+		);
+		const { buildVscodeCodeThemeStyle } = await import('./themeApply.js');
+		const style = await buildVscodeCodeThemeStyle('Evil');
+		expect(style).not.toContain('behavior');
+		expect(style).not.toContain('font-style'); // 整段丢弃：无任何 font-style 声明
+		expect(style).toMatch(/--ts-comment:\s*#ABCDEF/i); // 颜色保留
+	});
+
+	it('白名单 fontStyle 组合词映射为合法声明（italic bold → font-style+font-weight）', async () => {
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'read_vscode_theme'
+				? JSON.stringify({
+						tokenColors: [{ scope: 'comment', settings: { foreground: '#ABCDEF', fontStyle: 'italic bold' } }]
+					})
+				: '[]'
+		);
+		const { buildVscodeCodeThemeStyle } = await import('./themeApply.js');
+		const style = await buildVscodeCodeThemeStyle('Combo');
+		expect(style).toContain('font-style: italic');
+		expect(style).toContain('font-weight: bold');
+		expect(style).not.toContain('underline');
+	});
+
+	it('主题名含 ]：转义为 \\] 后规则可解析、选择器语义保留', async () => {
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'read_vscode_theme'
+				? JSON.stringify({ tokenColors: [{ scope: 'comment', settings: { foreground: '#ABCDEF' } }] })
+				: '[]'
+		);
+		const { buildVscodeCodeThemeStyle } = await import('./themeApply.js');
+		const style = await buildVscodeCodeThemeStyle('A]B');
+		// 字符串级：名称中的 ] 必须以转义形态出现在选择器里（未转义值不得出现）。
+		expect(style).toContain('vscode:A\\]B');
+		expect(style).not.toContain('vscode:A]B');
+		// CSSOM 级：转义后的选择器可解析（happy-dom 的 matches 不支持字符串内 \]
+		// 转义，浏览器按 CSS 规范支持；此处断言本环境可观测的解析与回读语义）。
+		const el = document.createElement('style');
+		el.textContent = style;
+		document.head.appendChild(el);
+		try {
+			expect(el.sheet?.cssRules).toHaveLength(1);
+			expect((el.sheet?.cssRules?.[0] as CSSStyleRule)?.selectorText).toBe(
+				':root[data-code-theme="vscode:A\\]B"]',
+			);
+		} finally {
+			el.remove();
+		}
+	});
+});
+
