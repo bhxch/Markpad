@@ -53,6 +53,33 @@ export function applyTheme(): void {
 			});
 		}
 	}
+	// T6-fix（mermaid 触发链补偿）：untrack 修复后，MarkdownViewer 的上游 theme
+	// effect 只依赖 settings.theme，纯配色方案切换（setThemeScheme 直写切片、不经
+	// settings.theme）不再重放该 effect——syncMermaidTheme 原本由那次缺陷重放"误触"
+	// 执行的链路断掉。本函数是属性唯一写者，settings store 的 applyTheme effect 在
+	// 任一切片主题态变化时都重放到这里，mermaid 单例配置随属性重放同步刷新（后续
+	// 渲染取到新主题；渲染前 diagrams.ts 另有再同步兜底）。
+	// 接线用钩子而非本模块直接 import diagrams：diagrams → settings store → 本模块
+	// 已是既成依赖方向，本模块再指向 diagrams 即成环；且 store 构造期（$effect.root
+	// 首次重放同步执行）正处于 settings 模块求值中，vitest mocker 因 diagrams 子图
+	// 携带被 mock 依赖而等待在途测试模块，任何形式（同步/微任务/宏任务延迟）的
+	// 反向 import 都被按环语义提前兑现部分命名空间，diagrams 模块体不执行、模块级
+	// let 落入永久 TDZ（实测）。钩子由 pipeline/diagrams.ts 在自身模块作用域注册
+	// （diagrams → 本模块是无环新边，本模块对 diagrams 零依赖），未注册前本函数
+	// 对 mermaid 不可知，行为同旧版。钩子内 syncMermaidTheme 只读切片并写 mermaid
+	// 配置：在 store 的 applyTheme effect 里被追踪的读是其既有追踪面的子集，
+	// 不新增依赖边、不成环。
+	themeAppliedHook?.();
+}
+
+/**
+ * applyTheme 属性重放后的附加钩子（T6-fix mermaid 触发链补偿的接线点）。
+ * 由 pipeline/diagrams.ts 模块作用域注册为 syncMermaidTheme，见 applyTheme 内注释。
+ */
+let themeAppliedHook: (() => void) | null = null;
+
+export function setThemeAppliedHook(hook: () => void): void {
+	themeAppliedHook = hook;
 }
 
 /** 跟随系统：prefers-color-scheme 变化时切槽位组合（T4）。重复安装幂等。 */

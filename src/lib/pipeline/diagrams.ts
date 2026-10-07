@@ -6,6 +6,7 @@
 // - syncMermaidTheme：mermaid 主题判定 + initialize（原 $effect.pre 主题段）
 // - ensureMermaidInitialized / getMermaid：mermaid 单实例闸门（spec D12：全仓只允许经本模块 import('mermaid')）
 import { settings } from '../stores/settings.svelte.js';
+import { setThemeAppliedHook } from '../utils/themeApply.js';
 import { DIAGRAM_ALIASES, getDiagramType } from '../diagrams';
 import { renderLocalDiagram, supportsLocalRender, renderRustDiagram, supportsRustRender } from '../localRenderers';
 import { createKrokiUrl } from '../kroki';
@@ -63,6 +64,14 @@ export function syncMermaidTheme(): 'default' | 'dark' {
   }
   return mTheme;
 }
+
+// T6-fix：mermaid 触发链补偿——把主题再同步挂到 themeApply 的属性重放钩子上
+// （接线缘由见 utils/themeApply.applyTheme 内注释）。本模块是 mermaid 单例唯一
+// 所有者（D12），由本模块在模块作用域自注册，utils/themeApply 对本模块零依赖
+// （反向 import 会成环并在 vitest mocker 下毒化模块求值，实测）。未注册前
+// applyTheme 对 mermaid 不可知，与旧版行为一致；注册后任一切片主题态变化重放
+// applyTheme 即再同步单例配置，"配色方案切换后 mermaid 主题仍会刷新"由此恢复。
+setThemeAppliedHook(syncMermaidTheme);
 
 // ---------------------------------------------------------------------------
 // hljs / katex 懒加载（原 MV 组件 $state 自持；动态 import 全局缓存同一模块实例，行为等价）

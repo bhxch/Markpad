@@ -508,7 +508,13 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		// host on top of the pass the patch effect owns.
 		// 本地管线的 mermaid 单实例随主题同步（pipeline/diagrams；上游 mermaid 图重绘仍由
 		// renderRichContent 自己承担，这里只保证本实例的后续渲染取到新主题）。
-		syncMermaidTheme();
+		// T6-fix：syncMermaidTheme 读主题切片（themeScheme → themeSchemes[mode]+mode
+		// 派生链），属"附带消费"而非本 effect 的依赖——本 effect 只依赖 settings.theme。
+		// 若被追踪，setThemeScheme（方案即模式：写 mode+scheme 槽）会被误判为依赖变化
+		// 而重放本 effect，下方 applyAppearanceTheme(陈旧 theme) 再 setMode(旧模式)
+		// 把用户刚选的配色方案回滚（GUI 实测：上游 theme=light 选暗色方案弹回 light，
+		// 反向同理）。untrack 只断依赖边，副作用照常执行。
+		untrack(() => syncMermaidTheme());
 		const recolourDiagrams = () => untrack(() => {
 			if (!markdownBody) return;
 			renderRichContent();
@@ -519,7 +525,11 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		});
 
 		if (theme === 'system' || theme === 'light' || theme === 'dark') {
-			applyAppearanceTheme(theme); // T5/T6: 下拉语义化+属性唯一写者（themeBridge）
+			// T6-fix：applyAppearanceTheme→applyTheme 内部读切片（uiThemeSource/mode/
+			// currentSchemeId/resolveCodeTheme），同为附带消费，untrack 防同上回滚环
+			// （applyAppearanceTheme 还会写切片 mode，读写同在一个 effect 即成环）。
+			// 切片变化时的属性重放由 settings store 自己的 applyTheme effect 承担。
+			untrack(() => applyAppearanceTheme(theme)); // T5/T6: 下拉语义化+属性唯一写者（themeBridge）
 			clearVscodeTheme();
 			saveStartupAppearance(theme);
 			recolourDiagrams();
