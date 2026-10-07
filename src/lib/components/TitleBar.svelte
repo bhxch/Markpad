@@ -12,6 +12,7 @@
 	import { themeSettingsSlice } from '../stores/slices/themeSettings.svelte.js'; // T8: 标题栏主题按钮读当前方案/代码主题
 	import { t } from '../utils/i18n.js';
 	import { getConfiguredTitlebarToolbarIds, visibleTitlebarActionIds, type ViewMode, viewModeOf } from '../utils/titlebarToolbar.js';
+	import { moveActionByContextmenu } from '../utils/titlebarBridge.js'; // T9: 右键手势：栏上按钮⇄溢出菜单互移
 	import { modifierFor, shortcutLabel } from '../utils/shortcuts.js';
 	import { platformOf } from '../utils/platform.js';
 	import { hasExportableDocument, hasRealFilePath } from '../utils/tabFileActions.js';
@@ -773,10 +774,12 @@
 		{/snippet}
 
 	{#snippet actionItems(ids: string[])}
+			<!-- T9: 每个 action 的顶层按钮带 data-action-id，供两容器上的 contextmenu 委托定位互移 -->
 			{#each ids as id (id)}
 				{#if id === 'home'}
 					<button
 						class="title-action-btn {showHome ? 'active' : ''}"
+						data-action-id={id}
 						onclick={() => {
 							hideTooltip();
 							kebabMenuOpen = false;
@@ -795,6 +798,7 @@
 				{:else if id === 'back'}
 					<button
 						class="title-action-btn"
+						data-action-id={id}
 						disabled={!canGoBack}
 						onclick={() => {
 							hideTooltip();
@@ -815,6 +819,7 @@
 				{:else if id === 'forward'}
 					<button
 						class="title-action-btn"
+						data-action-id={id}
 						disabled={!canGoForward}
 						onclick={() => {
 							hideTooltip();
@@ -835,6 +840,7 @@
 				{:else if id === 'settings'}
 					<button
 						class="title-action-btn"
+						data-action-id={id}
 						onclick={() => {
 							hideTooltip();
 							kebabMenuOpen = false;
@@ -854,6 +860,7 @@
 				{:else if id === 'zoom'}
 					<button
 						class="menu-zoom-item"
+						data-action-id={id}
 						onclick={() => {
 							hideTooltip();
 							onresetZoom?.();
@@ -873,6 +880,7 @@
 				{:else if id === 'zen'}
 					<button
 						class="title-action-btn {settings.zenMode ? 'active' : ''}"
+						data-action-id={id}
 						onclick={() => settings.toggleZenMode()}
 						aria-label={t('tooltip.toggleZenMode', currentLanguage)}
 											onmouseenter={(e) => showTooltip(e, t('tooltip.zenMode', currentLanguage))}
@@ -893,6 +901,7 @@
 				{:else if id === 'tabs'}
 					<button
 						class="title-action-btn"
+						data-action-id={id}
 						style:opacity={settings.zenMode ? 0.3 : 1}
 						style:pointer-events={settings.zenMode ? 'none' : 'auto'}
 						onclick={() => { settings.showTabs = !settings.showTabs; }}
@@ -912,6 +921,7 @@
 				{:else if id === 'find'}
 					<button
 						class="title-action-btn"
+						data-action-id={id}
 						onclick={() => {
 							hideTooltip();
 							kebabMenuOpen = false;
@@ -932,6 +942,7 @@
 				{:else if id === 'open_loc'}
 					<button
 						class="title-action-btn"
+						data-action-id={id}
 						onclick={ononpenFileLocation}
 						aria-label={t('tooltip.openFileLocation', currentLanguage)}
 											onmouseenter={(e) => showTooltip(e, t('tooltip.openFileLocation', currentLanguage))}
@@ -952,6 +963,7 @@
 						{#each viewModes as mode (mode.id)}
 							<button
 								class="title-action-btn {currentViewMode === mode.id ? 'active' : ''}"
+								data-action-id={id}
 								aria-pressed={currentViewMode === mode.id}
 								onclick={() => {
 									hideTooltip();
@@ -979,6 +991,7 @@
 				{:else if id === 'swap'}
 					<button
 						class="title-action-btn"
+						data-action-id={id}
 						onclick={() => onswapPanes?.()}
 						aria-label={t('tooltip.swapPanes', currentLanguage)}
 											onmouseenter={(e) => showTooltip(e, t('tooltip.swapPanes', currentLanguage))}
@@ -994,6 +1007,7 @@
 				{:else if id === 'sync'}
 					<button
 						class="title-action-btn {isScrollSynced ? 'active' : ''}"
+						data-action-id={id}
 						onclick={() => ontoggleSync?.()}
 						aria-label={t('tooltip.toggleScrollSync', currentLanguage)}
 											onmouseenter={(e) => showTooltip(e, t('tooltip.scrollSync', currentLanguage))}
@@ -1007,6 +1021,7 @@
 				{:else if id === 'fullWidth'}
 					<button
 						class="title-action-btn {isFullWidth ? 'active' : ''}"
+						data-action-id={id}
 						onclick={() => ontoggleFullWidth?.()}
 						aria-label={t('tooltip.toggleFullWidth', currentLanguage)}
 											onmouseenter={(e) => showTooltip(e, t('tooltip.fullWidth', currentLanguage))}
@@ -1021,6 +1036,7 @@
 				{:else if id === 'reload'}
 					<button
 						class="title-action-btn"
+						data-action-id={id}
 						onclick={() => {
 							hideTooltip();
 							kebabMenuOpen = false;
@@ -1039,6 +1055,7 @@
 				{:else if id === 'live'}
 					<button
 						class="title-action-btn {liveMode ? 'active' : ''}"
+						data-action-id={id}
 						onclick={ontoggleLiveMode}
 						aria-label={t('tooltip.toggleAutoReload', currentLanguage)}
 											onmouseenter={(e) => showTooltip(e, t('tooltip.autoReload', currentLanguage))}
@@ -1053,6 +1070,7 @@
 				{:else if id === 'editorToolbar'}
 					<button
 						class="title-action-btn {settings.showEditorToolbar ? 'active' : ''}"
+						data-action-id={id}
 						onclick={ontoggleEditorToolbar}
 						aria-label={t('tooltip.editorToolbar', currentLanguage)}
 						onmouseenter={(e) => showTooltip(e, t('tooltip.editorToolbar', currentLanguage))}
@@ -1067,6 +1085,7 @@
 					<div class="theme-dropdown-container">
 						<button
 							class="title-action-btn {themeMenuOpen ? 'active' : ''}"
+							data-action-id={id}
 							onclick={(e) => {
 								e.stopPropagation();
 								themeMenuOpen = !themeMenuOpen;
@@ -1128,6 +1147,7 @@
 				{:else if id === 'export'}
 					<button
 						class="title-action-btn"
+						data-action-id={id}
 						onclick={() => {
 							hideTooltip();
 							kebabMenuOpen = false;
@@ -1145,6 +1165,7 @@
 				{:else if id === 'vim_mode'}
 					<button
 						class="title-action-btn {settings.vimMode ? 'active' : ''}"
+						data-action-id={id}
 						onclick={() => (settings.vimMode = !settings.vimMode)}
 						aria-label={t('toolbar.vimMode', currentLanguage)}
 						onmouseenter={(e) => showTooltip(e, t('toolbar.vimMode', currentLanguage))}
@@ -1158,6 +1179,7 @@
 				{:else if id === 'metadata'}
 					<button
 						class="title-action-btn"
+						data-action-id={id}
 						onclick={() => {
 							hideTooltip();
 							kebabMenuOpen = false;
@@ -1177,6 +1199,7 @@
 					<div class="theme-dropdown-container">
 						<button
 							class="title-action-btn {schemeMenuOpen ? 'active' : ''}"
+							data-action-id={id}
 							onclick={(e) => {
 								e.stopPropagation();
 								schemeMenuOpen = !schemeMenuOpen;
@@ -1203,6 +1226,7 @@
 					<div class="theme-dropdown-container">
 						<button
 							class="title-action-btn {codeMenuOpen ? 'active' : ''}"
+							data-action-id={id}
 							onclick={(e) => {
 								e.stopPropagation();
 								codeMenuOpen = !codeMenuOpen;
@@ -1232,9 +1256,11 @@
 			{#if ids.length > 0}
 				{@render kebabButton()}
 				{#if kebabMenuOpen}
+					<!-- T9: 右键菜单项 → 移回栏上 -->
 					<div
 						class="title-actions show-dropdown"
 						data-tauri-drag-region
+						oncontextmenu={(e) => moveActionByContextmenu(e, 'menu')}
 						role="menu"
 						tabindex="-1"
 						transition:fly={{ y: 5, duration: 150 }}
@@ -1251,7 +1277,9 @@
 		{#if isCollapsed}
 			{@render actionMenu(configuredActionIds.visibleIds)}
 		{:else}
-			<div class="title-actions inline" data-tauri-drag-region>
+			<!-- T9: 右键栏上按钮 → 移入溢出菜单 -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="title-actions inline" data-tauri-drag-region oncontextmenu={(e) => moveActionByContextmenu(e, 'bar')}>
 				{@render actionItems(configuredActionIds.barIds)}
 			</div>
 
