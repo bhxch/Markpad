@@ -29,6 +29,9 @@
   "bass": {
     "subpath": ""
   },
+  "batch": {
+    "subpath": ""
+  },
   "beancount": {
     "subpath": ""
   },
@@ -71,6 +74,9 @@
   "chuck": {
     "subpath": ""
   },
+  "circom": {
+    "subpath": ""
+  },
   "clarity": {
     "subpath": ""
   },
@@ -81,6 +87,12 @@
     "subpath": ""
   },
   "comment": {
+    "subpath": ""
+  },
+  "commonlisp": {
+    "subpath": ""
+  },
+  "concerto": {
     "subpath": ""
   },
   "cpon": {
@@ -140,6 +152,9 @@
   "doxyfile": {
     "subpath": ""
   },
+  "drools": {
+    "subpath": ""
+  },
   "dtd": {
     "subpath": ""
   },
@@ -148,6 +163,9 @@
   },
   "earthfile": {
     "subpath": ""
+  },
+  "ebnf": {
+    "subpath": "crates/tree-sitter-ebnf"
   },
   "edoc": {
     "subpath": ""
@@ -170,10 +188,16 @@
   "elvish": {
     "subpath": ""
   },
+  "embedded-perl": {
+    "subpath": ""
+  },
   "embedded-template": {
     "subpath": ""
   },
   "erlang": {
+    "subpath": ""
+  },
+  "esdl": {
     "subpath": ""
   },
   "fennel": {
@@ -201,7 +225,7 @@
     "subpath": ""
   },
   "fsharp": {
-    "subpath": ""
+    "subpath": "fsharp"
   },
   "gas": {
     "subpath": ""
@@ -467,7 +491,13 @@
   "meson": {
     "subpath": ""
   },
+  "metamath": {
+    "subpath": ""
+  },
   "mojo": {
+    "subpath": ""
+  },
+  "moonbit": {
     "subpath": ""
   },
   "move": {
@@ -495,10 +525,10 @@
     "subpath": ""
   },
   "ocaml": {
-    "subpath": "ocaml"
+    "subpath": "grammars/ocaml"
   },
   "ocaml-interface": {
-    "subpath": "interface"
+    "subpath": "grammars/interface"
   },
   "odin": {
     "subpath": ""
@@ -513,6 +543,9 @@
     "subpath": ""
   },
   "org": {
+    "subpath": ""
+  },
+  "p": {
     "subpath": ""
   },
   "pascal": {
@@ -532,6 +565,9 @@
   },
   "pest": {
     "subpath": ""
+  },
+  "php": {
+    "subpath": "php"
   },
   "php-only": {
     "subpath": "php_only"
@@ -566,10 +602,19 @@
   "proto": {
     "subpath": ""
   },
+  "proverif": {
+    "subpath": ""
+  },
   "prql": {
     "subpath": ""
   },
+  "ptx": {
+    "subpath": ""
+  },
   "pug": {
+    "subpath": ""
+  },
+  "puppet": {
     "subpath": ""
   },
   "purescript": {
@@ -605,13 +650,19 @@
   "rescript": {
     "subpath": ""
   },
+  "ripple": {
+    "subpath": "packages/tree-sitter"
+  },
   "robot": {
     "subpath": ""
   },
-  "robots": {
+  "robots-txt": {
     "subpath": ""
   },
   "ron": {
+    "subpath": ""
+  },
+  "rpmspec": {
     "subpath": ""
   },
   "rshtml": {
@@ -639,6 +690,9 @@
     "subpath": ""
   },
   "scss": {
+    "subpath": ""
+  },
+  "sgf": {
     "subpath": ""
   },
   "shellcheckrc": {
@@ -680,7 +734,7 @@
   "sql": {
     "subpath": ""
   },
-  "sshclientconfig": {
+  "ssh_client_config": {
     "subpath": ""
   },
   "strace": {
@@ -689,11 +743,14 @@
   "strictdoc": {
     "subpath": ""
   },
+  "styx": {
+    "subpath": "crates/tree-sitter-styx"
+  },
   "supercollider": {
     "subpath": ""
   },
   "svelte": {
-    "subpath": ""
+    "subpath": "crates/tree-sitter-svelte"
   },
   "sway": {
     "subpath": ""
@@ -740,7 +797,13 @@
   "todotxt": {
     "subpath": ""
   },
+  "tolk": {
+    "subpath": "server/src/languages/tolk/tree-sitter-tolk"
+  },
   "toml": {
+    "subpath": ""
+  },
+  "tql": {
     "subpath": ""
   },
   "tsx": {
@@ -771,6 +834,9 @@
     "subpath": "tree_sitter_v"
   },
   "vala": {
+    "subpath": ""
+  },
+  "varlink": {
     "subpath": ""
   },
   "vento": {
@@ -819,6 +885,9 @@
     "subpath": ""
   },
   "xtc": {
+    "subpath": ""
+  },
+  "xwiki": {
     "subpath": ""
   },
   "yaml": {
