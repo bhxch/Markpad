@@ -3,10 +3,20 @@
 // （vscode 态不设 data-theme-scheme 是 T7 双用途特异性修复的前提）。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => []) }));
+// T7：mock 实例经 vi.hoisted 提升共享，各测试可改写 invoke 分支实现
+// （默认返回 []，保持 T6 既有用例不受影响）。
+const { invokeMock } = vi.hoisted(() => ({
+	invokeMock: vi.fn<(cmd: string, args?: unknown) => Promise<unknown>>(async () => [])
+}));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 
 beforeEach(() => {
 	vi.resetModules();
+	invokeMock.mockReset();
+	invokeMock.mockImplementation(async () => []);
+	document.head
+		.querySelectorAll('style[id^="ts-vscode-theme-"]')
+		.forEach((el) => el.remove());
 	localStorage.clear();
 	const root = document.documentElement;
 	root.removeAttribute('data-theme');
@@ -113,3 +123,135 @@ describe('installSystemThemeWatcher（T4）', () => {
 		dispose3();
 	});
 });
+
+describe('buildVscodeCodeThemeStyle（T7）', () => {
+	it('由 tokenColors 生成 --ts-* 注入，未命中 token 回落当前主题（不产空变量）', async () => {
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'read_vscode_theme'
+				? JSON.stringify({
+						name: 'Test',
+						type: 'dark',
+						tokenColors: [
+							{ scope: ['comment'], settings: { foreground: '#ABCDEF', fontStyle: 'italic' } },
+							{ scope: ['keyword'], settings: { foreground: '#123456' } },
+							{ scope: ['string'], settings: { foreground: '#654321' } }
+						]
+					})
+				: '[]'
+		);
+		const { buildVscodeCodeThemeStyle } = await import('./themeApply.js');
+		const style = await buildVscodeCodeThemeStyle('Test');
+		expect(style).toContain(':root[data-code-theme="vscode:Test"]');
+		expect(style).toMatch(/--ts-comment:\s*#ABCDEF/i);
+		expect(style).toMatch(/--ts-keyword:\s*#123456/i);
+		expect(style).toContain('font-style: italic'); // fontStyle 保留
+	});
+
+	it('tokenColors 全不命中映射时返回空串（CSS 回落当前主题）', async () => {
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'read_vscode_theme'
+				? JSON.stringify({
+						tokenColors: [{ scope: 'editor.foreground', settings: { foreground: '#FFFFFF' } }]
+					})
+				: '[]'
+		);
+		const { buildVscodeCodeThemeStyle } = await import('./themeApply.js');
+		await expect(buildVscodeCodeThemeStyle('NoHit')).resolves.toBe('');
+	});
+
+	it('invoke 失败或 JSON 损坏时返回空串不抛错', async () => {
+		const { buildVscodeCodeThemeStyle } = await import('./themeApply.js');
+		invokeMock.mockImplementation(async () => {
+			throw new Error('boom');
+		});
+		await expect(buildVscodeCodeThemeStyle('Broken')).resolves.toBe('');
+		invokeMock.mockImplementation(async () => 'not json');
+		await expect(buildVscodeCodeThemeStyle('Broken')).resolves.toBe('');
+	});
+
+	it('映射覆盖 styles.css --ts-* 变量全集（27 个，一个不多一个不少）', async () => {
+		// 规则按具体 scope 在前、泛 scope 在后排列（与真实 .vsix 的排列惯例一致），
+		// 确保 boolean/builtin 等取专属色而非被泛 scope 规则截胡。
+		const rules: { scope: string[]; settings: { foreground: string } }[] = [
+			{ scope: ['constant.language.boolean'], settings: { foreground: '#010016' } },
+			{ scope: ['variable.language'], settings: { foreground: '#010017' } },
+			{ scope: ['constant.language'], settings: { foreground: '#010015' } },
+			{ scope: ['comment'], settings: { foreground: '#010001' } },
+			{ scope: ['keyword'], settings: { foreground: '#010002' } },
+			{ scope: ['keyword.control'], settings: { foreground: '#010003' } },
+			{ scope: ['string'], settings: { foreground: '#010004' } },
+			{ scope: ['string.regexp'], settings: { foreground: '#010005' } },
+			{ scope: ['constant.numeric'], settings: { foreground: '#010006' } },
+			{ scope: ['constant'], settings: { foreground: '#010007' } },
+			{ scope: ['entity.name.type'], settings: { foreground: '#010008' } },
+			{ scope: ['support.type'], settings: { foreground: '#010009' } },
+			{ scope: ['entity.name.function.method'], settings: { foreground: '#010010' } },
+			{ scope: ['entity.name.function.macro'], settings: { foreground: '#010011' } },
+			{ scope: ['entity.name.function.constructor'], settings: { foreground: '#010012' } },
+			{ scope: ['entity.name.function'], settings: { foreground: '#010013' } },
+			{ scope: ['support.function'], settings: { foreground: '#010014' } },
+			{ scope: ['variable'], settings: { foreground: '#010018' } },
+			{ scope: ['variable.parameter'], settings: { foreground: '#010019' } },
+			{ scope: ['variable.other.property'], settings: { foreground: '#010020' } },
+			{ scope: ['keyword.operator'], settings: { foreground: '#010021' } },
+			{ scope: ['punctuation.definition.bracket'], settings: { foreground: '#010022' } },
+			{ scope: ['punctuation'], settings: { foreground: '#010023' } },
+			{ scope: ['entity.name.namespace'], settings: { foreground: '#010024' } },
+			{ scope: ['entity.name.tag'], settings: { foreground: '#010025' } },
+			{ scope: ['entity.other.attribute-name'], settings: { foreground: '#010026' } },
+			{ scope: ['constant.character.escape'], settings: { foreground: '#010027' } }
+		];
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'read_vscode_theme' ? JSON.stringify({ tokenColors: rules }) : '[]'
+		);
+		const { buildVscodeCodeThemeStyle } = await import('./themeApply.js');
+		const style = await buildVscodeCodeThemeStyle('Full');
+		const found = new Set(style.match(/--ts-[a-z-]+/g) ?? []);
+		expect(found.size).toBe(27);
+	});
+});
+
+describe('applyTheme 的 vscode 代码主题注入（T7）', () => {
+	const tick = () => new Promise((r) => setTimeout(r, 0));
+	const injected = () => document.head.querySelectorAll('style[id^="ts-vscode-theme-"]');
+
+	it('codeTheme 为 vscode:<name> 时 fire-and-forget 挂载 style 标签且幂等', async () => {
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'read_vscode_theme'
+				? JSON.stringify({
+						tokenColors: [{ scope: 'comment', settings: { foreground: '#ABCDEF' } }]
+					})
+				: '[]'
+		);
+		const { slice, applyTheme } = await load();
+		slice.setCodeTheme('vscode:Test');
+		applyTheme();
+		await tick();
+		const id = 'ts-vscode-theme-vscode:Test';
+		const el = document.getElementById(id);
+		expect(el).not.toBeNull();
+		expect(el?.innerHTML).toContain('--ts-comment: #ABCDEF');
+		expect(document.documentElement.getAttribute('data-code-theme')).toBe('vscode:Test');
+		// 再次 applyTheme 不重复插入。
+		applyTheme();
+		await tick();
+		expect(injected()).toHaveLength(1);
+	});
+
+	it('codeTheme 非 vscode 形态时不注入', async () => {
+		const { slice, applyTheme } = await load();
+		slice.setCodeTheme('dark-modern');
+		applyTheme();
+		await tick();
+		expect(injected()).toHaveLength(0);
+	});
+
+	it('invoke 失败时静默（不挂载、不抛未处理拒绝）', async () => {
+		const { slice, applyTheme } = await load();
+		slice.setCodeTheme('vscode:Broken');
+		applyTheme();
+		await tick();
+		expect(injected()).toHaveLength(0);
+	});
+});
+

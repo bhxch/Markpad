@@ -6,6 +6,7 @@
  * 此前上游 MarkdownViewer 与本地 settings.applyTheme 双写者并存、
  * 本地 scheme 块特异性恒胜导致上游主题选择从不生效（spec §3.2-3）。
  */
+import { invoke } from '@tauri-apps/api/core';
 import { themeSettingsSlice } from '../stores/slices/themeSettings.svelte.js';
 
 let systemWatcherDisposer: (() => void) | null = null;
@@ -33,6 +34,20 @@ export function applyTheme(): void {
 		root.setAttribute('data-theme-type', slice.mode);
 	}
 	root.setAttribute('data-code-theme', slice.resolveCodeTheme());
+	// T7：vscode:<name> 代码主题生效时挂载 .vsix tokenColors 派生的 --ts-* 覆盖块。
+	// fire-and-forget：加载失败静默（CSS 回落当前主题的 --ts-* 静态值），保持同步签名。
+	const codeTheme = slice.resolveCodeTheme();
+	if (codeTheme.startsWith('vscode:')) {
+		void buildVscodeCodeThemeStyle(codeTheme.slice('vscode:'.length)).then((style) => {
+			if (!style) return;
+			const id = `ts-vscode-theme-${codeTheme}`;
+			if (document.getElementById(id)) return;
+			const el = document.createElement('style');
+			el.id = id;
+			el.innerHTML = style;
+			document.head.appendChild(el);
+		});
+	}
 }
 
 /** 跟随系统：prefers-color-scheme 变化时切槽位组合（T4）。重复安装幂等。 */
@@ -53,7 +68,77 @@ export function installSystemThemeWatcher(): () => void {
 	return systemWatcherDisposer;
 }
 
-/** T7（Task 5 实装）：vscode:<name> 代码主题的 --ts-* 注入；本任务先立接口。 */
-export async function buildVscodeCodeThemeStyle(_name: string): Promise<string> {
-	return '';
+/**
+ * tokenColors scope → --ts-* 变量映射（T7）。变量名是 styles.css Tree-sitter 段
+ * （dark-modern 块）的 27 个 `--ts-*` 全集，一个不多一个不少；scope 取 VSCode
+ * tokenColors 惯例名（TextMate scope 名），method/macro/bracket 等 styles.css
+ * 专属 token 就近映射到函数/标点类 scope。规则按 tokenColors 顺序取第一条
+ * 命中项（具体 scope 在前、泛 scope 在后是 .vsix 惯例）；scope 未命中映射的
+ * 变量不产声明，CSS 回落当前主题（dark-modern / light-modern 静态值）。
+ */
+const TS_TOKEN_SCOPE_MAP: Record<string, string[]> = {
+	'--ts-comment': ['comment'],
+	'--ts-keyword': ['keyword'],
+	'--ts-keyword-control': ['keyword.control'],
+	'--ts-string': ['string'],
+	'--ts-string-regexp': ['string.regexp'],
+	'--ts-number': ['constant.numeric'],
+	'--ts-constant': ['constant'],
+	'--ts-constant-builtin': ['constant.language'],
+	'--ts-boolean': ['constant.language.boolean', 'constant.language'],
+	'--ts-type': ['entity.name.type', 'support.type'],
+	'--ts-type-builtin': ['support.type', 'entity.name.type.builtin'],
+	'--ts-function': ['entity.name.function', 'support.function'],
+	'--ts-method': ['entity.name.function.method', 'entity.name.function'],
+	'--ts-macro': ['entity.name.function.macro', 'entity.name.function'],
+	'--ts-variable': ['variable'],
+	'--ts-variable-builtin': ['variable.language', 'constant.language'],
+	'--ts-parameter': ['variable.parameter'],
+	'--ts-property': ['variable.other.property', 'support.variable.property'],
+	'--ts-operator': ['keyword.operator'],
+	'--ts-punctuation': ['punctuation'],
+	'--ts-bracket': ['punctuation.definition.bracket', 'punctuation'],
+	'--ts-constructor': ['entity.name.function.constructor', 'entity.name.function'],
+	'--ts-namespace': ['entity.name.namespace', 'support.other.namespace'],
+	'--ts-tag': ['entity.name.tag'],
+	'--ts-attribute': ['entity.other.attribute-name'],
+	'--ts-special': ['support.function'],
+	'--ts-escape': ['constant.character.escape']
+};
+
+interface TokenRule {
+	scope?: string | string[];
+	settings?: { foreground?: string; fontStyle?: string };
+}
+
+/** T7（本任务实装）：vscode:<name> 代码主题的 --ts-* 注入。 */
+export async function buildVscodeCodeThemeStyle(name: string): Promise<string> {
+	try {
+		const json = JSON.parse(await invoke<string>('read_vscode_theme', { name })) as {
+			tokenColors?: TokenRule[];
+		};
+		// 返回第一条 scope 命中且带 foreground 的规则的 settings；无命中返回 null。
+		const settingsOf = (scopes: string[]): TokenRule['settings'] => {
+			for (const rule of json.tokenColors ?? []) {
+				const ruleScopes = Array.isArray(rule.scope) ? rule.scope : rule.scope ? [rule.scope] : [];
+				if (ruleScopes.some((s) => scopes.includes(s)) && rule.settings?.foreground) {
+					return rule.settings;
+				}
+			}
+			return undefined;
+		};
+		const decls: string[] = [];
+		for (const [variable, scopes] of Object.entries(TS_TOKEN_SCOPE_MAP)) {
+			const settings = settingsOf(scopes);
+			if (!settings?.foreground) continue; // 未命中不产声明，CSS 回落
+			const font = settings.fontStyle ? `; font-style: ${settings.fontStyle}` : '';
+			decls.push(`${variable}: ${settings.foreground}${font}`);
+		}
+		if (!decls.length) return '';
+		// 选择器里的主题名是 CSS 字符串字面量，需转义引号与反斜杠以匹配原始值。
+		const cssName = name.replace(/[\\"]/g, '\\$&');
+		return `<style>:root[data-code-theme="vscode:${cssName}"] { ${decls.join('; ')}; }</style>`;
+	} catch {
+		return '';
+	}
 }
