@@ -28,6 +28,7 @@
 	import { platformOf } from '../utils/platform.js';
 	import type { LanguageCode } from '../utils/i18n.js';
 	import DiagramSettingsSection from './local/DiagramSettingsSection.svelte';
+	import ThemeSettingsSection from './local/ThemeSettingsSection.svelte';
 	import { getEditorToolbarTools } from '../utils/editorToolbar.js';
 	import { getTitlebarToolbarActions, type TitlebarToolbarPlacement } from '../utils/titlebarToolbar.js';
 	import {
@@ -1276,6 +1277,9 @@
 								</button>
 							</div>
 						</div>
+
+						<!-- T11: 本地主题配置区（双槽/代码主题/跟随系统），逻辑在 local 组件 -->
+						<ThemeSettingsSection />
 
 							<div class="setting-item">
 								<label for="appearance-tabs">{t('settings.showTabs', settings.language)}</label>
