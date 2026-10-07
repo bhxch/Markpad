@@ -261,7 +261,7 @@ function defaultIdFactory(index: number): string {
  *
  * Exported because `processMarkdownHtml` replaces elements the same way — an
  * `<img>` whose src is a video or audio file becomes a fresh `<video>` /
- * `<audio>`, a YouTube `<img>`/`<a>` becomes an embedded player — and the same
+ * `<audio>`, a YouTube `<img>`/`<a>` becomes a thumbnail link — and the same
  * gap costs the same thing there.
  */
 export function carrySourcepos(from: Element, to: Element) {

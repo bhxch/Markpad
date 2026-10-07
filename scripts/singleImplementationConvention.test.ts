@@ -110,13 +110,12 @@ const RULES: Rule[] = [
 		allowed: ['src/lib/utils/listSyntax.ts'],
 	},
 	{
-		name: 'iframe creation has exactly two sanctioned implementations',
-		why: 'D15 keeps YouTube playing inside the app as an embedded iframe (the upstream thumbnail-anchor rendering was rejected), and the CSP frame-src in tauri.conf.json exists for exactly that player. Any second createElement("iframe") is either an unreviewed embedding surface or a print helper — both must earn a line here.',
+		name: 'YouTube links never become embedded frames',
+		why: 'The app dropped frame-src from its CSP and renders YouTube as a thumbnail anchor that opens the browser; an iframe path is the pre-fix version and cannot load. 2026-10-07 用户裁决：D15 废弃，跟随上游 #388 缩略图外链方案（原内嵌为上游 #47 旧特性，非本地独有）。',
 		marker: /createElement\((['"])iframe\1\)/g,
-		allowed: [
-			'src/lib/utils/markdown.ts', // YouTube 内嵌 iframe（D15），replaceWithYoutubeEmbed
-			'src/lib/export.ts', // PDF 导出的隐藏打印 iframe
-		],
+		// Allowed only for the PDF print helper — a hidden offscreen iframe that
+		// drives window.print(), unrelated to any media embedding surface.
+		allowed: ['src/lib/export.ts'],
 	},
 	{
 		name: 'DOMPurify is configured in one place',

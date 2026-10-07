@@ -19,7 +19,6 @@
         "style-src": "'self' 'unsafe-inline'",
         "img-src": "'self' asset: https: http://asset.localhost blob: data:",
         "connect-src": "'self' ipc.localhost http://ipc.localhost asset: http://asset.localhost ws://localhost:9555 http://localhost:9556",
-        "frame-src": "https://www.youtube.com https://www.youtube-nocookie.com",
         "font-src": "'self' data:"
       },
       "assetProtocol": {
