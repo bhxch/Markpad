@@ -514,9 +514,12 @@ test('a cold start restores again once its enrichment has landed', async () => {
 	// early-return `if (!markdownBody)` at the top of the untrack block
 	// (scripts/diagramThemeRefresh.spec.ts owns that question). What this test
 	// is for is the tracking.
+	// Fork 化（T7-fix 2026-10-08）：renderRichContent 现以 `.then()` 链接主题重渲染后的
+	// tree-sitter 升级（highlightBlocks，见 diagramThemeRefresh.spec），不再紧跟分号——
+	// 本断言钉的仍是 untrack + 早退 + untrack 块内直调三点，防追踪回归。
 	assert.match(
 		viewer,
-		/untrack\(\(\) => \{\s*if \(!markdownBody\) return;\s*renderRichContent\(\);/,
+		/untrack\(\(\) => \{\s*if \(!markdownBody\) return;[\s\S]*?renderRichContent\(\)/,
 		'the theme effect must depend on the theme, not on the libraries arriving',
 	);
 });

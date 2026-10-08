@@ -173,9 +173,13 @@ test('the theme effect re-colours in every mode, and does not re-run on a mode c
 	// 接线更新（Task 14，D12 图表分发接管）：预览的 mermaid 活在本地 .diagram-wrapper
 	// 内，上游 staleDiagrams（.mermaid-diagram 选择器）扫不到——recolourDiagrams 在
 	// renderRichContent 之后追加本地管线一侧的 wrapper 重绘（rerenderMermaidWrappers）。
+	// T7-fix（2026-10-08）：renderRichContent 的富内容路径把代码块落成 hljs 形态，
+	// 主题重渲染须补跑本地 tree-sitter 升级（highlightBlocks），否则整篇代码块停在
+	// hljs 内置配色、不随所选代码主题变色（GUI 实测复现后修的接线，随本断言钉住）。
 	expect(effect).toMatch(
-		/const recolourDiagrams = \(\) => untrack\(\(\) => \{\n\t\t\tif \(!markdownBody\) return;\n\t\t\trenderRichContent\(\);/,
+		/const recolourDiagrams = \(\) => untrack\(\(\) => \{\n\t\t\tif \(!markdownBody\) return;[\s\S]*?renderRichContent\(\)\.then\(/,
 	);
+	expect(effect).toMatch(/highlightBlocks\(markdownBody\)/);
 	expect(effect).toMatch(/rerenderMermaidWrappers\(markdownBody, previewRevision\)/);
 
 	// Once per branch: the `vscode:` branch does not know its own appearance

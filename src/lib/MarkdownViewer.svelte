@@ -40,7 +40,7 @@
 		syncMermaidTheme,
 	} from './pipeline/diagrams';
 	import { getViewableItems, setLightboxOpener } from './pipeline/lightbox';
-	import { initTreeSitterLanguages } from './pipeline/highlight';
+	import { initTreeSitterLanguages, highlightBlocks } from './pipeline/highlight';
 	// deferred（2026-10-07 修复波）：mermaid 已渲染 SVG 随纯配色方案切换重绘（见下方切片 effect）。
 	import { themeSettingsSlice } from './stores/slices/themeSettings.svelte.js';
 import { processMarkdownHtml } from './utils/markdown';
@@ -519,7 +519,14 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		untrack(() => syncMermaidTheme());
 		const recolourDiagrams = () => untrack(() => {
 			if (!markdownBody) return;
-			renderRichContent();
+			// T7-fix：renderRichContent 是上游富内容路径，代码块落成 hljs 形态；初始
+			// 渲染由 patch effect 的 runPipeline highlight 步升级为 tree-sitter，主题
+			// 重渲染不经过它——不补跑升级，整篇代码块停在 hljs 内置配色（GUI 实测：
+			// 切 UI 主题后代码块不再随所选代码主题变色）。highlightBlocks 仅替换
+			// tree-sitter 成功项，失败块保留 hljs 兜底，与初始渲染语义一致。
+			renderRichContent().then(() => {
+				if (markdownBody) void highlightBlocks(markdownBody);
+			});
 			// D12 主题重绘缺口（Task 14 ③）：图表分发接管后，预览的 mermaid 活在本地
 			// .diagram-wrapper 内，上游 staleDiagrams（.mermaid-diagram 选择器）扫不到，
 			// 本地 wrapper 内已烘焙主题色的 SVG 须由本地管线以新主题重画。
