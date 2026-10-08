@@ -30,3 +30,40 @@ export function migrateLegacyThemePlacement(stored: Record<string, unknown> | nu
 	if (Object.keys(stored).length !== legacyEntries.length) return false;
 	return legacyEntries.every(([id, placement]) => stored[id] === placement);
 }
+
+// ---------------------------------------------------------------------------
+// D20：迁移一次性化（spec 2026-10-09-titlebar-placement-migration-marker-design）。
+// 注册表 entry 位于上游 settings.svelte.ts，按防冲突规则其 load 只留接线行；
+// 迁移判定与标记读写的全部逻辑收在本文件（本地命名空间，只依赖叶子模块）。
+// ---------------------------------------------------------------------------
+
+const PLACEMENT_MIGRATED_KEY = 'titlebar.placementMigrated';
+
+function hasStorage(): boolean {
+	return typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function';
+}
+
+/** 与 settings.svelte.ts 私有 parseStoredRecord 同语义（镜像，避免跨文件导出私有件）。 */
+function parsePlacementRecord(value: string | null): Record<string, unknown> | null {
+	if (value === null) return null;
+	try {
+		const parsed = JSON.parse(value);
+		return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * 注册表 load 用的 placement 解析：迁移机会一次性消耗。
+ * 标记键已存在 → 内容判定不再参与，存量表原样返回（真实自定义即便恰与旧默认表
+ * 全等——如把 theme 两键右键移回 'menu'——也不得再被重置）；标记不存在 → 按 I1
+ * 内容判定（命中则返回 null = 重置为新默认表），无论命中与否随即落标记。
+ */
+export function loadTitlebarPlacement(raw: string | null): Record<string, unknown> | null {
+	const parsed = parsePlacementRecord(raw);
+	const migrated = hasStorage() && localStorage.getItem(PLACEMENT_MIGRATED_KEY) === 'true';
+	const reset = !migrated && migrateLegacyThemePlacement(parsed);
+	if (hasStorage() && !migrated) localStorage.setItem(PLACEMENT_MIGRATED_KEY, 'true');
+	return reset ? null : parsed;
+}

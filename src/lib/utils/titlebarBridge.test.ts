@@ -70,3 +70,46 @@ describe('I1: 存量 placement 一次性迁移', () => {
 		expect(settings.titlebarToolbarPlacement).toEqual(DEFAULT_TITLEBAR_TOOLBAR_PLACEMENT);
 	});
 });
+
+// D20（spec 2026-10-09-titlebar-placement-migration-marker-design）：I1 的内容
+// 全等判定分不清"存量未自定义"与"真实自定义恰与旧默认表全等"——用户把
+// theme_scheme/code_theme 右键移回 menu 后，净表与旧默认表逐键全等，无标记时
+// 每次启动都被误重置（实测复现：重启即回栏上）。迁移机会一次性化：首次评估后
+// 落标记键，此后以标记为准，内容判定不再参与。
+describe('I1b: 迁移一次性化（D20 迁移标记）', () => {
+	const legacyPlacement = async () => {
+		const { DEFAULT_TITLEBAR_TOOLBAR_PLACEMENT } = await import('./titlebarToolbar.js');
+		const legacy: Record<string, string> = { ...DEFAULT_TITLEBAR_TOOLBAR_PLACEMENT };
+		legacy.theme_scheme = 'menu';
+		legacy.code_theme = 'menu';
+		return legacy;
+	};
+
+	it('首次评估（无标记）仍按内容迁移：旧默认表重置为新默认，并落迁移标记', async () => {
+		localStorage.setItem('titlebar.toolbarPlacement', JSON.stringify(await legacyPlacement()));
+
+		const { settings } = await load();
+		expect(settings.titlebarToolbarPlacement.theme_scheme).toBe('bar');
+		expect(settings.titlebarToolbarPlacement.code_theme).toBe('bar');
+		expect(localStorage.getItem('titlebar.placementMigrated')).toBe('true');
+	});
+
+	it('标记已存在：与旧默认表全等的真实自定义不再被重置（theme 两键保持在 menu）', async () => {
+		localStorage.setItem('titlebar.toolbarPlacement', JSON.stringify(await legacyPlacement()));
+		localStorage.setItem('titlebar.placementMigrated', 'true');
+
+		const { settings } = await load();
+		expect(settings.titlebarToolbarPlacement.theme_scheme).toBe('menu');
+		expect(settings.titlebarToolbarPlacement.code_theme).toBe('menu');
+	});
+
+	it('非旧默认的自定义同样消耗一次性机会：评估后落标记', async () => {
+		const customized = await legacyPlacement();
+		customized.zen = 'bar';
+		localStorage.setItem('titlebar.toolbarPlacement', JSON.stringify(customized));
+
+		const { settings } = await load();
+		expect(settings.titlebarToolbarPlacement.zen).toBe('bar');
+		expect(localStorage.getItem('titlebar.placementMigrated')).toBe('true');
+	});
+});
