@@ -2275,7 +2275,9 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
         // 与本地 .diagram-wrapper 的渲染面板（分发接管后的预览形态）都认。
         // 只匹配渲染面板本身：点代码面板（查看源码态）不应打开隐藏 SVG 的 lightbox。
         const mermaidDiv = target.closest('.mermaid-diagram, .diagram-wrapper [data-diagram-render="true"]');
-        if (mermaidDiv) {
+        // D18：math 面板是 KaTeX 行内排版，内部 svg 皆为装饰碎片，点击不进浮层
+        // （spec 2026-10-08-lightbox-math-and-svg-sizing-fix）。
+        if (mermaidDiv && !mermaidDiv.classList.contains('math-block')) {
             const svg = mermaidDiv.querySelector('svg');
             if (svg) {
                 // clone and strip fixed dimensions so viewBox governs scaling

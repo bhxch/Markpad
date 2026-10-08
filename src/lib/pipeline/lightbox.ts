@@ -84,6 +84,10 @@ export async function injectLightboxButtons(root: ParentNode, blocks?: Element[]
 		const renderEl = dw.querySelector('[data-diagram-render="true"]');
 		if (!renderEl) continue;
 
+		// D18：math 面板是 KaTeX 行内排版而非可缩放图表，其内部 svg 全是分式线/
+		// 根号等装饰碎片，收进画廊只会显示碎片（spec 2026-10-08-lightbox-math-and-svg-sizing-fix）。
+		if (renderEl.classList.contains('math-block')) continue;
+
 		const svg = renderEl.querySelector('svg');
 		const img = renderEl.querySelector('img');
 		if (!svg && !img) continue;

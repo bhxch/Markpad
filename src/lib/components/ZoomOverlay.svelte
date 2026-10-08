@@ -314,8 +314,13 @@
 	}
 
 	.svg-container {
+		/* D19：padding 与下方 svg 的 max-* calc 耦合，同源定义 */
+		--svg-pad: 32px;
 		background: var(--color-canvas-default);
-		padding: 32px;
+		padding: var(--svg-pad);
+		/* D19：max-* 须覆盖 padding（border-box），否则白框总高可超出 85vh 视口上限
+		   （spec 2026-10-08-lightbox-math-and-svg-sizing-fix） */
+		box-sizing: border-box;
 		border-radius: 8px;
 		box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
 		/* size the container to the SVG's natural proportions, capped at viewport */
@@ -326,11 +331,15 @@
 		justify-content: center;
 	}
 
-	:global(.svg-container svg) {
-		/* let the SVG fill the container using its viewBox — stays fully vector */
+	:global(.svg-container > svg) {
+		/* D19：容器高度由内容撑开（不确定），height:100% 解析不出，高图会按比例
+		   随宽放大并溢出白框；改为视口上限等比自适应（spec 同上）。
+		   只命中直子 svg，避免未来内嵌 HTML 时误伤内部碎片 svg。 */
 		display: block;
-		width: 100%;
-		height: 100%;
+		width: auto;
+		height: auto;
+		max-width: 100%;
+		max-height: calc(85vh - 2 * var(--svg-pad));
 		min-width: 400px;
 		min-height: 200px;
 	}
