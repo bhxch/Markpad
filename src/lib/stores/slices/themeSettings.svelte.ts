@@ -167,9 +167,14 @@ export class ThemeSettingsSlice {
 	}
 
 	// auto 按模式解析为具体代码主题（merge 前语义，供高亮管线与 themeApply 共用）。
+	// T7 语义补全：UI 主题选的是 VSCode 主题时，auto 的代码高亮跟随它——历史上
+	// 导入的 VSCode 主题直接作用于代码块着色（用户裁决"vscode 主题给代码高亮用"）；
+	// 双槽下显式选择的代码主题（dark/light-modern/另一个 vscode 主题）仍然优先。
 	resolveCodeTheme(mode: ThemeMode = this.mode): string {
 		const v = this.codeThemesByMode[mode];
-		return v === 'auto' ? (mode === 'dark' ? 'dark-modern' : 'light-modern') : v;
+		if (v !== 'auto') return v;
+		if (this.uiThemeSource === 'vscode' && this.vscodeUiName) return `vscode:${this.vscodeUiName}`;
+		return mode === 'dark' ? 'dark-modern' : 'light-modern';
 	}
 }
 

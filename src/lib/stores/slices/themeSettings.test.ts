@@ -75,6 +75,35 @@ describe('主题双槽契约（T3/T4，spec §4 矩阵）', () => {
 		expect(slice.resolveCodeTheme()).toBe('light-modern');
 	});
 
+	it('auto 代码主题在 UI 主题为 VSCode 主题时跟随它（T7 语义补全：vscode 主题给代码高亮用）', async () => {
+		const { slice } = await load();
+		slice.setVscodeUi('One Dark Pro');
+		expect(slice.uiThemeSource).toBe('vscode');
+		expect(slice.resolveCodeTheme()).toBe('vscode:One Dark Pro');
+		// 明暗槽位不影响跟随（VSCode 主题自带明暗，themeType 探测另行发布）；
+		// 直接置 mode 绕开 setMode——后者按 T4 语义退出 vscode 激活态（上游选
+		// Default Light 即放弃该主题，回落 light-modern 是正确行为，另有测试）。
+		slice.mode = 'light';
+		expect(slice.resolveCodeTheme('light')).toBe('vscode:One Dark Pro');
+	});
+
+	it('显式选择的代码主题优先于 UI 主题跟随', async () => {
+		const { slice } = await load();
+		slice.setVscodeUi('One Dark Pro');
+		slice.setCodeTheme('light-modern');
+		expect(slice.resolveCodeTheme()).toBe('light-modern');
+		// 切回 auto 恢复跟随
+		slice.setCodeTheme('auto');
+		expect(slice.resolveCodeTheme()).toBe('vscode:One Dark Pro');
+	});
+
+	it('UI 主题为 VSCode 但名称为空（解析前置态）时 auto 仍回落明暗对应内置主题', async () => {
+		const { slice } = await load();
+		slice.uiThemeSource = 'vscode';
+		slice.vscodeUiName = '';
+		expect(slice.resolveCodeTheme()).toBe('dark-modern');
+	});
+
 	it('currentScheme 返回主题表行；uiThemeSource 默认 scheme', async () => {
 		const { slice } = await load();
 		expect(slice.uiThemeSource).toBe('scheme');
