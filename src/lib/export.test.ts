@@ -458,4 +458,18 @@ describe('宽表 breakout/fit 导出一致性（D24，spec 2026-10-09）', () =>
 		expect(out).toMatch(/\.table-fit table :is\(td, th\)\s*\{\s*overflow-wrap:\s*anywhere/);
 		expect(out).toMatch(/\.markdown-body\.full-width\s*\{[^}]*--measure:\s*100cqi/);
 	});
+
+	// 审查 C-1（fix round 1）：基础 table 模型必须与预览（src/styles.css
+	// .markdown-body table）一致——breakout translate 的 -50% 基于表格自身盒宽，
+	// width:100% 时盒宽恒为列宽，translate 恒得负值且 breakout 增宽永不生效。
+	// 钉 CSS 文本不足以防语义回归（I-1），故四声明连序断言锁死模型形态。
+	it('基础 table 模型对齐预览 max-content 盒宽（breakout 数学前提，审查 C-1/M-1）', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试', 1200);
+		expect(out).toMatch(
+			/\.markdown-body table\s*\{[^}]*display:\s*block[^}]*width:\s*max-content[^}]*max-width:\s*100%[^}]*overflow-x:\s*auto/,
+		);
+		expect(out).toMatch(
+			/\.markdown-body\.toc-in-gutter\s*\{[^}]*--breakout-inset:\s*calc\(var\(--toc-width,\s*0px\)\s*\+\s*var\(--gutter\)\)/, // M-1
+		);
+	});
 });

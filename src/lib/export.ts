@@ -689,12 +689,20 @@ overflow-x: auto;
 	background-color: var(--color-canvas-default);
 }
 
+/* D24（审查 C-1）：基础模型对齐预览（src/styles.css 同名规则）。breakout 的
+   translate -50% 基于表格自身盒宽：width:100% 时盒宽恒为列宽，translate 恒得
+   负值（整表左移一个 gutter）且 max-width 增宽永不生效；max-content 盒宽是
+   breakout 数学成立的前提。display:block 让宽表在列内横向滚动（GitHub 行为），
+   列内放得下的表照常换行不出滚动条。打印侧由既有 @media print 的
+   pre/table/img max-width 钳制覆盖，宽表仍钳在页宽内。 */
 .markdown-body table {
 	border-spacing: 0;
 	border-collapse: collapse;
 	margin: 0 0 16px;
-	width: 100%;
-	overflow: auto;
+	display: block;
+	width: max-content;
+	max-width: 100%;
+	overflow-x: auto;
 }
 
 .markdown-body table th, .markdown-body table td {
