@@ -257,6 +257,18 @@ ${contentHtml}
 }
 
 /**
+ * D21 终审 C-1：dynamic 测量前向 iframe 注入的骨架高度归一样式（屏幕媒体）。
+ * 导出骨架的 100vh/100% + overflow:hidden/auto 链会把 documentElement.scrollHeight
+ * 钉在 iframe 视口常数（height:auto 的 iframe 默认 150px），必须先拉直成
+ * 内容高再测量。仅存在于测量态，不影响打印（@page 与 @media print 各司其职）。
+ */
+export const DYNAMIC_MEASURE_NORMALIZE_CSS = `
+html, body { height: auto !important; overflow: visible !important; }
+.markdown-container, .layout-container { display: block; height: auto !important; overflow: visible !important; }
+.viewer-pane, .viewer-content { height: auto !important; overflow: visible !important; }
+`;
+
+/**
  * Export as PDF using browser print dialog
  */
 export async function exportAsPdf(
@@ -295,6 +307,13 @@ export async function exportAsPdf(
 			const applyDynamicPageHeight = () => {
 				if (pageSize !== 'dynamic') return;
 				try {
+					// D21 终审 C-1：测量前先注入骨架高度归一样式，把 100vh/100% +
+					// overflow:hidden/auto 链拉直成内容高，否则 documentElement
+					// .scrollHeight 恒等于 iframe 视口常数（150px），长文档被打成一叠小页。
+					const normalize = iframeDoc.createElement('style');
+					normalize.id = 'dynamic-measure-normalize';
+					normalize.textContent = DYNAMIC_MEASURE_NORMALIZE_CSS;
+					iframeDoc.head.appendChild(normalize);
 					const px = iframeDoc.documentElement?.scrollHeight || 0;
 					if (!px) return;
 					const style = iframeDoc.createElement('style');
@@ -325,7 +344,12 @@ export async function exportAsPdf(
 			if (pageSize === 'dynamic') {
 				// load + 双 rAF：等图片/字体/布局就绪再测高；write 关闭后 readyState
 				// 可能已 complete，此时直接走 rAF。
+				// D21 终审 F2 兜底：load 可能因资源悬挂迟迟不触发，3s 超时后直接走
+				// afterLoad；一次性 guard 防超时与 load 双通道重复执行。
+				let dynamicStarted = false;
 				const afterLoad = () => {
+					if (dynamicStarted) return;
+					dynamicStarted = true;
 					const win = iframe.contentWindow;
 					win?.requestAnimationFrame(() =>
 						win.requestAnimationFrame(() => {
@@ -335,7 +359,10 @@ export async function exportAsPdf(
 					);
 				};
 				if (iframeDoc.readyState === 'complete') afterLoad();
-				else iframe.addEventListener('load', afterLoad, { once: true });
+				else {
+					iframe.addEventListener('load', afterLoad, { once: true });
+					setTimeout(afterLoad, 3000);
+				}
 			} else {
 				doPrint();
 			}

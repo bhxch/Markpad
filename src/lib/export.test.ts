@@ -398,6 +398,28 @@ describe('PDF 动态单页（D21，spec 2026-10-09）', () => {
 		expect(dynamicPageHeightMm(96)).toBe(57); // ceil(25.4)=26 + 31
 		expect(dynamicPageHeightMm(1000)).toBe(296); // ceil(264.58)=265 + 31
 	});
+
+	// D21 终审 C-1：导出骨架的 100vh/100% + overflow:hidden/auto 链会把
+	// documentElement.scrollHeight 钉在 iframe 视口常数（height:auto 的 iframe
+	// 默认 150px），注入 71mm 小页叠。测量前必须注入归一样式拉直成内容高。
+	it('dynamic 测量前注入骨架高度归一样式（终审 C-1）', async () => {
+		const { DYNAMIC_MEASURE_NORMALIZE_CSS } = await import('./export');
+		expect(DYNAMIC_MEASURE_NORMALIZE_CSS).toContain('height: auto !important');
+		expect(DYNAMIC_MEASURE_NORMALIZE_CSS).toContain('.viewer-pane, .viewer-content');
+		expect(DYNAMIC_MEASURE_NORMALIZE_CSS).toContain('overflow: visible !important');
+
+		// 源码契约（先例同款）：exportAsPdf 函数体内存在 dynamic-measure-normalize
+		// 注入点，且 load 等待带 3s 超时兜底（终审 F2）。
+		const { readFileSync } = await import('node:fs');
+		const src = readFileSync(join(__dirname, 'export.ts'), 'utf8');
+		const fnBody = src.slice(
+			src.indexOf('export async function exportAsPdf'),
+			src.indexOf('const PAGE_SIZES'),
+		);
+		expect(fnBody).toContain('dynamic-measure-normalize');
+		expect(fnBody).toContain('DYNAMIC_MEASURE_NORMALIZE_CSS');
+		expect(fnBody).toMatch(/setTimeout\(afterLoad,\s*3000\)/);
+	});
 });
 
 describe('HTML 导出 TOC 与新骨架清理（D22，spec 2026-10-09）', () => {
