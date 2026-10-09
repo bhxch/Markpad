@@ -196,6 +196,9 @@ cargo check
 | D23 | 导出 lightbox 对齐应用内：乘法滚轮/光标锚定/拖拽平移/计数器（历史弱交互 + 二轮拉大差距）；2026-10-09 spec（父仓库 docs/superpowers/specs/2026-10-09-export-restore-and-parity-design.md） |
 | D24 | 宽表 breakout/fit 规则随导出（三轮 3744b24 预览新增未同步导出）；2026-10-09 spec（父仓库 docs/superpowers/specs/2026-10-09-export-restore-and-parity-design.md） |
 | D25 | VSCode 代码主题 --ts-* 导出保真（var() 化 + 覆盖块内联 + data-code-theme）；2026-10-09 spec（父仓库 docs/superpowers/specs/2026-10-09-export-restore-and-parity-design.md） |
+| D26 | PDF 打印骨架拉直：@media print 全链 height:auto/overflow:visible，根除 WebView2 系统打印路径的每页滚动条 | 2026-10-09 spec 修订 v2 |
+| D27 | 按页缩放移入打印 iframe 实测（克隆脱离 DOM 测高恒 0，自始未生效）+ max-height 替代 transform（免布局分裂/水平分页空白页）；processDiagramsForPrint 改导出 | 2026-10-09 spec 修订 v2 |
+| D28 | HTML 导出 TOC 展开钮可见性强化（32×64/全不透明/投影，真机反馈太隐蔽） | 2026-10-09 spec 修订 v2 |
 
 ## 验证（四门 + 差分归类）
 

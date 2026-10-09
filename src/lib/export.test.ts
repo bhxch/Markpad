@@ -386,10 +386,55 @@ describe('PDF 动态单页（D21，spec 2026-10-09）', () => {
 		expect(out).not.toMatch(/size:\s*210mm 297mm/);
 	});
 
-	it('dynamic 不做按页缩放（processDiagramsForPrint 跳过，源码契约）', async () => {
+	it('按页缩放移至打印 iframe 内实测（D27，克隆脱离 DOM 测高恒 0）', async () => {
 		const { readFileSync } = await import('node:fs');
 		const src = readFileSync(join(__dirname, 'export.ts'), 'utf8');
-		expect(src).toMatch(/forPrint && pageSize !== 'dynamic'\)/);
+		// generateExportHtml 不再对脱离 DOM 的克隆缩放
+		expect(src).not.toMatch(/processDiagramsForPrint\(clone/);
+		// exportAsPdf 在挂载后的 iframe 文档上缩放，dynamic 跳过
+		expect(src).toMatch(/processDiagramsForPrint\(iframeDoc\.body, pageSize\)/);
+		expect(src).toMatch(/if \(pageSize === 'dynamic'\) return;/);
+	});
+
+	it('processDiagramsForPrint 依据实测高度以 max-height 缩放并标记换页（D27）', async () => {
+		const { processDiagramsForPrint } = await import('./export');
+		// A4 可用页高 ≈ (297-30)mm ≈ 1009.1px@96dpi；95% → floor(958.68) = 958px
+		const root = document.createElement('div');
+		const tall = document.createElement('div');
+		tall.className = 'diagram-wrapper';
+		const tallSvg = document.createElement('svg');
+		tall.appendChild(tallSvg);
+		Object.defineProperty(tall, 'scrollHeight', { value: 1200, configurable: true });
+		root.appendChild(tall);
+		// 裸 img 目标的选择器限定 .markdown-body 内，夹具须同构
+		const body = document.createElement('div');
+		body.className = 'markdown-body';
+		root.appendChild(body);
+		const bare = document.createElement('img');
+		Object.defineProperty(bare, 'scrollHeight', { value: 1000, configurable: true }); // ratio≈0.99，scale 0.959<1 → 轻微缩小档
+		body.appendChild(bare);
+		const small = document.createElement('div');
+		small.className = 'diagram-wrapper';
+		const smallSvg = document.createElement('svg');
+		small.appendChild(smallSvg);
+		Object.defineProperty(small, 'scrollHeight', { value: 100, configurable: true });
+		root.appendChild(small);
+		processDiagramsForPrint(root, 'a4');
+		expect(tall.classList.contains('large-diagram')).toBe(true);
+		expect(tallSvg.style.maxHeight).toBe("958px");
+		expect(bare.style.maxHeight).toBe("958px");
+		expect(bare.classList.contains('large-diagram')).toBe(false);
+		expect(smallSvg.style.maxHeight).toBe('');
+		expect(small.classList.contains('large-diagram')).toBe(false);
+	});
+
+	it('打印态拉直骨架链根除滚动条（D26，源码契约）', async () => {
+		const out = await generateExportHtml(makeContainer(), true, 'a4', false, '测试');
+		// getBaseStyles 的 @media print 块：包装链 height:auto + overflow:visible
+		expect(out).toMatch(/\.markdown-container, \.layout-container, \.viewer-pane, \.viewer-content \{[^}]*height:\s*auto !important[^}]*overflow:\s*visible !important/);
+		expect(out).toMatch(/pre, table \{\s*overflow:\s*visible !important;/);
+		// D28: TOC 展开按钮可见性强化
+		expect(out).toMatch(/\.toc-toggle-export \{[^}]*width:\s*32px[^}]*opacity:\s*1;/s);
 	});
 
 	it('dynamicPageHeightMm：内容高度换 mm 并加 30mm 边距 + 1mm 缓冲', async () => {

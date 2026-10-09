@@ -344,30 +344,42 @@ export async function exportAsPdf(
 				}, 500);
 			};
 
-			if (pageSize === 'dynamic') {
-				// load + 双 rAF：等图片/字体/布局就绪再测高；write 关闭后 readyState
-				// 可能已 complete，此时直接走 rAF。
-				// D21 终审 F2 兜底：load 可能因资源悬挂迟迟不触发，3s 超时后直接走
-				// afterLoad；一次性 guard 防超时与 load 双通道重复执行。
-				let dynamicStarted = false;
-				const afterLoad = () => {
-					if (dynamicStarted) return;
-					dynamicStarted = true;
-					const win = iframe.contentWindow;
-					win?.requestAnimationFrame(() =>
-						win.requestAnimationFrame(() => {
-							applyDynamicPageHeight();
-							doPrint();
-						})
-					);
-				};
-				if (iframeDoc.readyState === 'complete') afterLoad();
-				else {
-					iframe.addEventListener('load', afterLoad, { once: true });
-					setTimeout(afterLoad, 3000);
+			// D27: 固定页尺寸的按页缩放在此执行——iframe 已挂载、宽 210mm、load
+			// 后图片就绪，processDiagramsForPrint 测得打印布局下的真实高度。
+			// 此前在脱离 DOM 的克隆上测量，scrollHeight 恒 0，智能缩放从未生效。
+			// dynamic 单页跳过：页高自适应内容，无需按页缩放（applyDynamicPageHeight
+			// 内有同款守卫）。
+			const applyPrintScaling = () => {
+				if (pageSize === 'dynamic') return;
+				try {
+					processDiagramsForPrint(iframeDoc.body, pageSize);
+				} catch {
+					// 缩放失败不阻塞打印，仅失去超宽图自适应
 				}
-			} else {
-				doPrint();
+			};
+
+			// load + 双 rAF：等图片/字体/布局就绪再缩放/测高；write 关闭后
+			// readyState 可能已 complete，此时直接走 rAF。
+			// D21 终审 F2 兜底：load 可能因资源悬挂迟迟不触发，3s 超时后直接走
+			// afterLoad；一次性 guard 防超时与 load 双通道重复执行。
+			// 两条页尺寸路径（dynamic 测高 / 固定尺寸缩放）统一经此就绪闸。
+			let afterLoadStarted = false;
+			const afterLoad = () => {
+				if (afterLoadStarted) return;
+				afterLoadStarted = true;
+				const win = iframe.contentWindow;
+				win?.requestAnimationFrame(() =>
+					win.requestAnimationFrame(() => {
+						applyPrintScaling();
+						applyDynamicPageHeight();
+						doPrint();
+					})
+				);
+			};
+			if (iframeDoc.readyState === 'complete') afterLoad();
+			else {
+				iframe.addEventListener('load', afterLoad, { once: true });
+				setTimeout(afterLoad, 3000);
 			}
 		} catch (e) {
 			resolve({ success: false, message: `PDF export failed: ${e}` });
@@ -925,26 +937,28 @@ ${getTreeSitterStyles(theme)}
 	}
 
 	/* Export: TOC toggle button (show when sidebar hidden) */
+	/* D28: 真机反馈按钮太隐蔽找不到——加大尺寸、全不透明、加投影与常显描边 */
 	.toc-toggle-export {
 		position: fixed;
 		top: 50%;
 		transform: translateY(-50%);
-		width: 24px;
-		height: 48px;
+		width: 32px;
+		height: 64px;
 		background: var(--color-canvas-overlay, var(--color-canvas-default));
 		border: 1px solid var(--color-border-default);
-		border-radius: 0 6px 6px 0;
+		border-radius: 0 8px 8px 0;
 		cursor: pointer;
 		display: none;
 		align-items: center;
 		justify-content: center;
 		z-index: 100;
-		color: var(--color-fg-muted);
-		opacity: 0.7;
+		color: var(--color-fg-default);
+		opacity: 1;
 		transition: opacity 0.2s;
 		left: 0;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 	}
-	.toc-toggle-export:hover { opacity: 1; }
+	.toc-toggle-export:hover { opacity: 1; background: var(--color-canvas-subtle); }
 	.toc-toggle-export.visible { display: flex; }
 	.toc-toggle-export.on-right {
 		left: auto;
@@ -1104,6 +1118,22 @@ ${getTreeSitterStyles(theme)}
 		overflow: visible !important;
 	}
 
+	/* D26: 打印态拉直骨架链。.viewer-content 的 height:100% + overflow-y:auto
+		在 WebView2 系统打印路径按视口高度解析，长文档跨页分片时每页都画出
+		滚动条（真机实测）；整个包装链必须 height:auto + overflow:visible，
+		任何元素都不再可能产生滚动条。 */
+	.markdown-container, .layout-container, .viewer-pane, .viewer-content {
+		display: block;
+		height: auto !important;
+		overflow: visible !important;
+	}
+
+	/* D26: 滚动容器在打印态一律 visible——pre 已由 white-space:pre-wrap 换行，
+		表格由 max-width:100% 钳制换列，残留溢出交由页缘裁切而非画滚动条 */
+	pre, table {
+		overflow: visible !important;
+	}
+
 	.markdown-container {
 		display: block;
 	}
@@ -1131,6 +1161,7 @@ ${getTreeSitterStyles(theme)}
 	.diagram-wrapper svg,
 	pre,
 	img,
+	.markdown-body svg,
 	table {
 		break-inside: avoid;
 	}
@@ -1262,7 +1293,7 @@ export async function convertAssetImagesToDataUri(container: HTMLElement): Promi
 /**
  * Process diagrams for pagination
  */
-function processDiagramsForPrint(container: HTMLElement, pageSize: PdfPageSize): void {
+export function processDiagramsForPrint(container: HTMLElement, pageSize: PdfPageSize): void {
 	const size = PAGE_SIZES[pageSize];
 	const pageHeightMm = size.height - 30; // Subtract margins (15mm * 2)
 	const pageHeightPx = pageHeightMm / 25.4 * 96; // Convert to pixels
@@ -1285,9 +1316,20 @@ function processDiagramsForPrint(container: HTMLElement, pageSize: PdfPageSize):
 		if (fit.newPage) {
 			el.classList.add('large-diagram');
 		}
-		el.style.transform = `scale(${fit.scale})`;
-		el.style.transformOrigin = 'top left';
-		el.style.width = `${100 / fit.scale}%`;
+		// D27: 打印态用 max-height 约束替代 transform 缩放。transform 不影响
+		// 布局——布局高仍按原高跨页分裂，width 补偿（100/scale %）还会超出
+		// 页宽触发水平分页（真机/Chromium 打印实证：大图前多出空白页）。
+		// max-height 对 svg/img 按内在比例整图缩放，配合 break-inside:avoid
+		// 与 .large-diagram 的 break-before:page 完整落在一页内。两种 fit 档
+		// （新页/轻微）的目标高度同为 95% 可用页高。
+		const maxHeight = `${Math.floor(pageHeightPx * 0.95)}px`;
+		if (el.classList.contains('diagram-wrapper')) {
+			el.querySelectorAll('svg, img').forEach(child => {
+				(child as HTMLElement).style.maxHeight = maxHeight;
+			});
+		} else {
+			el.style.maxHeight = maxHeight;
+		}
 	});
 }
 
@@ -1437,15 +1479,15 @@ export async function generateExportHtml(
 	const codeThemeAttr = escapeHtml(document.documentElement.getAttribute('data-code-theme') || '');
 
 	// Process diagrams/img/svg for print (scale to fit page)
-	// D21: dynamic 单页页高自适应内容，无需按页缩放/换页。
-	if (forPrint && pageSize !== 'dynamic') {
-		processDiagramsForPrint(clone, pageSize);
-	}
+	// D27: 按页缩放不再在此处对克隆执行——克隆脱离 DOM，scrollHeight 恒 0，
+	// 缩放从未生效（真机打印实测确认）。已移入 exportAsPdf 的打印 iframe 内，
+	// 在挂载、宽 210mm、图片就绪的真实布局上测量（dynamic 单页仍跳过：
+	// 页高自适应内容，无需按页缩放）。
 
 		// Add scripts for HTML export
 		const tocToggleHtml = (!forPrint && showToc) ? `
 		<button class="toc-toggle-export" data-action="show" title="Show TOC">
-			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
 		</button>` : '';
 
 		const htmlScripts = forPrint ? '' : `
