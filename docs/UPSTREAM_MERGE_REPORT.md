@@ -255,3 +255,8 @@ Task 18 交接的人工冒烟清单（acceptance-smoke 报告 §4）存在两处
 ## 结论（第二轮）
 
 626 个上游提交以本地特性保全方式并入。终审审查修复 22 项后，三轨测试全绿（npm test 1112/0、vitest 546/546、cargo test 240/0）、svelte-check 0 errors / 0 warnings；初版合并的两处实施疏漏（HTML 导出保存必败、YouTube 内嵌丢失）已修复，10 个测试差分全部收敛为 fork 契约。人工 GUI 冒烟清单（含本文补录两处，HTML 导出全链路须在 encoding 修复后重验）交接给有 GUI 环境的后续验证。
+## 第三轮（v2.8.4，2026-10-09）
+
+上游增量 3 提交（2154730..a7ce006）：宽表格适配设置（`preview.tableBreakout`/`preview.tableScroll`，#927/#959）、npm audit 清理（source-map-js、mermaid katex override，#960）、版本号 2.8.4（#961）。**零冲突自动合并**（合并点 3744b24，触及 11 文件均为上游/共享文件，本地命名空间文件无一被波及）。
+
+合并后验收：本地特性源码在位（D18 math 守卫、D20 迁移接线、本地图表依赖全保留）；三轨测试全绿（npm test 0 失败、vitest 679/679、svelte-check 0 errors）；唯一语义处置——上游轨守卫测试 `singleImplementationConvention.test.ts` 的"localStorage 单写入口"规则拦下 D20 标记键裸写，按测试指引登记 `allowed` 并注明理由（写一次永不变的簿记键，且 titlebarMigration 须保持叶子模块）。GUI 冒烟通过（demo 文档渲染、math 块无浮层按钮、placement 表完整、标记在位）。
