@@ -652,7 +652,9 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 				}
 			} else {
 				// Use browser print for PDF export
-				const result = await exportAsPdf(container, settings.showToc, pageSize, fileName);
+				// D24 终审 M-2：PDF 路径接通 contentWidth（与 :648 HTML 分支的
+				// previewContentWidth 同源），导出 --measure 不再钉 900px 缺省。
+				const result = await exportAsPdf(container, settings.showToc, pageSize, fileName, previewContentWidth ?? undefined);
 				exportMessage = { show: true, text: result.message };
 				setTimeout(() => { exportMessage = { show: false, text: '' }; }, 5000);
 			}

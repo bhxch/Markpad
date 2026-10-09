@@ -18,7 +18,10 @@ describe('导出管线接线契约（spec §7.2 风险 1）', () => {
       /import \{ exportAsHtml, exportAsPdf, type ExportFormat, type PdfPageSize \} from '\.\/export'/,
     );
     expect(mv).toMatch(/exportAsHtml\(container, settings\.showToc/);
-    expect(mv).toMatch(/exportAsPdf\(container, settings\.showToc, pageSize, fileName\)/);
+    // D24 终审 M-2：PDF 路径第 5 参接通 previewContentWidth（null 回落 export.ts 缺省）。
+    expect(mv).toMatch(
+      /exportAsPdf\(container, settings\.showToc, pageSize, fileName, previewContentWidth \?\? undefined\)/,
+    );
   });
 
   it('MV 导出容器是 TOC wrapper 公共祖先（D22，防上游骨架替换再次静默丢 TOC）', () => {

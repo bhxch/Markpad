@@ -494,6 +494,17 @@ describe('宽表 breakout/fit 导出一致性（D24，spec 2026-10-09）', () =>
 			/\.markdown-body\.toc-in-gutter\s*\{[^}]*--breakout-inset:\s*calc\(var\(--toc-width,\s*0px\)\s*\+\s*var\(--gutter\)\)/, // M-1
 		);
 	});
+
+	// D24 终审 I-1：屏幕态 breakout 规则特异度 (0,4,1) 压过 @media print 块的
+	// `pre, table, img { max-width: 100% }` (0,0,1)——开档用户 PDF 打印时宽表按
+	// 100cqi 增宽且 translate 左移、伸入页边距。print 块内须有同特异度覆盖。
+	it('打印态撤除 breakout 增宽/位移，宽表回归页宽钳制（终审 I-1）', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'a4', true, '测试', 1200);
+		// @media print 段内含 table-breakout 同选择器覆盖：max-width: 100% + translate: none
+		expect(out).toMatch(
+			/@media print[^@]*\.table-breakout table:not\(:is\(li, blockquote, td, th, details, \.markdown-alert, \.footnotes\) table\)\s*\{[^}]*max-width:\s*100%;[^}]*translate:\s*none;/,
+		);
+	});
 });
 
 describe('VSCode 代码主题导出保真（D25，spec 2026-10-09）', () => {

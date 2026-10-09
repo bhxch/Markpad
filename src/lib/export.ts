@@ -275,11 +275,14 @@ export async function exportAsPdf(
 	container: HTMLElement,
 	showToc: boolean,
 	pageSize: PdfPageSize,
-	title: string = 'Exported Document'
+	title: string = 'Exported Document',
+	// D24 终审 M-2：与 exportAsHtml/generateExportHtml 同款尾参——PDF 路径不接通
+	// 的话，--measure 恒钉 900px 缺省，与 HTML 导出及预览宽度设置不一致。
+	contentWidth: number = 900
 ): Promise<{ success: boolean; message: string }> {
 	let html: string;
 	try {
-		html = await generateExportHtml(container, showToc, pageSize, true, title);
+		html = await generateExportHtml(container, showToc, pageSize, true, title, contentWidth);
 	} catch (e) {
 		return { success: false, message: `PDF export failed: ${e}` };
 	}
@@ -1136,6 +1139,13 @@ ${getTreeSitterStyles(theme)}
 		max-width: 100%;
 	}
 
+	/* D24 终审 I-1：打印态撤除 breakout 增宽/位移，宽表回归页宽钳制
+		（特异度须不低于屏幕态 breakout 规则） */
+	.viewer-content .markdown-body.table-breakout table:not(:is(li, blockquote, td, th, details, .markdown-alert, .footnotes) table) {
+		max-width: 100%;
+		translate: none;
+	}
+
 	.markdown-body pre {
 		white-space: pre-wrap;
 		word-break: break-word;
@@ -1307,8 +1317,9 @@ export async function generateExportHtml(
 		// For HTML: keep diagram toggle buttons, remove other interactive elements
 		clone.querySelectorAll('.editor-pane, .split-bar, .lang-label, .toc-toggle-floating, .toc-resize-handle').forEach(el => el.remove());
 	}
-	// frontmatter 面板（Task 14 ①）：两个分支都移除——克隆自 .viewer-content，内含
-	// 预览的交互式 frontmatter 面板（select/input 编辑件），不属于导出文档。
+	// frontmatter 面板（Task 14 ①）：两个分支都移除——克隆自 .layout-container（D22
+	// 容器修正，终审 M-1 更正注释），内含预览的交互式 frontmatter 面板
+	// （select/input 编辑件），不属于导出文档。
 	clone.querySelectorAll('.frontmatter-panel').forEach(el => el.remove());
 	
 	// Remove event handlers
