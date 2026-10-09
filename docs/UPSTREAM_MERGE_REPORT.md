@@ -191,6 +191,11 @@ cargo check
 | D14 | Home 菜单 / MoreMenu / metadata 弹窗由上游承接退役；本地 `export`/`vim_mode`/`zen_mode`/`metadata`/`theme_scheme`/`code_theme` 六动作注册进上游 `titlebarToolbar.ts` 注册表；Home 菜单仅保留 fork URL（`bhxch/Markpad`） |
 | D15 | **已废弃（2026-10-07 用户终裁）**：内嵌 iframe 系上游 #47 旧特性而非本地独有，上游 #338/#388 已自行演进为缩略图外链方案，按"本地从上游移植的副本回归上游原版"规则跟随上游。初版合并曾静默丢失渲染端，审查修复曾回挂（`18dbf78`），终裁后反转回归上游版（`c6803dd`）：`replaceWithYoutubeLink` + CSP 删 frame-src，测试恢复上游契约并新增本地轨缩略图行为测试 |
 | D17 | 测试三轨：上游 node --test 轨 + upstream-spec vitest 轨 + local-unit vitest 轨 |
+| D21 | PDF 动态单页恢复（92baf54 测量 bug 修复：iframe 内实测页高）+ 默认项回归；多页分页维持储备；2026-10-09 spec（父仓库 docs/superpowers/specs/2026-10-09-export-restore-and-parity-design.md） |
+| D22 | HTML 导出 TOC 修复：导出容器改取 .layout-container（二轮 ef663c5 误选 .viewer-content 致 TOC 死路）；夹具镜像真实 DOM + 接线钉子；2026-10-09 spec（父仓库 docs/superpowers/specs/2026-10-09-export-restore-and-parity-design.md） |
+| D23 | 导出 lightbox 对齐应用内：乘法滚轮/光标锚定/拖拽平移/计数器（历史弱交互 + 二轮拉大差距）；2026-10-09 spec（父仓库 docs/superpowers/specs/2026-10-09-export-restore-and-parity-design.md） |
+| D24 | 宽表 breakout/fit 规则随导出（三轮 3744b24 预览新增未同步导出）；2026-10-09 spec（父仓库 docs/superpowers/specs/2026-10-09-export-restore-and-parity-design.md） |
+| D25 | VSCode 代码主题 --ts-* 导出保真（var() 化 + 覆盖块内联 + data-code-theme）；2026-10-09 spec（父仓库 docs/superpowers/specs/2026-10-09-export-restore-and-parity-design.md） |
 
 ## 验证（四门 + 差分归类）
 
