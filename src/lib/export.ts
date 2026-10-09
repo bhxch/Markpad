@@ -1511,7 +1511,9 @@ export async function generateExportHtml(
 				lightboxOverlay.addEventListener('wheel', function(e) {
 					e.preventDefault();
 					if (!document.getElementById('lightbox-content')) return;
-					var newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, lbZoom * Math.exp(-e.deltaY / 100)));
+					// D23（审查 I-1）: deltaY 先钳 ±10 再 exp，对齐应用内 wheelZoomFactor（settings.svelte.ts），鼠标一格约 ±10%
+					var d = Math.max(-10, Math.min(10, e.deltaY));
+					var newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, lbZoom * Math.exp(-d / 100)));
 					var rect = lightboxOverlay.getBoundingClientRect();
 					var cx = e.clientX - rect.left - rect.width / 2;
 					var cy = e.clientY - rect.top - rect.height / 2;
