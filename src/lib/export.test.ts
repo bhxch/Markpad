@@ -473,3 +473,33 @@ describe('宽表 breakout/fit 导出一致性（D24，spec 2026-10-09）', () =>
 		);
 	});
 });
+
+describe('VSCode 代码主题导出保真（D25，spec 2026-10-09）', () => {
+	it('ts 配色改消费 --ts-* 变量并保留 GitHub 基线 fallback', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+		expect(out).toMatch(/\.ts-comment[^{]*\{ color: var\(--ts-comment, #/);
+		expect(out).toMatch(/\.ts-keyword \{ color: var\(--ts-keyword, /);
+	});
+
+	it('存在 vscode 覆盖块时内联进导出且 html 带 data-code-theme', async () => {
+		document.documentElement.setAttribute('data-code-theme', 'vscode:Dark Modern');
+		const tag = document.createElement('style');
+		tag.id = 'ts-vscode-theme-vscode:Dark Modern';
+		tag.textContent = ':root[data-code-theme="vscode:Dark Modern"] { --ts-keyword: #123456; }';
+		document.head.appendChild(tag);
+		try {
+			const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+			expect(out).toMatch(/data-code-theme="vscode:Dark Modern"/);
+			expect(out).toMatch(/<style data-export-ts-overrides>/);
+			expect(out).toMatch(/--ts-keyword: #123456/);
+		} finally {
+			tag.remove();
+			document.documentElement.removeAttribute('data-code-theme');
+		}
+	});
+
+	it('非 vscode 态不注入覆盖块', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+		expect(out).not.toMatch(/data-export-ts-overrides/);
+	});
+});

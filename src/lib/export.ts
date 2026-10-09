@@ -418,32 +418,41 @@ function extractCssVariables(): string {
  */
 function getTreeSitterStyles(theme: string): string {
 	const dark = theme === 'dark';
+	// D25: 映射类改消费 --ts-* 变量（fallback 为 GitHub 深/浅基线）——VSCode 代码
+	// 主题激活时变量值来自 head 覆盖块与 :root 计算值，导出件配色与预览同源；
+	// 映射集与 themeApply.ts TS_TOKEN_SCOPE_MAP 的 27 变量同步，无映射类保持字面色。
 	return `
 	/* Tree-sitter Syntax Highlighting */
-.ts-comment, .ts-comment-line, .ts-comment-block, .ts-comment-doc { color: ${dark ? '#6A9955' : '#008000'}; font-style: italic; }
-.ts-keyword { color: ${dark ? '#569CD6' : '#0000FF'}; }
-.ts-keyword-control, .ts-keyword-conditional, .ts-keyword-repeat, .ts-keyword-import, .ts-keyword-return, .ts-keyword-exception, .ts-keyword-function, .ts-keyword-storage, .ts-keyword-operator { color: ${dark ? '#C586C0' : '#AF00DB'}; }
-.ts-string { color: ${dark ? '#CE9178' : '#A31515'}; }
-.ts-string-regexp { color: ${dark ? '#D16969' : '#811F3F'}; }
+.ts-comment, .ts-comment-line, .ts-comment-block, .ts-comment-doc { color: var(--ts-comment, ${dark ? '#6A9955' : '#008000'}); font-style: italic; }
+.ts-keyword { color: var(--ts-keyword, ${dark ? '#569CD6' : '#0000FF'}); }
+.ts-keyword-control, .ts-keyword-conditional, .ts-keyword-repeat, .ts-keyword-import, .ts-keyword-return, .ts-keyword-exception, .ts-keyword-function, .ts-keyword-storage, .ts-keyword-operator { color: var(--ts-keyword-control, ${dark ? '#C586C0' : '#AF00DB'}); }
+.ts-string { color: var(--ts-string, ${dark ? '#CE9178' : '#A31515'}); }
+.ts-string-regexp { color: var(--ts-string-regexp, ${dark ? '#D16969' : '#811F3F'}); }
 .ts-string-special, .ts-string-path, .ts-string-url, .ts-string-symbol, .ts-char { color: ${dark ? '#CE9178' : '#A31515'}; }
-.ts-number, .ts-integer, .ts-float { color: ${dark ? '#B5CEA8' : '#098658'}; }
-.ts-constant { color: ${dark ? '#4FC1FF' : '#0070C1'}; }
-.ts-constant-builtin, .ts-boolean { color: ${dark ? '#569CD6' : '#0000FF'}; }
-.ts-type, .ts-constructor, .ts-namespace { color: ${dark ? '#4EC9B0' : '#267F99'}; }
-.ts-type-builtin, .ts-enum-variant { color: ${dark ? '#4EC9B0' : '#267F99'}; }
-.ts-function, .ts-function-builtin, .ts-method, .ts-macro, .ts-function-special { color: ${dark ? '#DCDCAA' : '#795E26'}; }
-.ts-variable, .ts-label { color: ${dark ? '#9CDCFE' : '#001080'}; }
-.ts-variable-builtin { color: ${dark ? '#569CD6' : '#0000FF'}; }
-.ts-parameter, .ts-member, .ts-property { color: ${dark ? '#9CDCFE' : '#001080'}; }
-.ts-operator { color: ${dark ? '#D4D4D4' : '#000000'}; }
-.ts-punctuation, .ts-delimiter { color: ${dark ? '#D4D4D4' : '#000000'}; }
-.ts-bracket { color: ${dark ? '#FFD700' : '#000000'}; }
+.ts-number, .ts-integer, .ts-float { color: var(--ts-number, ${dark ? '#B5CEA8' : '#098658'}); }
+.ts-constant { color: var(--ts-constant, ${dark ? '#4FC1FF' : '#0070C1'}); }
+.ts-constant-builtin { color: var(--ts-constant-builtin, ${dark ? '#569CD6' : '#0000FF'}); }
+.ts-boolean { color: var(--ts-boolean, ${dark ? '#569CD6' : '#0000FF'}); }
+.ts-type { color: var(--ts-type, ${dark ? '#4EC9B0' : '#267F99'}); }
+.ts-type-builtin, .ts-enum-variant { color: var(--ts-type-builtin, ${dark ? '#4EC9B0' : '#267F99'}); }
+.ts-constructor { color: var(--ts-constructor, ${dark ? '#4EC9B0' : '#267F99'}); }
+.ts-namespace { color: var(--ts-namespace, ${dark ? '#4EC9B0' : '#267F99'}); }
+.ts-function, .ts-function-builtin, .ts-function-special { color: var(--ts-function, ${dark ? '#DCDCAA' : '#795E26'}); }
+.ts-method { color: var(--ts-method, ${dark ? '#DCDCAA' : '#795E26'}); }
+.ts-macro { color: var(--ts-macro, ${dark ? '#DCDCAA' : '#795E26'}); }
+.ts-variable, .ts-label { color: var(--ts-variable, ${dark ? '#9CDCFE' : '#001080'}); }
+.ts-variable-builtin { color: var(--ts-variable-builtin, ${dark ? '#569CD6' : '#0000FF'}); }
+.ts-parameter { color: var(--ts-parameter, ${dark ? '#9CDCFE' : '#001080'}); }
+.ts-member, .ts-property { color: var(--ts-property, ${dark ? '#9CDCFE' : '#001080'}); }
+.ts-operator { color: var(--ts-operator, ${dark ? '#D4D4D4' : '#000000'}); }
+.ts-punctuation, .ts-delimiter { color: var(--ts-punctuation, ${dark ? '#D4D4D4' : '#000000'}); }
+.ts-bracket { color: var(--ts-bracket, ${dark ? '#FFD700' : '#000000'}); }
 .ts-punctuation-special { color: ${dark ? '#D4D4D4' : '#000000'}; }
-.ts-tag { color: ${dark ? '#569CD6' : '#800000'}; }
-.ts-attribute { color: ${dark ? '#9CDCFE' : '#FF0000'}; }
-.ts-special { color: ${dark ? '#C586C0' : '#AF00DB'}; }
-.ts-escape { color: ${dark ? '#D7A635' : '#EE0000'}; }
-.ts-tag-error { color: ${dark ? '#F44747' : '#F44747'}; }
+.ts-tag { color: var(--ts-tag, ${dark ? '#569CD6' : '#800000'}); }
+.ts-attribute { color: var(--ts-attribute, ${dark ? '#9CDCFE' : '#FF0000'}); }
+.ts-special { color: var(--ts-special, ${dark ? '#C586C0' : '#AF00DB'}); }
+.ts-escape { color: var(--ts-escape, ${dark ? '#D7A635' : '#EE0000'}); }
+.ts-tag-error { color: #F44747; }
 .ts-default { color: ${dark ? '#D4D4D4' : '#1F2328'}; }
 `;
 }
@@ -1373,6 +1382,14 @@ export async function generateExportHtml(
 	// Extract CSS variables
 	const cssVariables = extractCssVariables();
 
+	// D25: VSCode 代码主题的 --ts-* 覆盖块随导出（活动代码主题唯一，非 vscode 态
+	// 为空集）；选择器 :root[data-code-theme=...] 依赖 html 属性，同步携带。
+	const tsOverrideStyles = Array.from(document.querySelectorAll('style[id^="ts-vscode-theme-"]'))
+		.map(el => el.textContent || '')
+		.filter(Boolean)
+		.join('\n');
+	const codeThemeAttr = document.documentElement.getAttribute('data-code-theme') || '';
+
 	// Process diagrams/img/svg for print (scale to fit page)
 	// D21: dynamic 单页页高自适应内容，无需按页缩放/换页。
 	if (forPrint && pageSize !== 'dynamic') {
@@ -1663,7 +1680,7 @@ export async function generateExportHtml(
 
 	// Build HTML
 	const html = `<!DOCTYPE html>
-<html lang="zh-CN" data-theme-mode="${themeMode}" data-theme-scheme="${themeScheme}">
+<html lang="zh-CN" data-theme-mode="${themeMode}" data-theme-scheme="${themeScheme}"${codeThemeAttr ? ` data-code-theme="${codeThemeAttr}"` : ''}>
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1677,6 +1694,7 @@ ${getBaseStyles(themeMode, contentWidth)}
 
 ${forPrint ? getPrintStyles(pageSize) : ''}
 	</style>
+	${tsOverrideStyles ? `<style data-export-ts-overrides>${tsOverrideStyles}</style>` : ''}
 	${katexStyles}
 </head>
 <body>
