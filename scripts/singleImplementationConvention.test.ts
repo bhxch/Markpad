@@ -241,7 +241,12 @@ const RULES: Rule[] = [
 		// 它就错过了 seed 窗口），所以只能裸 setItem 写"另一会话已写入的键"。
 		// titlebarBridge.test.ts：I1 placement 迁移的 seed；themeSettings.test.ts：
 		// 注册表槽值白名单的 seed。生产写入路径未新增。
-		allowed: ['src/lib/stores/settings.svelte.ts', 'src/lib/utils/titlebarBridge.test.ts', 'src/lib/stores/slices/themeSettings.test.ts'],
+		// titlebarMigration.ts（D20，2026-10-09 上游 v2.8.4 合并波登记）：placement
+		// 迁移标记 `titlebar.placementMigrated` 是写一次永不变的布尔簿记键，非用户
+		// 偏好——无监听响应需求（仅注册表 load 构造期读取），CAS 无增益；且
+		// titlebarMigration 按防冲突规则必须保持叶子模块（导入 settings 的
+		// writeStoredSetting 即成 settings↔migration 环）。
+		allowed: ['src/lib/stores/settings.svelte.ts', 'src/lib/utils/titlebarBridge.test.ts', 'src/lib/stores/slices/themeSettings.test.ts', 'src/lib/utils/titlebarMigration.ts'],
 	},
 	{
 		name: 'the app writes an image embed in one place',
