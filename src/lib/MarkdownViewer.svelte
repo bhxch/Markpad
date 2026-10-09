@@ -627,10 +627,13 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 			await renderTabPreviewFromRaw(activeTab);
 		}
 
-		// 上游骨架的预览容器是 .viewer-content（内含 article.markdown-body；TOC wrapper
-		// 挂在其外的 .layout-container 下，不随克隆带出），与原本地形态 .markdown-container
-		// 同角色；export.ts 以 clone.querySelector('.markdown-body') 取正文，容器必须是其祖先。
-		const container = document.querySelector('.viewer-content') as HTMLElement;
+		// D22（spec 2026-10-09-export-restore-and-parity）：导出容器必须是
+		// article.markdown-body 与 .toc-overlay-wrapper 的公共祖先。上游骨架里
+		// TOC wrapper 挂在 .layout-container 下、是 .viewer-content 的兄弟节点；
+		// 二轮 merge 误选 .viewer-content 致 export.ts 的 TOC 重建逻辑整体死路
+		// （HTML 导出丢 TOC，测试夹具失真掩护）。export.ts 以
+		// clone.querySelector('.markdown-body') 取正文，容器必须是其祖先。
+		const container = document.querySelector('.layout-container') as HTMLElement;
 		if (!container) return;
 
 		// Get filename without .md extension

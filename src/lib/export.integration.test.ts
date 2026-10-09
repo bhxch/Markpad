@@ -124,7 +124,7 @@ function parseMd(mdRaw: string): ParsedDoc {
 	return doc;
 }
 
-// md → 仿真预览 DOM（.markdown-container 完整结构：TOC + 正文 + 交互件）
+// md → 仿真预览 DOM（.layout-container 完整结构：viewer-pane + TOC wrapper 等兄弟）
 function mdToPreviewContainer(mdRaw: string, mdDir: string): HTMLElement {
 	const md = mdRaw.replace(/^\uFEFF/, '');
 	const doc = parseMd(mdRaw);
@@ -257,22 +257,27 @@ function mdToPreviewContainer(mdRaw: string, mdDir: string): HTMLElement {
 		: '';
 
 	const container = document.createElement('div');
-	container.className = 'markdown-container';
+	// D22：夹具与 MarkdownViewer.svelte 真实骨架同构——.layout-container 是
+	// TOC wrapper 与正文的公共祖先（handleExport 的导出容器即取它），不得再
+	// 把 wrapper 错放进正文容器内掩盖死路。
+	container.className = 'layout-container';
 	container.innerHTML = `
-		<div class="layout-container">
-			<div class="toc-overlay-wrapper is-pinned">
-				<div class="toc-container">
-					<div class="toc-header"></div>
-					<div class="toc-list">${tocEntries}</div>
-				</div>
+		<div class="pane viewer-pane" style="flex: 0.5">
+			<div class="find-bar">find</div>
+			<div class="viewer-content">
+				${frontmatterPanel}
+				<article class="markdown-body">
+					${htmlParts.join('\n')}
+				</article>
 			</div>
-			<div class="viewer-pane">
-				<div class="viewer-content">
-					${frontmatterPanel}
-					<article class="markdown-body">
-						${htmlParts.join('\n')}
-					</article>
-				</div>
+		</div>
+		<div class="top-fade-mask"></div>
+		<div class="toc-toggle-floating"></div>
+		<div class="toc-overlay-wrapper is-pinned">
+			<div class="toc-resize-handle"></div>
+			<div class="toc-container">
+				<div class="toc-header"></div>
+				<div class="toc-list">${tocEntries}</div>
 			</div>
 		</div>`;
 	return container;

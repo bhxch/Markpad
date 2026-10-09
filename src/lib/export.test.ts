@@ -11,26 +11,30 @@ const { invokeMock, saveDialogMock } = vi.hoisted(() => ({
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: saveDialogMock }));
 
-// 构造一个接近真实结构的 .markdown-container：浮动目录栏 + 正文区。
+// 构造镜像真实 DOM 的导出容器（D22）：.layout-container 是 TOC wrapper 与
+// 正文的公共祖先；二轮 merge 曾误选 .viewer-content（wrapper 之外的节点）
+// 致 TOC 重建死路、而本夹具失真掩护了它——夹具必须与 MarkdownViewer 同构。
 function makeContainer(inner = ''): HTMLElement {
 	const container = document.createElement('div');
-	container.className = 'markdown-container';
+	container.className = 'layout-container';
 	container.innerHTML = `
-		<div class="layout-container">
-			<div class="toc-overlay-wrapper is-pinned">
-				<div class="toc-container">
-					<div class="toc-header"></div>
-					<div class="toc-list"><button class="toc-link" data-id="test">目录项</button></div>
-				</div>
+		<div class="pane viewer-pane" style="flex: 0.5">
+			<div class="find-bar">find</div>
+			<div class="viewer-content">
+				<article class="markdown-body">
+					<h1 id="test">测试标题</h1>
+					<p>正文内容 https://example.com/a/very/long/unbreakable/path/that/should/wrap</p>
+					${inner}
+				</article>
 			</div>
-			<div class="viewer-pane">
-				<div class="viewer-content">
-					<article class="markdown-body">
-						<h1 id="test">测试标题</h1>
-						<p>正文内容 https://example.com/a/very/long/unbreakable/path/that/should/wrap</p>
-						${inner}
-					</article>
-				</div>
+		</div>
+		<div class="top-fade-mask"></div>
+		<div class="toc-toggle-floating"></div>
+		<div class="toc-overlay-wrapper is-pinned">
+			<div class="toc-resize-handle"></div>
+			<div class="toc-container">
+				<div class="toc-header"></div>
+				<div class="toc-list"><button class="toc-link" data-id="test">目录项</button></div>
 			</div>
 		</div>`;
 	return container;
@@ -393,5 +397,27 @@ describe('PDF 动态单页（D21，spec 2026-10-09）', () => {
 		expect(dynamicPageHeightMm(0)).toBe(31);
 		expect(dynamicPageHeightMm(96)).toBe(57); // ceil(25.4)=26 + 31
 		expect(dynamicPageHeightMm(1000)).toBe(296); // ceil(264.58)=265 + 31
+	});
+});
+
+describe('HTML 导出 TOC 与新骨架清理（D22，spec 2026-10-09）', () => {
+	it('TOC 重建命中真实 DOM 形态：pinned 固化 + 锚点化 + resize handle 摘除', async () => {
+		const out = await generateExportHtml(makeContainer(), true, 'a4', false, '测试');
+		expect(out).toMatch(/toc-overlay-wrapper[^>]*is-pinned/);
+		expect(out).toMatch(/<a href="#test" class="toc-link"/);
+		expect(out).not.toMatch(/toc-resize-handle/);
+		expect(out).toMatch(/toc-toggle-export/);
+	});
+
+	it('新骨架衍生物不入导出物：find-bar/top-fade-mask/toc-toggle-floating', async () => {
+		const out = await generateExportHtml(makeContainer(), true, 'a4', false, '测试');
+		expect(out).not.toMatch(/find-bar/);
+		expect(out).not.toMatch(/top-fade-mask/);
+		expect(out).not.toMatch(/toc-toggle-floating/);
+	});
+
+	it('viewer-pane 行内 flex 归一化（split 态不压扁导出正文）', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+		expect(out).not.toMatch(/style="flex:\s*0\.5"/);
 	});
 });

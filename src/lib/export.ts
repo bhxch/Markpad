@@ -52,6 +52,18 @@ function stripInactiveTabHosts(clone: HTMLElement): void {
 }
 
 /**
+ * D22: 新上游骨架衍生物清理（容器改为 .layout-container 后首次进入克隆）与
+ * split 态行内 flex 归一化——style:flex 会把导出件正文压扁。
+ */
+const EXPORT_CHROME_SELECTOR =
+	'.top-fade-mask, .find-bar, .loading-chip, .preview-cursor-caret';
+
+function stripViewerChrome(clone: HTMLElement): void {
+	clone.querySelectorAll(EXPORT_CHROME_SELECTOR).forEach(el => el.remove());
+	clone.querySelectorAll('.viewer-pane').forEach(el => (el as HTMLElement).removeAttribute('style'));
+}
+
+/**
  * Smart pagination algorithm
  * Splits content into pages, avoiding breaking unsplittable elements
  */
@@ -63,6 +75,7 @@ export function paginateContent(
 	// Clone the container
 	const clone = container.cloneNode(true) as HTMLElement;
 	stripInactiveTabHosts(clone);
+	stripViewerChrome(clone); // D22: 新骨架衍生物清理 + viewer-pane flex 归一化
 
 	// Remove interactive elements
 	clone.querySelectorAll('.toc-sidebar, .toc-container, .editor-pane, .split-bar, .diagram-toggle-btn, .lang-label, .toc-toggle-floating').forEach(el => el.remove());
@@ -1191,6 +1204,7 @@ export async function generateExportHtml(
 	// Clone the container
 	const clone = container.cloneNode(true) as HTMLElement;
 	stripInactiveTabHosts(clone);
+	stripViewerChrome(clone); // D22: 新骨架衍生物清理 + viewer-pane flex 归一化
 
 	// Remove interactive elements (but keep diagram-toggle-btn for HTML export)
 	if (forPrint) {

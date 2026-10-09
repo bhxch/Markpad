@@ -21,6 +21,10 @@ describe('导出管线接线契约（spec §7.2 风险 1）', () => {
     expect(mv).toMatch(/exportAsPdf\(container, settings\.showToc, pageSize, fileName\)/);
   });
 
+  it('MV 导出容器是 TOC wrapper 公共祖先（D22，防上游骨架替换再次静默丢 TOC）', () => {
+    expect(mv).toMatch(/const container = document\.querySelector\('\.layout-container'\)/);
+  });
+
   it('MV 挂载 ExportModal 并以 handleExport 实绑定 onexport（防空绑定）', () => {
     expect(mv).toMatch(/<ExportModal\b/);
     // 字面绑定 handleExport：`onexport={() => {}}` 空壳也能通过"存在 onexport"
