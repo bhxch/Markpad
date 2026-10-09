@@ -581,6 +581,37 @@ overflow-x: auto;
 	margin-bottom: 0 !important;
 }
 
+/* D24: 宽表 breakout/fit 导出一致性（源：MarkdownViewer.svelte 预览同名规则，
+   spec 2026-10-09）。类门控在克隆的 article 上（settings.previewTableBreakout/
+   previewTableScroll 渲染期写入），规则无条件携带。--measure 以导出
+   contentWidth 实参化（预览侧是 --preview-max-width）。 */
+.viewer-content {
+	container-type: inline-size;
+}
+
+.markdown-body {
+	--gutter: clamp(24px, 5vw, 50px);
+	--measure: min(100cqi, ${contentWidth}px);
+	--breakout-inset: var(--gutter);
+}
+
+.markdown-body.full-width {
+	--measure: 100cqi;
+}
+
+.markdown-body.toc-in-gutter {
+	--breakout-inset: calc(var(--toc-width, 0px) + var(--gutter));
+}
+
+.viewer-content .markdown-body.table-breakout table:not(:is(li, blockquote, td, th, details, .markdown-alert, .footnotes) table) {
+	max-width: max(100%, 100cqi - 2 * var(--breakout-inset));
+	translate: min(0px, (var(--measure) - 2 * var(--gutter)) / 2 - 50%);
+}
+
+.viewer-content .markdown-body.table-fit table :is(td, th) {
+	overflow-wrap: anywhere;
+}
+
 .markdown-body h1, .markdown-body h2, .markdown-body h3,
 .markdown-body h4, .markdown-body h5, .markdown-body h6 {
 	margin-top: 24px;

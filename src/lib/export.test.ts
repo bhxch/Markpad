@@ -448,3 +448,14 @@ describe('导出 lightbox 交互对齐应用内（D23，spec 2026-10-09）', () 
 		expect(out).toMatch(/'r' \|\| e\.key === 'R'/);
 	});
 });
+
+describe('宽表 breakout/fit 导出一致性（D24，spec 2026-10-09）', () => {
+	it('导出 CSS 携带 container/breakout/fit 规则且 --measure 随 contentWidth', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试', 1200);
+		expect(out).toMatch(/\.viewer-content\s*\{[^}]*container-type:\s*inline-size/);
+		expect(out).toMatch(/--measure:\s*min\(100cqi,\s*1200px\)/);
+		expect(out).toMatch(/\.table-breakout table:not\(:is\(li, blockquote, td, th, details, \.markdown-alert, \.footnotes\) table\)/);
+		expect(out).toMatch(/\.table-fit table :is\(td, th\)\s*\{\s*overflow-wrap:\s*anywhere/);
+		expect(out).toMatch(/\.markdown-body\.full-width\s*\{[^}]*--measure:\s*100cqi/);
+	});
+});
