@@ -421,3 +421,28 @@ describe('HTML 导出 TOC 与新骨架清理（D22，spec 2026-10-09）', () => 
 		expect(out).not.toMatch(/style="flex:\s*0\.5"/);
 	});
 });
+
+describe('导出 lightbox 交互对齐应用内（D23，spec 2026-10-09）', () => {
+	it('脚本含乘法滚轮缩放、光标锚定与拖拽平移', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+		expect(out).toMatch(/Math\.exp\(-e\.deltaY \/ 100\)/);
+		expect(out).toMatch(/MIN_ZOOM = 0\.1/);
+		expect(out).toMatch(/MAX_ZOOM = 10/);
+		expect(out).toMatch(/addEventListener\('mousedown'/);
+		expect(out).toMatch(/lbPanX = cx - \(cx - lbPanX\) \* \(newZoom \/ lbZoom\)/);
+		expect(out).toMatch(/translate\('/);
+	});
+
+	it('开图/切图重置视图且带 n / N 计数器', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+		expect(out).toMatch(/lbResetView\(\);/);
+		expect(out).toMatch(/lightbox-counter/);
+		expect(out).toMatch(/' \/ '/);
+	});
+
+	it('键盘含 +/=/- 缩放与 r/f 重置', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+		expect(out).toMatch(/e\.key === '\+' \|\| e\.key === '='/);
+		expect(out).toMatch(/'r' \|\| e\.key === 'R'/);
+	});
+});

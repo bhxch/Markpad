@@ -947,8 +947,11 @@ ${getTreeSitterStyles(theme)}
 			box-shadow: 0 8px 32px rgba(0,0,0,0.4);
 			overflow: hidden;
 			transform-origin: center center;
-			transition: transform 0.15s ease;
+			/* D23: 拖拽/缩放交互态（对齐 ZoomOverlay）；连续滚轮/拖拽下 transition 造成滞后故移除 */
+			cursor: grab;
+			user-select: none;
 		}
+	.lightbox-content.lb-dragging { cursor: grabbing; }
 		.lightbox-content img {
 			max-width: 95vw;
 			max-height: 95vh;
@@ -1002,6 +1005,19 @@ ${getTreeSitterStyles(theme)}
 	.lightbox-nav:hover { background: rgba(255, 255, 255, 0.3); }
 	.lightbox-prev { left: 16px; }
 	.lightbox-next { right: 16px; }
+	.lightbox-counter {
+		position: absolute;
+		bottom: 16px;
+		left: 50%;
+		transform: translateX(-50%);
+		color: rgba(255,255,255,0.85);
+		background: rgba(0,0,0,0.45);
+		border-radius: 12px;
+		padding: 4px 12px;
+		font-size: 13px;
+		z-index: 10001;
+		pointer-events: none;
+	}
 
 /* Print styles */
 @media print {
@@ -1451,10 +1467,27 @@ export async function generateExportHtml(
 			});
 			});
 
-			// === Lightbox ===
+			// === Lightbox（D23: 对齐应用内 ZoomOverlay——乘法滚轮+光标锚定+拖拽平移） ===
+			var MIN_ZOOM = 0.1;
+			var MAX_ZOOM = 10;
+			var ZOOM_STEP = 0.15;
 			var lightboxItems = [];
 			var lightboxOverlay = null;
 			var currentLightboxIndex = -1;
+			var lbZoom = 1, lbPanX = 0, lbPanY = 0;
+			var lbDragging = false, lbStartX = 0, lbStartY = 0;
+
+			function lbApply() {
+				var content = document.getElementById('lightbox-content');
+				if (!content) return;
+				content.style.transform = 'translate(' + lbPanX + 'px,' + lbPanY + 'px) scale(' + lbZoom + ')';
+				content.style.cursor = lbDragging ? 'grabbing' : 'grab';
+				content.classList.toggle('lb-dragging', lbDragging);
+			}
+			function lbResetView() {
+				lbZoom = 1; lbPanX = 0; lbPanY = 0;
+				lbApply();
+			}
 
 			function createLightbox() {
 				lightboxOverlay = document.createElement('div');
@@ -1462,6 +1495,7 @@ export async function generateExportHtml(
 				lightboxOverlay.className = 'lightbox-overlay';
 				lightboxOverlay.style.display = 'none';
 				lightboxOverlay.innerHTML = '<div class="lightbox-content" id="lightbox-content"></div>'
+					+ '<div class="lightbox-counter" id="lightbox-counter"></div>'
 					+ '<button class="lightbox-close" id="lightbox-close">\u00d7</button>'
 					+ '<button class="lightbox-nav lightbox-prev" id="lightbox-prev">\u2039</button>'
 					+ '<button class="lightbox-nav lightbox-next" id="lightbox-next">\u203a</button>';
@@ -1471,20 +1505,43 @@ export async function generateExportHtml(
 				document.getElementById('lightbox-prev').addEventListener('click', function() { navigateLightbox(-1); });
 				document.getElementById('lightbox-next').addEventListener('click', function() { navigateLightbox(1); });
 				lightboxOverlay.addEventListener('click', function(e) {
-				if (e.target === lightboxOverlay) closeLightbox();
+					if (e.target === lightboxOverlay) closeLightbox();
 				});
-				 lightboxOverlay.addEventListener('wheel', function(e) {
-						e.preventDefault();
-						var content = document.getElementById('lightbox-content');
-						if (!content) return;
-						var s = content.style.transform || '';
-						var m = s.match(/scale\(([\d.]+)\)/);
-						var scale = m ? parseFloat(m[1]) : 1;
-						scale += (e.deltaY < 0 ? 0.15 : -0.15);
-						scale = Math.max(0.2, Math.min(5, scale));
-						content.style.transform = 'scale(' + scale + ')';
-					}, { passive: false });
-				}
+				// D23: 乘法滚轮缩放（delta 感应）+ 光标锚定，对齐 ZoomOverlay.handleWheel
+				lightboxOverlay.addEventListener('wheel', function(e) {
+					e.preventDefault();
+					if (!document.getElementById('lightbox-content')) return;
+					var newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, lbZoom * Math.exp(-e.deltaY / 100)));
+					var rect = lightboxOverlay.getBoundingClientRect();
+					var cx = e.clientX - rect.left - rect.width / 2;
+					var cy = e.clientY - rect.top - rect.height / 2;
+					lbPanX = cx - (cx - lbPanX) * (newZoom / lbZoom);
+					lbPanY = cy - (cy - lbPanY) * (newZoom / lbZoom);
+					lbZoom = newZoom;
+					lbApply();
+				}, { passive: false });
+				// D23: 左键拖拽平移（导航/关闭按钮除外），对齐 ZoomOverlay.handleMouseDown/Move/Up
+				lightboxOverlay.addEventListener('mousedown', function(e) {
+					if (e.button !== 0) return;
+					if (e.target.closest && e.target.closest('.lightbox-close, .lightbox-nav')) return;
+					lbDragging = true;
+					lbStartX = e.clientX - lbPanX;
+					lbStartY = e.clientY - lbPanY;
+					lbApply();
+					e.preventDefault();
+				});
+				document.addEventListener('mousemove', function(e) {
+					if (!lbDragging) return;
+					lbPanX = e.clientX - lbStartX;
+					lbPanY = e.clientY - lbStartY;
+					lbApply();
+				});
+				document.addEventListener('mouseup', function() {
+					if (!lbDragging) return;
+					lbDragging = false;
+					lbApply();
+				});
+			}
 
 			function showLightbox(index) {
 				if (!lightboxOverlay) createLightbox();
@@ -1497,18 +1554,17 @@ export async function generateExportHtml(
 				} else if (item.type === 'svg') {
 					content.innerHTML = item.html;
 				}
+				lbResetView(); // D23: 开图/切图重置视图（对齐应用内 navigateTo→resetView）
+				var counter = document.getElementById('lightbox-counter');
+				if (counter) counter.textContent = (index + 1) + ' / ' + lightboxItems.length;
 				lightboxOverlay.style.display = 'flex';
 				document.getElementById('lightbox-prev').style.display = index > 0 ? 'flex' : 'none';
 				document.getElementById('lightbox-next').style.display = index < lightboxItems.length - 1 ? 'flex' : 'none';
 			}
 
 			function closeLightbox() {
-			if (lightboxOverlay) {
-			 lightboxOverlay.style.display = 'none';
-						var content = document.getElementById('lightbox-content');
-						if (content) content.style.transform = '';
-					}
-					currentLightboxIndex = -1;
+				if (lightboxOverlay) lightboxOverlay.style.display = 'none';
+				currentLightboxIndex = -1;
 			}
 
 			function navigateLightbox(delta) {
@@ -1539,13 +1595,18 @@ export async function generateExportHtml(
 					});
 				});
 
-			// Keyboard shortcuts
+			// Keyboard shortcuts（D23: 补 +/-/= 缩放与 r/f 重置，对齐应用内键位）
 			document.addEventListener('keydown', function(e) {
-				if (e.key === 'Escape') closeLightbox();
-				if (lightboxOverlay && lightboxOverlay.style.display !== 'none') {
-					if (e.key === 'ArrowLeft') navigateLightbox(-1);
-					if (e.key === 'ArrowRight') navigateLightbox(1);
-				}
+				var open = lightboxOverlay && lightboxOverlay.style.display !== 'none';
+				if (e.key === 'Escape') { closeLightbox(); return; }
+				if (!open) return;
+				if (e.key === 'ArrowLeft') navigateLightbox(-1);
+				else if (e.key === 'ArrowRight') navigateLightbox(1);
+				else if (e.key === '+' || e.key === '=') { lbZoom = Math.min(MAX_ZOOM, lbZoom * (1 + ZOOM_STEP)); lbApply(); }
+				else if (e.key === '-') { lbZoom = Math.max(MIN_ZOOM, lbZoom * (1 - ZOOM_STEP)); lbApply(); }
+				else if (e.key === 'r' || e.key === 'R' || e.key === 'f' || e.key === 'F') lbResetView();
+				else return;
+				e.preventDefault();
 			});
 		})();
 		</script>`;
