@@ -4,7 +4,7 @@
 	import { settings } from '../stores/settings.svelte.js';
 
 	export type ExportFormat = 'html' | 'pdf';
-	export type PdfPageSize = 'a4' | 'a3' | 'letter' | 'legal';
+	export type PdfPageSize = 'dynamic' | 'a4' | 'a3' | 'letter' | 'legal';
 
 	let {
 		show,
@@ -17,9 +17,11 @@
 	}>();
 
 	let format = $state<ExportFormat>('html');
-	let pageSize = $state<PdfPageSize>('a4');
+	// D21: 恢复原始设计默认"单页（动态高度）"（2026-03-04 export-feature-design）
+	let pageSize = $state<PdfPageSize>('dynamic');
 
 	const pageSizes: { value: PdfPageSize }[] = [
+		{ value: 'dynamic' },
 		{ value: 'a4' },
 		{ value: 'a3' },
 		{ value: 'letter' },
@@ -27,6 +29,8 @@
 	];
 
 	function getPageSizeLabel(size: PdfPageSize): string {
+		// D21: 动态单页用 i18n 标签，其余沿用尺寸大写
+		if (size === 'dynamic') return t('export.pageSizeDynamic', settings.language);
 		return size.toUpperCase();
 	}
 

@@ -396,6 +396,7 @@ export default {
         title: '导出',
         format: '导出格式',
         pdfSize: 'PDF 尺寸',
+        pageSizeDynamic: '单页（动态高度）', // D21
         success: 'HTML 导出成功！',
         failed: '导出失败'
     },

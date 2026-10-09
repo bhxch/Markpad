@@ -4,7 +4,7 @@ import { rewriteMarkdownHrefForExport } from './utils/exportHtml';
 import { buildKatexExportStyles } from './utils/exportKatex.js'; // T1: 导出 KaTeX 样式内联
 
 export type ExportFormat = 'html' | 'pdf';
-export type PdfPageSize = 'a4' | 'a3' | 'letter' | 'legal';
+export type PdfPageSize = 'dynamic' | 'a4' | 'a3' | 'letter' | 'legal';
 
 // Page constants (in mm)
 const A4_WIDTH = 210;
@@ -264,31 +264,68 @@ export async function exportAsPdf(
 			const iframe = document.createElement('iframe');
 			iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:210mm;height:auto;border:none;';
 			document.body.appendChild(iframe);
-			
+
 			const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
 			if (!iframeDoc) {
 				document.body.removeChild(iframe);
 				resolve({ success: false, message: 'Failed to create print document' });
 				return;
 			}
-			
+
 			iframeDoc.open();
 			iframeDoc.write(html);
 			iframeDoc.close();
-			
-			setTimeout(() => {
+
+			// D21: dynamic 单页在已挂载、宽 210mm 的 iframe 内实测内容高度后注入
+			// 精确 @page 页高再打印——这是 92baf54 删除 dynamic 时缺失的一环
+			// （当时在脱离 DOM 的克隆上测量，scrollHeight 恒 0）。
+			const applyDynamicPageHeight = () => {
+				if (pageSize !== 'dynamic') return;
 				try {
-					iframe.contentWindow?.focus();
-					iframe.contentWindow?.print();
-					resolve({ success: true, message: 'Print dialog opened' });
-				} catch (e) {
-					resolve({ success: false, message: `Print failed: ${e}` });
+					const px = iframeDoc.documentElement?.scrollHeight || 0;
+					if (!px) return;
+					const style = iframeDoc.createElement('style');
+					style.id = 'dynamic-page-size';
+					style.textContent = `@page { size: 210mm ${dynamicPageHeightMm(px)}mm; margin: 15mm; }`;
+					iframeDoc.head.appendChild(style);
+				} catch {
+					// 测量失败维持 210mm auto 占位，至少不阻塞打印
 				}
-				
+			};
+
+			const doPrint = () => {
 				setTimeout(() => {
-					document.body.removeChild(iframe);
-				}, 1000);
-			}, 500);
+					try {
+						iframe.contentWindow?.focus();
+						iframe.contentWindow?.print();
+						resolve({ success: true, message: 'Print dialog opened' });
+					} catch (e) {
+						resolve({ success: false, message: `Print failed: ${e}` });
+					}
+
+					setTimeout(() => {
+						document.body.removeChild(iframe);
+					}, 1000);
+				}, 500);
+			};
+
+			if (pageSize === 'dynamic') {
+				// load + 双 rAF：等图片/字体/布局就绪再测高；write 关闭后 readyState
+				// 可能已 complete，此时直接走 rAF。
+				const afterLoad = () => {
+					const win = iframe.contentWindow;
+					win?.requestAnimationFrame(() =>
+						win.requestAnimationFrame(() => {
+							applyDynamicPageHeight();
+							doPrint();
+						})
+					);
+				};
+				if (iframeDoc.readyState === 'complete') afterLoad();
+				else iframe.addEventListener('load', afterLoad, { once: true });
+			} else {
+				doPrint();
+			}
 		} catch (e) {
 			resolve({ success: false, message: `PDF export failed: ${e}` });
 		}
@@ -297,6 +334,10 @@ export async function exportAsPdf(
 
 // Page size dimensions in mm
 const PAGE_SIZES: Record<string, { width: number; height: number }> = {
+	// D21: 动态单页——高度占位 0，exportAsPdf 在挂载的打印 iframe 内实测内容后注入精确页高。
+	// 恢复 92baf54 误删的原始默认选项（2026-03-04 设计"单页（动态高度）"）；
+	// 当年"实测无法生效"的根因是在脱离 DOM 的克隆上读 scrollHeight（恒 0）。
+	dynamic: { width: 210, height: 0 },
 	a4: { width: 210, height: 297 },
 	a3: { width: 297, height: 420 },
 	letter: { width: 215.9, height: 279.4 },
@@ -1003,6 +1044,21 @@ ${getTreeSitterStyles(theme)}
  * Get print-specific CSS for PDF export
  */
 function getPrintStyles(pageSize: PdfPageSize): string {
+	// D21: dynamic 占位样式；最终精确页高由 exportAsPdf 实测后以补充 <style> 覆盖。
+	if (pageSize === 'dynamic') {
+		return `
+@page {
+	size: 210mm auto;
+	margin: 15mm;
+}
+
+@media print {
+	html, body { height: auto !important; overflow: visible !important; }
+	.markdown-container { display: block; }
+	.layout-container { display: block; }
+}
+`;
+	}
 	const size = PAGE_SIZES[pageSize];
 	
 	return `
@@ -1045,6 +1101,14 @@ export function computeFitScale(ratio: number): { scale: number; newPage: boolea
 		}
 	}
 	return null;
+}
+
+/**
+ * D21: dynamic 单页页高估算——打印布局像素 → mm（96DPI），加 30mm 上下边距
+ * 与 1mm 防截断缓冲。exportAsPdf 以 iframe 实测 scrollHeight 调用。
+ */
+export function dynamicPageHeightMm(contentPx: number): number {
+	return Math.ceil((contentPx * 25.4) / 96) + 30 + 1;
 }
 
 /**
@@ -1241,7 +1305,8 @@ export async function generateExportHtml(
 	const cssVariables = extractCssVariables();
 
 	// Process diagrams/img/svg for print (scale to fit page)
-	if (forPrint) {
+	// D21: dynamic 单页页高自适应内容，无需按页缩放/换页。
+	if (forPrint && pageSize !== 'dynamic') {
 		processDiagramsForPrint(clone, pageSize);
 	}
 

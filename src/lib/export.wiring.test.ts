@@ -33,4 +33,11 @@ describe('导出管线接线契约（spec §7.2 风险 1）', () => {
   it('TitleBar 保留 onexport prop（合并后与上游 onfind 并存）', () => {
     expect(titlebar).toMatch(/onexport/);
   });
+
+  it('ExportModal 保留 dynamic 单页选项与 i18n 标签（D21）', () => {
+    const modal = readFileSync(join(__dirname, 'components', 'ExportModal.svelte'), 'utf8');
+    expect(modal).toMatch(/'dynamic' \| 'a4'/);
+    expect(modal).toMatch(/\{ value: 'dynamic' \}/);
+    expect(modal).toMatch(/t\('export\.pageSizeDynamic'/);
+  });
 });

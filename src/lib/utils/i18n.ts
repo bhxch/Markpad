@@ -464,6 +464,7 @@ const en: Translation = {
         title: 'Export',
         format: 'Export Format',
         pdfSize: 'PDF Size',
+        pageSizeDynamic: 'Single Page (Dynamic Height)', // D21
         success: 'HTML export successful!',
         failed: 'Export failed'
     },

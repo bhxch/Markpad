@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { join } from 'node:path';
 import { generateExportHtml, computeFitScale, convertAssetImagesToDataUri } from './export';
 
 // save_file_content 契约测试用（见文件末尾独立 describe）。vi.mock 会被提升到
@@ -371,5 +372,26 @@ describe('exportAsHtml: save_file_content 契约', () => {
 		expect(args).toMatchObject({ path: '/tmp/markpad-export.html', encoding: 'UTF-8' });
 		expect(typeof args.content).toBe('string');
 		expect(args.content).toContain('markdown-body');
+	});
+});
+
+describe('PDF 动态单页（D21，spec 2026-10-09）', () => {
+	it('dynamic 输出 @page 210mm auto 占位且不带固定页高', async () => {
+		const out = await generateExportHtml(makeContainer(), false, 'dynamic', true, '测试');
+		expect(out).toMatch(/@page\s*\{\s*size:\s*210mm auto;\s*margin:\s*15mm;/);
+		expect(out).not.toMatch(/size:\s*210mm 297mm/);
+	});
+
+	it('dynamic 不做按页缩放（processDiagramsForPrint 跳过，源码契约）', async () => {
+		const { readFileSync } = await import('node:fs');
+		const src = readFileSync(join(__dirname, 'export.ts'), 'utf8');
+		expect(src).toMatch(/forPrint && pageSize !== 'dynamic'\)/);
+	});
+
+	it('dynamicPageHeightMm：内容高度换 mm 并加 30mm 边距 + 1mm 缓冲', async () => {
+		const { dynamicPageHeightMm } = await import('./export');
+		expect(dynamicPageHeightMm(0)).toBe(31);
+		expect(dynamicPageHeightMm(96)).toBe(57); // ceil(25.4)=26 + 31
+		expect(dynamicPageHeightMm(1000)).toBe(296); // ceil(264.58)=265 + 31
 	});
 });
