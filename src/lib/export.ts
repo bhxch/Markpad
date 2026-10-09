@@ -1,6 +1,6 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
-import { rewriteMarkdownHrefForExport } from './utils/exportHtml';
+import { rewriteMarkdownHrefForExport, escapeHtml } from './utils/exportHtml';
 import { buildKatexExportStyles } from './utils/exportKatex.js'; // T1: 导出 KaTeX 样式内联
 
 export type ExportFormat = 'html' | 'pdf';
@@ -1384,11 +1384,19 @@ export async function generateExportHtml(
 
 	// D25: VSCode 代码主题的 --ts-* 覆盖块随导出（活动代码主题唯一，非 vscode 态
 	// 为空集）；选择器 :root[data-code-theme=...] 依赖 html 属性，同步携带。
+	// D25 审查 I-1：覆盖块文本经字符串序列化进 HTML 模板，themeApply 的 C2 只转义
+	// 选择器上下文的 \ ] "（其 C1 自认 </style> 注入面由 DOM textContent 规避），
+	// 导出侧无 DOM 保护，`</style` 须转义为 `<\/style`——CSS 内 \/ 是合法转义、
+	// 字面量等价，且不被 HTML 解析为闭合标签。
 	const tsOverrideStyles = Array.from(document.querySelectorAll('style[id^="ts-vscode-theme-"]'))
 		.map(el => el.textContent || '')
 		.filter(Boolean)
-		.join('\n');
-	const codeThemeAttr = document.documentElement.getAttribute('data-code-theme') || '';
+		.join('\n')
+		.replace(/<\/(style)/gi, '<\\/$1');
+	// D25 审查 I-1：data-code-theme 取自本机 .vsix 主题名（项目 C2 威胁模型的
+	// 不可信输入），原样插进双引号属性可借 " 逃逸注入属性/标签，按 HTML 属性
+	// 上下文转义（escapeHtml：& < > " '）。
+	const codeThemeAttr = escapeHtml(document.documentElement.getAttribute('data-code-theme') || '');
 
 	// Process diagrams/img/svg for print (scale to fit page)
 	// D21: dynamic 单页页高自适应内容，无需按页缩放/换页。

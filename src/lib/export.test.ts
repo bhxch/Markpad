@@ -502,4 +502,33 @@ describe('VSCode 代码主题导出保真（D25，spec 2026-10-09）', () => {
 		const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
 		expect(out).not.toMatch(/data-export-ts-overrides/);
 	});
+
+	// D25 审查 I-1：覆盖块文本经字符串序列化进导出 HTML，`</style>` 可提前闭合
+	// style 块注入任意 HTML（themeApply C2 只转义选择器上下文的 \ ] "，C1 自认
+	// 此注入面在 DOM 路径由 textContent 规避；导出侧必须自行转义）。
+	it('覆盖块含 </style> 注入时被转义，style 块不被提前闭合（D25 审查 I-1）', async () => {
+		const tag = document.createElement('style');
+		tag.id = 'ts-vscode-theme-vscode:Evil';
+		tag.textContent =
+			':root[data-code-theme="vscode:Evil"] { --ts-keyword: #123456; } </style><script>alert(1)</script>';
+		document.head.appendChild(tag);
+		try {
+			const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+			expect(out).toContain('<\\/style><script>alert(1)');
+			expect(out).not.toContain('</style><script>alert(1)');
+		} finally {
+			tag.remove();
+		}
+	});
+
+	it('data-code-theme 含引号时属性值被 HTML 转义（D25 审查 I-1）', async () => {
+		document.documentElement.setAttribute('data-code-theme', 'vscode:Dark" onerror="x');
+		try {
+			const out = await generateExportHtml(makeContainer(), false, 'a4', false, '测试');
+			expect(out).toContain('data-code-theme="vscode:Dark&quot; onerror=&quot;x"');
+			expect(out).not.toContain('data-code-theme="vscode:Dark" onerror');
+		} finally {
+			document.documentElement.removeAttribute('data-code-theme');
+		}
+	});
 });
