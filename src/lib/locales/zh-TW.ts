@@ -377,11 +377,6 @@ export default {
         defaultLight: '預設淺色',
         defaultDark: '預設深色'
     },
-    // D21: zh-TW 此前无 export 段（export.* 一律回落 en），此处仅补 dynamic 单页
-    // 新键；其余导出键维持 en 回落（不逐语言补译，维持 34db0d7 迁移先例的最小面）。
-    export: {
-        pageSizeDynamic: '單頁（動態高度）'
-    },
     tabs: {
         untitled: '未命名',
         home: '首頁'
