@@ -117,6 +117,16 @@ describe('observeLazyFoldLayout（D29，spec 2026-10-10）', () => {
 		expect(() => obs.stop()).not.toThrow();
 	});
 
+	it('创建即自观察 root（上游 foldLayout.ts:130 冷启动契约）', () => {
+		const { root, wrappers } = makeFixture(3);
+		const { deps, observed } = makeDeps();
+		const obs = observeLazyFoldLayout(root, deps);
+		// patch effect 声明早于 observation 创建 effect，首次插入时 foldLayout 为 null，
+		// 观察不到任何块——冷启动全量入口只能靠创建时自观察（上游同位行为）。
+		for (const w of wrappers) expect(observed.io).toContain(w);
+		obs.stop();
+	});
+
 	it('测量值按 previewZoomFactor 折算（#807 契约）', () => {
 		const { root, wrappers } = makeFixture(1);
 		vi.mocked(previewZoomFactor).mockReturnValue(2);

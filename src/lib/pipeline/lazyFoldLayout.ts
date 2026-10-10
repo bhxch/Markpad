@@ -131,5 +131,11 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 		frame = null;
 	};
 
+	// 上游 foldLayout.ts:130 同位契约：创建即自观察 root。这是冷启动唯一的全量入口——
+	// patch effect 声明早于 observation 创建 effect，首次插入全部块时 foldLayout 还是
+	// null，observe 全部空转。IO 路径下此处只是入队不测量，晋升仍受视口门控；隐藏宿主
+	// （display:none）不产生 isIntersecting，安全。
+	observe(root);
+
 	return { observe, stop };
 }
