@@ -1641,17 +1641,22 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 			// D34 修复轮 1（I1）：排空自微任务启动——首帧前修订号已发布，shouldAbort 的
 			// revision 比对不会把本 run 误判为过期（与 enrichment 分发同款时序约定）；
 			// 被新 patch 抢占或宿主脱离即终止排空，memo 由已落地批次保持自洽。
-			const drained = Promise.resolve()
-				.then(() =>
-					progressive.drain(host, {
-						shouldAbort: () => !host.isConnected || previewRevision !== revisionOfThisRun,
-						onBatch: (inserted) => {
-							for (const block of inserted) foldLayout?.observe(block);
-							void enrichBlocks(inserted);
-						},
-					}),
-				)
-				.catch(() => {});
+				const drained = Promise.resolve()
+					.then(() =>
+						progressive.drain(host, {
+						// D34 真机标定：预算 24ms 最优。实测排空帧 118-160ms，主体是新落地
+						// 内容的绘制（软件渲染 WebKitGTK 大表格 ~100ms/帧），与预算弱相关：
+						// 12ms 档帧数翻倍（34 帧）重复支付每帧固定绘制成本，最大帧反升至
+						// 250ms。首帧 ~150ms 由 sanitize 主导（spec §5 认定不再拆分）。
+						budgetMs: 24,
+							shouldAbort: () => !host.isConnected || previewRevision !== revisionOfThisRun,
+							onBatch: (inserted) => {
+								for (const block of inserted) foldLayout?.observe(block);
+								void enrichBlocks(inserted);
+							},
+						}),
+					)
+					.catch(() => {});
 			if (cold) {
 				// D34 修复轮 1（C2）：阅读位置恢复等 head 富化与排空都落地后再调
 				restoreAfterColdEnrichment(Promise.all([headEnrichment, drained]).then(() => {}), tabManager.activeTabId);
