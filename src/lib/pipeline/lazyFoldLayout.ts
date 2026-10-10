@@ -8,6 +8,7 @@
 //  - 测量域收窄为活动集（已晋升 wrapper），任何 RO 回调不再触发全文档 reflow。
 // merge 注意：上游若改 fold CSS 契约（--fold-content-height / zoom / transition
 // 抑制），必须同步本文件——lazyFoldLayout.test.ts 与 upstreamWiring.test.ts 是验收依据。
+// resize 重测由 RO 覆盖（rewrap 必触发 content-inner 尺寸变化），无独立 window resize 监听——对 spec §2.3 字面的有意偏离，评审裁定行为等价。
 import { previewZoomFactor } from '../utils/previewAnchor.js';
 import type { FoldLayoutObservation } from '../utils/foldLayout.js';
 

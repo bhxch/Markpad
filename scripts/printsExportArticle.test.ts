@@ -106,7 +106,8 @@ test('the viewer hands over an article rather than its own preview', () => {
 	// (its preview content, not the live window) and printed inside the
 	// offscreen iframe — never `window.print()`, whose paper is whatever is on
 	// screen.
-	assert.match(pdf, /await generateExportHtml\(container, showToc, pageSize, true, title\)/);
+	// （D24 后续：contentWidth 尾参，spec 2026-10-09-export-restore-and-parity §2 D24；本行修复使 npm test 闸门恢复）
+	assert.match(pdf, /await generateExportHtml\(container, showToc, pageSize, true, title, contentWidth\)/);
 	assert.match(pdf, /iframe\.contentWindow\?\.print\(\)/);
 	assert.doesNotMatch(pdf, /window\.print\(/);
 	// And what the generator prints is the article alone: the app chrome is
