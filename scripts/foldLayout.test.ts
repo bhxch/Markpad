@@ -44,7 +44,9 @@ test('the find-bar fold re-aim delay outlasts the CSS fold transition', () => {
 test('preview lifecycle starts and cleans up fold observation', () => {
 	const viewer = readSource('src/lib/MarkdownViewer.svelte');
 
-	assert.match(viewer, /const host = previewBlocks;[\s\S]*?observeFoldLayout\(host\)/);
+	// D29 接线（spec 2026-10-10 §2）：fold 观察换用本地惰性实现 observeLazyFoldLayout，
+	// 接口与上游 observeFoldLayout 一致，生命周期契约（stop 清理）不变，断言随接线更新。
+	assert.match(viewer, /const host = previewBlocks;[\s\S]*?observeLazyFoldLayout\(host\)/);
 	assert.match(viewer, /observation\.stop\(\)/);
 });
 
