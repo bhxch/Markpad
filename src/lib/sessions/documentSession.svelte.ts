@@ -6,6 +6,7 @@ import { getMarkdownBodyWithoutFrontMatter } from '../utils/frontMatter.js';
 import { t } from '../utils/i18n.js';
 import { LIST_MARKER, LIST_MARKER_PREFIX, TASK_BOX } from '../utils/listSyntax.js';
 import { hasMarkdownLinkExtension } from '../utils/markdownLinks.js';
+import { isIdenticalRenderSkippable } from '../pipeline/openFastPath.js';
 import { canonicalizePath, isSameFilePath } from '../utils/pathIdentity.js';
 
 export type LoadMarkdownOptions = {
@@ -559,6 +560,14 @@ export function createDocumentSession(options: DocumentSessionOptions) {
 				tabManager.setTabEncoding(activeId, encoding);
 				lossySaveWarnedTabs.delete(activeId);
 				if (pendingNavigateTabId) tabManager.navigate(pendingNavigateTabId, filePath, pathKey);
+				// D31 接线（spec 2026-10-10 §2）：同内容重复打开短路——判定与边界
+				// 在本地谓词 openFastPath 中；afterLoad/saveRecentFile 与下方脏缓冲
+				// 早退分支同款，保持最近文件与视图状态一致。
+				if (isIdenticalRenderSkippable(receiving, content, { isFull, editingLike: initialIsEditing || initialIsSplit })) {
+					await options.afterLoad();
+					if (filePath) options.saveRecentFile(filePath);
+					return;
+				}
 				const processed = await options.renderMarkdown(content, filePath, foldsForTab(activeId));
 				if (!isCurrentLoad()) return;
 				tabManager.updateTabContent(activeId, processed);
