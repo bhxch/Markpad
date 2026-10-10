@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { patchPreviewBlocks } from '../utils/blockPatch.js';
 import { planProgressiveRender } from './progressiveFirstPaint.js';
-
-const SOURCEPOS = /\s+data-sourcepos="[^"]*"/g;
 
 /** 构造 sanitized 形态：h1 头 + wrapper(header+content-inner>children) */
 function makeDoc(sectionBlocks: number[][], loose = 0): DocumentFragment {
@@ -39,11 +38,6 @@ function makeDoc(sectionBlocks: number[][], loose = 0): DocumentFragment {
 	wrapper.append(header, inner);
 	frag.append(wrapper);
 	return frag;
-}
-
-function unitsOf(frag: DocumentFragment): number {
-	// 与模块同口径粗算：仅为测试阈值守卫，不复制 walk
-	return frag.querySelectorAll('*').length;
 }
 
 describe('planProgressiveRender（D34，spec 2026-10-10-progressive-first-paint）', () => {
@@ -101,20 +95,42 @@ describe('planProgressiveRender（D34，spec 2026-10-10-progressive-first-paint�
 		expect(batches).toBeLessThan(plan.units.length);
 	});
 
-	it('克隆键与源一致（outerHTML 去 sourcepos 逐字节相等）', async () => {
+	it('drain 后 memo 与 live DOM 一致：整文档 diff 零替换（D34 修复轮 1，C1 memo 契约）', async () => {
 		const frag = makeDoc([[2], [2], [2], [2], [2], [2], [2], [2]]);
 		const plan = planProgressiveRender(frag, { headUnits: 6, threshold: 20 })!;
 		const host = document.createElement('div');
 		document.body.append(host);
-		host.append(plan.head); // D34：drain 契约前提是 host 已含 head（真实接线由 patchPreviewBlocks 先行落地）
-		await plan.drain(host, { budgetMs: 0, schedule: (cb) => cb() });
-		// 源（frag 中尚存的 shell 对应物）vs 落地克隆：逐 wrapper 比对键
-		const srcWrappers = [...frag.querySelectorAll('.foldable-content-wrapper')];
-		const liveWrappers = [...host.querySelectorAll('.foldable-content-wrapper')];
-		expect(liveWrappers.length).toBe(srcWrappers.length);
-		for (let i = 0; i < srcWrappers.length; i++) {
-			expect(liveWrappers[i].outerHTML.replace(SOURCEPOS, '')).toBe(srcWrappers[i].outerHTML.replace(SOURCEPOS, ''));
-		}
+		// 生产接线形态：head 先经既有同步 patch 落地（head 各层键记入 memo），drain 裸 append 补齐
+		patchPreviewBlocks(host, plan.head);
+		await plan.drain(host, { budgetMs: 0, schedule: (cb) => cb(), onBatch: () => {} });
+		// C1 回归：排空后对完整 sanitized 再 patch 必须零替换——renderedKeys 若不随
+		// 裸 append 增长，patchContainer 会因 memo 长度 ≠ live 子数整容器替换。
+		const result = patchPreviewBlocks(host, frag);
+		expect(result.replaced).toBe(0);
+		expect(result.kept).toBeGreaterThan(0);
+		host.remove();
+	});
+
+	it('shouldAbort 为真：首个单元附加前终止且 promise 仍 resolve（D34 修复轮 1，I1）', async () => {
+		const frag = makeDoc([[2], [2], [2], [2], [2], [2], [2], [2], [2], [2]]);
+		const plan = planProgressiveRender(frag, { headUnits: 3, threshold: 20 })!;
+		const host = document.createElement('div');
+		document.body.append(host);
+		host.append(plan.head);
+		let batches = 0;
+		let landed = 0;
+		await plan.drain(host, {
+			budgetMs: 0,
+			schedule: (cb) => queueMicrotask(cb),
+			shouldAbort: () => batches >= 1,
+			onBatch: (inserted) => {
+				batches += 1;
+				landed += inserted.length;
+			},
+		});
+		// 首帧落地一批后即终止：不多排一帧，promise 照常 resolve
+		expect(batches).toBe(1);
+		expect(landed).toBeGreaterThan(0);
 		host.remove();
 	});
 

@@ -1635,20 +1635,27 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 				await runPipeline(host, inserted);
 			});
 		if (progressive) {
-			// D34 接线：排空批复用同一守卫富化；done 后 idle 做 memo 对齐再恢复阅读位置
-			const drained = progressive.drain(host, {
-				onBatch: (inserted) => {
-					for (const block of inserted) foldLayout?.observe(block);
-					void enrichBlocks(inserted);
-				},
-			});
-			drained.then(() => {
-				if (!host.isConnected) return;
-				const alignMemo = () => patchPreviewBlocks(host, sanitized!); // D34 memo 对齐：克隆键=源键，零替换
-				if ('requestIdleCallback' in window) requestIdleCallback(alignMemo);
-				else setTimeout(alignMemo, 0);
-				if (cold) restoreAfterColdEnrichment(Promise.resolve(), tabManager.activeTabId);
-			});
+			// D34 修复轮 1（C2）：head 首屏切片必须富化，否则首屏内的代码/图表/公式裸奔；
+			// 与排空批共用同一守卫（enrichmentNeed）与 revision 闸。
+			const headEnrichment = enrichBlocks(patch.inserted);
+			// D34 修复轮 1（I1）：排空自微任务启动——首帧前修订号已发布，shouldAbort 的
+			// revision 比对不会把本 run 误判为过期（与 enrichment 分发同款时序约定）；
+			// 被新 patch 抢占或宿主脱离即终止排空，memo 由已落地批次保持自洽。
+			const drained = Promise.resolve()
+				.then(() =>
+					progressive.drain(host, {
+						shouldAbort: () => !host.isConnected || previewRevision !== revisionOfThisRun,
+						onBatch: (inserted) => {
+							for (const block of inserted) foldLayout?.observe(block);
+							void enrichBlocks(inserted);
+						},
+					}),
+				)
+				.catch(() => {});
+			if (cold) {
+				// D34 修复轮 1（C2）：阅读位置恢复等 head 富化与排空都落地后再调
+				restoreAfterColdEnrichment(Promise.all([headEnrichment, drained]).then(() => {}), tabManager.activeTabId);
+			}
 		} else {
 			const enrichment = enrichBlocks(patch.inserted);
 			if (cold) restoreAfterColdEnrichment(enrichment, tabManager.activeTabId);

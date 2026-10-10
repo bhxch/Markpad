@@ -28,11 +28,23 @@ describe('上游文件本地接线存在性（D29/D30/D31/D32，spec 2026-10-10�
 		expect(windowSessionSrc).toMatch(/orderedTabs/);
 	});
 
-	it('D34：patch effect 挂渐进首屏（plan 分支 + drain + memo 对齐）', () => {
+	it('D34：patch effect 挂渐进首屏（plan 分支 + drain + head 富化 + 排空终止）', () => {
 		expect(viewerSrc).toMatch(/import \{ planProgressiveRender \} from '\.\/pipeline\/progressiveFirstPaint\.js'/);
 		expect(viewerSrc).toMatch(/planProgressiveRender\(sanitized\)/);
 		expect(viewerSrc).toMatch(/\.drain\(host,/);
-		expect(viewerSrc).toMatch(/D34 memo 对齐/);
+		// D34 修复轮 1（I1）：排空被新 patch 抢占或宿主脱离即终止
+		expect(viewerSrc).toMatch(/shouldAbort: \(\) => !host\.isConnected \|\| previewRevision !== revisionOfThisRun/);
+		// D34 修复轮 1（C2）：head 首屏切片必须富化
+		expect(viewerSrc).toMatch(/enrichBlocks\(patch\.inserted\)/);
+		// D34 修复轮 1：对齐 pass 已取消（memo 增量同步取代）
+		expect(viewerSrc).not.toMatch(/alignMemo|patchPreviewBlocks\(host, sanitized!\)/);
+	});
+
+	it('D34：appendRenderedKeys 追加式导出且被渐进管线调用（C1 memo 增量同步）', () => {
+		const bp = readFileSync(join(__dirname, '../utils/blockPatch.ts'), 'utf8');
+		expect(bp).toMatch(/export function appendRenderedKeys\(container: Element, elements: Element\[\]\): void/);
+		const pf = readFileSync(join(__dirname, './progressiveFirstPaint.ts'), 'utf8');
+		expect(pf).toMatch(/appendRenderedKeys\(parent, elements\)/);
 	});
 
 	it('D34：DESCEND 选择器与 blockPatch 契约同源（防漂移）', () => {

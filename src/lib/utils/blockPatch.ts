@@ -345,3 +345,17 @@ function refreshSourcepos(live: Element, next: Element): void {
 		}
 	}
 }
+
+// D34（spec 2026-10-10-progressive-first-paint-design §2.4）：供本地渐进首屏管线
+// 在帧排空的裸 append 后同步容器 memo——键口径必须走本模块 blockKey，保证
+// 克隆与源键逐字节一致，后续 diff 零替换。追加式导出，与上游编辑零冲突面。
+// rememberSubtree 与 patch 的插入路径同款：追加物内部还有 DESCENDABLE 容器
+// （fold 壳的空 content-inner）时，不同步它们的 memo，下一次 diff 就会在壳内
+// 整体替换——memo 的契约是"本模块放进每个容器的最后一批东西"，裸 append
+// 也是放进。
+export function appendRenderedKeys(container: Element, elements: Element[]): void {
+	const keys = renderedKeys.get(container) ?? [];
+	keys.push(...elements.map(blockKey));
+	renderedKeys.set(container, keys);
+	for (const element of elements) rememberSubtree(element);
+}
