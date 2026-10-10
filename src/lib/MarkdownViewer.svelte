@@ -33,6 +33,7 @@
 	// readFileSync，目录形态在此抛 EISDIR（Task 18 控制器裁决，零行为变化）。
 	import { runPipeline, setPipelineVersionSource } from './pipeline/index';
 	import { analyzeEnrichmentNeed } from './pipeline/enrichPrecheck.js';
+	import { planProgressiveRender } from './pipeline/progressiveFirstPaint.js'; // D34 接线（spec 2026-10-10-progressive-first-paint-design）：大文档渐进首屏
 	import {
 		ensureMermaidInitialized,
 		renderDiagramBlocks,
@@ -1580,7 +1581,10 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		patchedHtml.set(host, htmlContent);
 		if (unchanged) invalidateAnchorMemos();
 		const sanitized = unchanged ? null : sanitizeMarkdownFragment(htmlContent);
-		const patch = sanitized ? patchPreviewBlocks(host, sanitized) : { inserted: [] };
+		// D34 接线（spec 2026-10-10-progressive-first-paint-design）：大文档渐进首屏——
+		// head 首屏切片走既有同步 patch，剩余单元按帧预算排空；小文档 null 与现状逐字节一致。
+		const progressive = sanitized ? planProgressiveRender(sanitized) : null;
+		const patch = progressive ? patchPreviewBlocks(host, progressive.head) : sanitized ? patchPreviewBlocks(host, sanitized) : { inserted: [] };
 		// Only the new blocks. `ResizeObserver.observe` on a target it is already
 		// watching re-registers it rather than doing nothing, and a fresh
 		// registration delivers an initial observation — so handing it the whole
@@ -1612,22 +1616,43 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		// D30 接线（spec 2026-10-10 §2）：字符串级预检判定本文档是否可能命中
 		// 图表分发与富化；无 pre/无 math 的纯文本文档跳过全树扫描（实测 72+52ms）。
 		const enrichmentNeed = analyzeEnrichmentNeed(htmlContent);
-		const enrichment = Promise.resolve().then(async () => {
-			// 分发自微任务启动（此时修订号已发布），versionGate 以 revisionOfThisRun 比对：
-			// 新 patch 到来即 previewRevision 前进，在途分发逐块取消。
-			if (enrichmentNeed.diagrams) {
-				for (const block of patch.inserted) {
-					await renderDiagramBlocks(block, revisionOfThisRun);
-					if (previewRevision !== revisionOfThisRun) return; // 已被更新的 patch 取代
+		// D34 接线：enrichment promise 体抽为局部函数，head 路径与 drain 批路径共用，
+		// 守卫（enrichmentNeed）与 revision 闸语义不变；非渐进路径驱动源仍是 patch.inserted。
+		const enrichBlocks = (inserted: Element[]): Promise<void> =>
+			Promise.resolve().then(async () => {
+				// 分发自微任务启动（此时修订号已发布），versionGate 以 revisionOfThisRun 比对：
+				// 新 patch 到来即 previewRevision 前进，在途分发逐块取消。
+				if (enrichmentNeed.diagrams) {
+					for (const block of inserted) {
+						await renderDiagramBlocks(block, revisionOfThisRun);
+						if (previewRevision !== revisionOfThisRun) return; // 已被更新的 patch 取代
+					}
 				}
-			}
-			if (enrichmentNeed.code || enrichmentNeed.math || enrichmentNeed.diagrams) {
-				await renderRichContent(patch.inserted);
-				if (previewRevision !== revisionOfThisRun) return;
-			}
-			await runPipeline(host, patch.inserted);
-		});
-		if (cold) restoreAfterColdEnrichment(enrichment, tabManager.activeTabId);
+				if (enrichmentNeed.code || enrichmentNeed.math || enrichmentNeed.diagrams) {
+					await renderRichContent(inserted as HTMLElement[]);
+					if (previewRevision !== revisionOfThisRun) return;
+				}
+				await runPipeline(host, inserted);
+			});
+		if (progressive) {
+			// D34 接线：排空批复用同一守卫富化；done 后 idle 做 memo 对齐再恢复阅读位置
+			const drained = progressive.drain(host, {
+				onBatch: (inserted) => {
+					for (const block of inserted) foldLayout?.observe(block);
+					void enrichBlocks(inserted);
+				},
+			});
+			drained.then(() => {
+				if (!host.isConnected) return;
+				const alignMemo = () => patchPreviewBlocks(host, sanitized!); // D34 memo 对齐：克隆键=源键，零替换
+				if ('requestIdleCallback' in window) requestIdleCallback(alignMemo);
+				else setTimeout(alignMemo, 0);
+				if (cold) restoreAfterColdEnrichment(Promise.resolve(), tabManager.activeTabId);
+			});
+		} else {
+			const enrichment = enrichBlocks(patch.inserted);
+			if (cold) restoreAfterColdEnrichment(enrichment, tabManager.activeTabId);
+		}
 		previewRevision = ++previewPatches;
 	});
 

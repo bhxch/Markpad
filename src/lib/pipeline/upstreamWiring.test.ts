@@ -27,4 +27,22 @@ describe('上游文件本地接线存在性（D29/D30/D31/D32，spec 2026-10-10�
 		expect(windowSessionSrc).toMatch(/D32 接线/);
 		expect(windowSessionSrc).toMatch(/orderedTabs/);
 	});
+
+	it('D34：patch effect 挂渐进首屏（plan 分支 + drain + memo 对齐）', () => {
+		expect(viewerSrc).toMatch(/import \{ planProgressiveRender \} from '\.\/pipeline\/progressiveFirstPaint\.js'/);
+		expect(viewerSrc).toMatch(/planProgressiveRender\(sanitized\)/);
+		expect(viewerSrc).toMatch(/\.drain\(host,/);
+		expect(viewerSrc).toMatch(/D34 memo 对齐/);
+	});
+
+	it('D34：DESCEND 选择器与 blockPatch 契约同源（防漂移）', () => {
+		const bp = readFileSync(join(__dirname, '../utils/blockPatch.ts'), 'utf8');
+		const desc = bp.match(/const DESCENDABLE =([\s\S]*?);/)?.[1] ?? '';
+		expect(desc).toContain('.foldable-content-wrapper');
+		const pf = readFileSync(join(__dirname, './progressiveFirstPaint.ts'), 'utf8');
+		for (const sel of ['.foldable-content-wrapper', '.content-inner', '.markdown-alert', '.markdown-alert-content']) {
+			expect(desc).toContain(sel);
+			expect(pf).toContain(sel);
+		}
+	});
 });
