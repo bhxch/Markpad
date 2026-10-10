@@ -36,6 +36,11 @@ describe('analyzeEnrichmentNeed（D30，spec 2026-10-10）', () => {
 		}
 	});
 
+	it('大写围栏语言命中 diagrams（分发端 toLowerCase 归一，评审 Critical-1 钉住）', () => {
+		expect(analyzeEnrichmentNeed('<pre><code class="language-PlantUML">x</code></pre>').diagrams).toBe(true);
+		expect(analyzeEnrichmentNeed('<pre><code class="language-Mermaid">x</code></pre>').diagrams).toBe(true);
+	});
+
 	it('非图表语言 code=true 但 diagrams=false', () => {
 		expect(analyzeEnrichmentNeed('<pre><code class="language-python">print(1)</code></pre>')).toEqual({
 			code: true,

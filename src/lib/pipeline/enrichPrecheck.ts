@@ -12,15 +12,20 @@ export interface EnrichmentNeed {
 
 // language-XXX 候选 = 规范 id（DIAGRAM_TYPES[].id）∪ 别名（DIAGRAM_ALIASES 键），
 // 与 pipeline/diagrams.ts 的分发判定同源，避免第二份清单漂移。
+// 'i' 标志（评审 Critical-1）：分发端对 language class 做 toLowerCase() 归一
+// （diagrams.ts:285），而 comrak 按源码原样输出围栏语言（```PlantUML 等），
+// 区分大小写即漏触发，图表静默退化为普通高亮。
 const DIAGRAM_LANG_PATTERN = new RegExp(
 	`language-(${[...DIAGRAM_TYPES.map((t) => t.id), ...Object.keys(DIAGRAM_ALIASES)]
 		.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
 		.join('|')})\\b`,
+	'i',
 );
 
 export function analyzeEnrichmentNeed(html: string): EnrichmentNeed {
 	// comrak 把文本中的 `<` 转义为 `&lt;`，字符串里出现字面 `<pre` 只可能是
-	// 真实元素；图表块只存在于 pre>code 内，故 diagrams ⊆ code。
+	// 真实元素；图表块只存在于 pre>code 内（来源：pipeline/diagrams.ts 仅在
+	// pre>code 的 language-XXX 块上分发）——此为来源描述，不构成早退依据。
 	// math 不受 pre 门控（行内公式可存在于任意文本块，richContent 全树扫描同样
 	// 不设 pre 前置），故先于早退判定，早退条件为 code 与 math 双空。
 	const code = html.includes('<pre');
