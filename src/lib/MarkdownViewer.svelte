@@ -53,7 +53,8 @@ import {
 import {
 	renderRichContent as renderRichContentInto,
 } from './utils/richContent.js';
-import { observeFoldLayout, type FoldLayoutObservation } from './utils/foldLayout.js';
+import { type FoldLayoutObservation } from './utils/foldLayout.js';
+import { observeLazyFoldLayout } from './pipeline/lazyFoldLayout.js'; // D29 接线（spec 2026-10-10 §2）：fold 惰性测量
 import { patchPreviewBlocks } from './utils/blockPatch.js';
 import {
 	revealFold,
@@ -1673,7 +1674,7 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		// `observe` reports at once and would re-measure every fold. The patch
 		// effect observes new blocks itself. A hidden host is not observed at all,
 		// because its boxes measure 0 (see `previewHosts`).
-		const observation = observeFoldLayout(host);
+		const observation = observeLazyFoldLayout(host); // D29 接线（spec 2026-10-10 §2）：惰性 fold 测量
 		foldLayout = observation;
 
 		return () => {
