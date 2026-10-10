@@ -32,6 +32,7 @@
 	// 显式 /index：上游 monacoStartupGraph 测试的 resolveLocal 把无扩展名导入按文件
 	// readFileSync，目录形态在此抛 EISDIR（Task 18 控制器裁决，零行为变化）。
 	import { runPipeline, setPipelineVersionSource } from './pipeline/index';
+	import { analyzeEnrichmentNeed } from './pipeline/enrichPrecheck.js';
 	import {
 		ensureMermaidInitialized,
 		renderDiagramBlocks,
@@ -1607,15 +1608,22 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		// 已被更新的 patch 推进则本次就地退出；期间到来的新 patch 仍可经版本闸逐块
 		// 取消在途渲染。
 		const revisionOfThisRun = previewPatches + 1;
+		// D30 接线（spec 2026-10-10 §2）：字符串级预检判定本文档是否可能命中
+		// 图表分发与富化；无 pre/无 math 的纯文本文档跳过全树扫描（实测 72+52ms）。
+		const enrichmentNeed = analyzeEnrichmentNeed(htmlContent);
 		const enrichment = Promise.resolve().then(async () => {
 			// 分发自微任务启动（此时修订号已发布），versionGate 以 revisionOfThisRun 比对：
 			// 新 patch 到来即 previewRevision 前进，在途分发逐块取消。
-			for (const block of patch.inserted) {
-				await renderDiagramBlocks(block, revisionOfThisRun);
-				if (previewRevision !== revisionOfThisRun) return; // 已被更新的 patch 取代
+			if (enrichmentNeed.diagrams) {
+				for (const block of patch.inserted) {
+					await renderDiagramBlocks(block, revisionOfThisRun);
+					if (previewRevision !== revisionOfThisRun) return; // 已被更新的 patch 取代
+				}
 			}
-			await renderRichContent(patch.inserted);
-			if (previewRevision !== revisionOfThisRun) return;
+			if (enrichmentNeed.code || enrichmentNeed.math || enrichmentNeed.diagrams) {
+				await renderRichContent(patch.inserted);
+				if (previewRevision !== revisionOfThisRun) return;
+			}
 			await runPipeline(host, patch.inserted);
 		});
 		if (cold) restoreAfterColdEnrichment(enrichment, tabManager.activeTabId);
