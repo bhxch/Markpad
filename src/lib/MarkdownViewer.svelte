@@ -1583,7 +1583,10 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 		const sanitized = unchanged ? null : sanitizeMarkdownFragment(htmlContent);
 		// D34 接线（spec 2026-10-10-progressive-first-paint-design）：大文档渐进首屏——
 		// head 首屏切片走既有同步 patch，剩余单元按帧预算排空；小文档 null 与现状逐字节一致。
-		const progressive = sanitized ? planProgressiveRender(sanitized) : null;
+		// D34 最终评审 C-1：渐进仅限宿主首渲——分屏 keystroke 的防抖重渲恒走同步增量，
+		// 否则 head-only 壳 patch 经 blockPatch descend+replace 清空首屏以下再排空，
+		// 造成闪烁与滚动高度塌缩。冷渲后 enrichedHosts 命中，此处恒为 null。
+		const progressive = sanitized && !enrichedHosts.has(host) ? planProgressiveRender(sanitized) : null;
 		const patch = progressive ? patchPreviewBlocks(host, progressive.head) : sanitized ? patchPreviewBlocks(host, sanitized) : { inserted: [] };
 		// Only the new blocks. `ResizeObserver.observe` on a target it is already
 		// watching re-registers it rather than doing nothing, and a fresh
@@ -1641,22 +1644,22 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 			// D34 修复轮 1（I1）：排空自微任务启动——首帧前修订号已发布，shouldAbort 的
 			// revision 比对不会把本 run 误判为过期（与 enrichment 分发同款时序约定）；
 			// 被新 patch 抢占或宿主脱离即终止排空，memo 由已落地批次保持自洽。
-				const drained = Promise.resolve()
-					.then(() =>
-						progressive.drain(host, {
+			const drained = Promise.resolve()
+				.then(() =>
+					progressive.drain(host, {
 						// D34 真机标定：预算 24ms 最优。实测排空帧 118-160ms，主体是新落地
 						// 内容的绘制（软件渲染 WebKitGTK 大表格 ~100ms/帧），与预算弱相关：
 						// 12ms 档帧数翻倍（34 帧）重复支付每帧固定绘制成本，最大帧反升至
 						// 250ms。首帧 ~150ms 由 sanitize 主导（spec §5 认定不再拆分）。
 						budgetMs: 24,
-							shouldAbort: () => !host.isConnected || previewRevision !== revisionOfThisRun,
-							onBatch: (inserted) => {
-								for (const block of inserted) foldLayout?.observe(block);
-								void enrichBlocks(inserted);
-							},
-						}),
-					)
-					.catch(() => {});
+						shouldAbort: () => !host.isConnected || previewRevision !== revisionOfThisRun,
+						onBatch: (inserted) => {
+							for (const block of inserted) foldLayout?.observe(block);
+							void enrichBlocks(inserted);
+						},
+					}),
+				)
+				.catch(() => {});
 			if (cold) {
 				// D34 修复轮 1（C2）：阅读位置恢复等 head 富化与排空都落地后再调
 				restoreAfterColdEnrichment(Promise.all([headEnrichment, drained]).then(() => {}), tabManager.activeTabId);

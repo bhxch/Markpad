@@ -31,6 +31,9 @@ describe('上游文件本地接线存在性（D29/D30/D31/D32，spec 2026-10-10�
 	it('D34：patch effect 挂渐进首屏（plan 分支 + drain + head 富化 + 排空终止）', () => {
 		expect(viewerSrc).toMatch(/import \{ planProgressiveRender \} from '\.\/pipeline\/progressiveFirstPaint\.js'/);
 		expect(viewerSrc).toMatch(/planProgressiveRender\(sanitized\)/);
+		// D34 最终评审 C-1：渐进仅限宿主首渲——enrichedHosts 已命中时恒走同步增量，
+		// 分屏 keystroke 防抖重渲不得重走渐进路径（head-only 壳 patch 会清空首屏以下）
+		expect(viewerSrc).toMatch(/sanitized && !enrichedHosts\.has\(host\) \? planProgressiveRender\(sanitized\)/);
 		expect(viewerSrc).toMatch(/\.drain\(host,/);
 		// D34 修复轮 1（I1）：排空被新 patch 抢占或宿主脱离即终止
 		expect(viewerSrc).toMatch(/shouldAbort: \(\) => !host\.isConnected \|\| previewRevision !== revisionOfThisRun/);
