@@ -260,7 +260,14 @@ export function createWindowSession(options: WindowSessionOptions) {
 		if (savedData) {
 			try {
 				options.restoreState(savedData);
-				for (const tab of options.restoredTabs()) {
+				// D32 接线（spec 2026-10-10 §2）：活动 tab 优先恢复，其余保持原序，
+				// 用户先看到自己所在的文档；崩溃安全协议（writeProgress 时序）不动。
+				const activeId = tabManager.activeTabId;
+				const orderedTabs = [
+					...options.restoredTabs().filter((tab) => tab.id === activeId),
+					...options.restoredTabs().filter((tab) => tab.id !== activeId),
+				];
+				for (const tab of orderedTabs) {
 					// The home screen is not a document. Snapshots from builds that
 					// wrote its `HOME_TAB_PATH` sentinel must not turn into a read
 					// of a file by that name — and unlike a file that merely failed
