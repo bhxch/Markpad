@@ -1641,6 +1641,12 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 			// D34 修复轮 1（C2）：head 首屏切片必须富化，否则首屏内的代码/图表/公式裸奔；
 			// 与排空批共用同一守卫（enrichmentNeed）与 revision 闸。
 			const headEnrichment = enrichBlocks(patch.inserted);
+			// D34 目录修复（真机反馈）：排空批的富化必须收集而非火弃——预览侧 Toc 是
+			// 前端 DOM 扫描（依赖 previewRevision；Rust markdown_outline 只服务编辑器侧），
+			// 而本 effect 的自增发生在 head 落地时，Toc 因此只看到首屏切片的标题。
+			// 排空与全部批富化完成后要再发布一次修订（下方 tocSignal），Toc 才会重扫完整宿主。
+			// 在批富化完成前发布会让在途富化链的 revision 闸自取消（尾批裸奔）。
+			const batchEnrichments: Promise<void>[] = [];
 			// D34 修复轮 1（I1）：排空自微任务启动——首帧前修订号已发布，shouldAbort 的
 			// revision 比对不会把本 run 误判为过期（与 enrichment 分发同款时序约定）；
 			// 被新 patch 抢占或宿主脱离即终止排空，memo 由已落地批次保持自洽。
@@ -1655,11 +1661,18 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 						shouldAbort: () => !host.isConnected || previewRevision !== revisionOfThisRun,
 						onBatch: (inserted) => {
 							for (const block of inserted) foldLayout?.observe(block);
-							void enrichBlocks(inserted);
+							batchEnrichments.push(enrichBlocks(inserted));
 						},
 					}),
 				)
 				.catch(() => {});
+			// D34 目录修复：修订发布在异步闭包内，读取都在闭包里的守卫不注册为
+			// effect 依赖，不会自调度（与上方 enrichment 链同一时序约定）。
+			Promise.all([headEnrichment, drained, ...batchEnrichments])
+				.catch(() => {})
+				.then(() => {
+					previewRevision = ++previewPatches;
+				});
 			if (cold) {
 				// D34 修复轮 1（C2）：阅读位置恢复等 head 富化与排空都落地后再调
 				restoreAfterColdEnrichment(Promise.all([headEnrichment, drained]).then(() => {}), tabManager.activeTabId);

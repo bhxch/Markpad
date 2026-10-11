@@ -41,6 +41,11 @@ describe('上游文件本地接线存在性（D29/D30/D31/D32，spec 2026-10-10�
 		expect(viewerSrc).toMatch(/enrichBlocks\(patch\.inserted\)/);
 		// D34 修复轮 1：对齐 pass 已取消（memo 增量同步取代）
 		expect(viewerSrc).not.toMatch(/alignMemo|patchPreviewBlocks\(host, sanitized!\)/);
+		// D34 目录修复（真机反馈）：排空批富化收集成 promise，排空+全部批富化完成后
+		// 再发布一次修订——预览侧 Toc 依赖 previewRevision 扫 DOM，head 落地时的一次
+		// 自增只会让它看到首屏切片的标题（目录缺 96/99 条的回归即此）
+		expect(viewerSrc).toMatch(/batchEnrichments\.push\(enrichBlocks\(inserted\)\)/);
+		expect(viewerSrc).toMatch(/Promise\.all\(\[headEnrichment, drained, \.\.\.batchEnrichments\]\)[\s\S]{0,120}previewRevision = \+\+previewPatches;/);
 	});
 
 	it('D34：appendRenderedKeys 追加式导出且被渐进管线调用（C1 memo 增量同步）', () => {
