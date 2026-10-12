@@ -324,8 +324,12 @@ fn main() {
     generate_ffi_module(&grammars);
 
     // Link C++ runtime for grammars with C++ scanners (ruby, yaml, lean, etc.)
-    // 本地 fork：windows-gnu 交叉编译产物为免安装裸 exe，必须静态链 libstdc++（连带 winpthread），
-    // 否则分发时缺 libstdc++-6.dll / libgcc_s_seh-1.dll / libwinpthread-1.dll（见 docs/dev/windows-cross-compile-guide.md）
+    // 本地 fork：交叉编译产物为免安装单 exe 分发，按目标选择 C++ 运行时链接方式
+    // （见 docs/dev/windows-cross-compile-guide.md 问题 4/5/6）：
+    // - windows-gnu：静态链 libstdc++（连带 winpthread），否则分发缺 MinGW 运行时 DLL
+    // - windows-msvc：scanner obj 以 /MT 编译，内嵌 /DEFAULTLIB 指令自动解析
+    //   静态 MSVC CRT+STL（libcmt/libcpmt），无需在此额外链接
+    // - 其余（本机 Linux 等）：动态链系统 libstdc++，保持上游/宿主行为不变
     let link_target = env::var("TARGET").unwrap_or_default();
     if link_target.contains("windows-gnu") {
         // rustc 不像 gcc 驱动那样自带 sys-root 搜索路径，静态库目录须显式注入
@@ -344,6 +348,8 @@ fn main() {
         }
         println!("cargo:rustc-link-lib=static=stdc++");
         println!("cargo:rustc-link-lib=static=winpthread");
+    } else if link_target.contains("windows-msvc") {
+        // /MT 编译的 scanner obj 自带 /DEFAULTLIB 指令，见上方说明
     } else {
         println!("cargo:rustc-link-lib=dylib=stdc++");
     }
@@ -389,13 +395,25 @@ fn compile_grammar(name: &str, grammar_dir: &Path, subpath: &str, c_symbol: &str
     // (例如 grammars/perl/src/bsearch.c 定义了自己的 bsearch), 预处理后
     // 变成 `void *_Generic(...)` 触发 "expected identifier before '_Generic'" 错误。
     // 用 gnu11 编译既修复此问题, 也符合 tree-sitter 生成的 C 代码的预期标准。
+    // 本地 fork：windows-msvc 目标经 cargo-xwin 用 clang-cl 编译，不认 GNU 风格
+    // 选项；clang 默认即 C17，无 gcc16 C23 默认值问题，故不加标准旗标。
+    let is_msvc = env::var("TARGET").unwrap_or_default().contains("windows-msvc");
     let mut build = cc::Build::new();
     build
         .file(&parser_c)
         .include(&src_dir)
         .include(grammar_dir)
-        .warnings(false)
-        .flag("-std=gnu11");
+        .warnings(false);
+    if is_msvc {
+        // UCRT 导入库同样导出 bsearch，lld-link 对导入库不做"先定义优先"去重
+        // （GNU ld 会跳过后拉入的同名成员），与自带 bsearch.c 的语法（perl）
+        // 撞重复符号；编译期重命名为语法专属符号，定义与内部调用一致改名
+        if src_dir.join("bsearch.c").exists() {
+            build.flag(&format!("-Dbsearch={}_local_bsearch", lib_name));
+        }
+    } else {
+        build.flag("-std=gnu11");
+    }
 
     let has_c_scanner = scanner_c.exists() && !scanner_cc.exists();
     if has_c_scanner {
@@ -426,8 +444,20 @@ fn compile_grammar(name: &str, grammar_dir: &Path, subpath: &str, c_symbol: &str
         };
 
         // Detect cross-compilation compiler
+        // 本地 fork：windows-msvc 目标（cargo-xwin 交叉编译，见
+        // docs/dev/windows-cross-compile-guide.md 问题 6）用 clang-cl 编 COFF obj；
+        // 编译器与 sysroot 旗标复用 cargo-xwin 注入的 CXX/CXXFLAGS 目标环境变量
+        let is_msvc = target.contains("windows-msvc");
         let (compiler, ar_cmd, objcopy_cmd) = if target.contains("windows-gnu") {
             ("x86_64-w64-mingw32-g++".to_string(), "x86_64-w64-mingw32-ar", "x86_64-w64-mingw32-objcopy")
+        } else if is_msvc {
+            (
+                env::var("CXX_x86_64_pc_windows_msvc")
+                    .or_else(|_| env::var("CXX"))
+                    .unwrap_or_else(|_| "clang-cl".to_string()),
+                "llvm-ar",
+                "llvm-objcopy",
+            )
         } else if target.contains("linux") && target.contains("aarch64") {
             ("aarch64-linux-gnu-g++".to_string(), "aarch64-linux-gnu-ar", "objcopy")
         } else {
@@ -449,37 +479,76 @@ fn compile_grammar(name: &str, grammar_dir: &Path, subpath: &str, c_symbol: &str
         };
 
         let mut obj_files: Vec<String> = Vec::new();
+        // cargo-xwin 经 CXXFLAGS 注入 --sysroot 等 MSVC CRT/SDK 定位旗标，原样透传
+        let msvc_sysroot_flags: Vec<String> = if is_msvc {
+            env::var("CXXFLAGS_x86_64_pc_windows_msvc")
+                .or_else(|_| env::var("CXXFLAGS"))
+                .map(|f| f.split_whitespace().map(str::to_string).collect())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         for cpp_file in &cpp_files {
             let obj_name = format!("{}_{}.o",
                 lib_name,
                 cpp_file.file_stem().unwrap().to_str().unwrap());
             let obj_path = std::path::Path::new(&out_dir).join(&obj_name);
 
-            let status = std::process::Command::new(&compiler)
-                .args(&[
-                    // 固定 C++ 标准为 gnu++17: gcc 16 默认标准下 mingw 的 libstdc++
-                    // 缺少 std::string move 构造符号, 导致链接报 undefined reference
-                    // to basic_string::basic_string(&&). 显式 gnu++17 规避此问题.
-                    // -include cstdint: 部分 grammar 生成文件(如 yaml 的
-                    // schema.generated.cc)直接使用 int8_t 但未包含 <cstdint>.
-                    "-std=gnu++17",
-                    "-include", "cstdint",
-                    "-Os", "-fPIC", "-ffunction-sections", "-fdata-sections",
-                    "-c", "-w",
-                    &format!("-I{}", src_dir.display()),
-                    &format!("-I{}", grammar_dir.display()),
-                    &format!("-I{}", src_dir.join("..").display()),
-                    "-o", obj_path.to_str().unwrap(),
-                    cpp_file.to_str().unwrap(),
-                ])
-                .status()
-                .expect("failed to compile C++ scanner");
+            let status = if is_msvc {
+                // clang-cl（cl 风格旗标）/MT 静态 CRT：obj 内嵌 /DEFAULTLIB
+                // (libcmt/libcpmt/libvcruntime/libucrt)，最终链接由 lld-link
+                // 依指令解析，无需额外 rustc-link-lib
+                std::process::Command::new(&compiler)
+                    .args(&msvc_sysroot_flags)
+                    .args(&[
+                        "/std:c++17",
+                        // 部分 grammar 生成文件(如 yaml 的 schema.generated.cc)
+                        // 直接使用 int8_t 但未包含 <cstdint>，强制前置包含
+                        "/FIcstdint",
+                        "/Os", "/Gy", "/Gw", "/w", "/c",
+                    ])
+                    // llvm-objcopy 不支持 COFF 的 --localize-symbol，改在
+                    // 预处理期用 -D 重命名（这些符号在本语法 parser 中无
+                    // 引用，仅被内嵌 scanner 源码定义，见 localize_syms 注释）
+                    .args(localize_syms.iter().map(|s| format!("-D{s}={s}_local")))
+                    .args(&[
+                        &format!("/I{}", src_dir.display()),
+                        &format!("/I{}", grammar_dir.display()),
+                        &format!("/I{}", src_dir.join("..").display()),
+                        &format!("/Fo{}", obj_path.display()),
+                        cpp_file.to_str().unwrap(),
+                    ])
+                    .status()
+                    .expect("failed to compile C++ scanner with clang-cl")
+            } else {
+                std::process::Command::new(&compiler)
+                    .args(&[
+                        // 固定 C++ 标准为 gnu++17: gcc 16 默认标准下 mingw 的 libstdc++
+                        // 缺少 std::string move 构造符号, 导致链接报 undefined reference
+                        // to basic_string::basic_string(&&). 显式 gnu++17 规避此问题.
+                        // -include cstdint: 部分 grammar 生成文件(如 yaml 的
+                        // schema.generated.cc)直接使用 int8_t 但未包含 <cstdint>.
+                        "-std=gnu++17",
+                        "-include", "cstdint",
+                        "-Os", "-fPIC", "-ffunction-sections", "-fdata-sections",
+                        "-c", "-w",
+                        &format!("-I{}", src_dir.display()),
+                        &format!("-I{}", grammar_dir.display()),
+                        &format!("-I{}", src_dir.join("..").display()),
+                        "-o", obj_path.to_str().unwrap(),
+                        cpp_file.to_str().unwrap(),
+                    ])
+                    .status()
+                    .expect("failed to compile C++ scanner")
+            };
 
             if !status.success() {
                 panic!("C++ compilation failed for {:?}", cpp_file);
             }
 
-            if !localize_syms.is_empty() {
+            // 符号本地化：msvc 分支已在编译期经 -D 重命名（llvm-objcopy
+            // 不支持 COFF），其余目标仍用 objcopy 降级为本地符号
+            if !localize_syms.is_empty() && !is_msvc {
                 let mut cmd = std::process::Command::new(objcopy_cmd);
                 for sym in localize_syms {
                     cmd.arg(format!("--localize-symbol={}", sym));
@@ -496,7 +565,18 @@ fn compile_grammar(name: &str, grammar_dir: &Path, subpath: &str, c_symbol: &str
 
         // Merge C++ objects into the main static library
         if !obj_files.is_empty() {
-            let main_lib = format!("{}/lib{}.a", out_dir, lib_name);
+            // cc crate 在 msvc 目标下归档产物为 {name}.lib 并硬链接出
+            // lib{name}.a 副本（两者初始同 inode）；必须合并进 {name}.lib，
+            // 因为 rustc 链接时解析的是它，且 llvm-ar 重写会断开硬链接。
+            // 其余目标归档产物为 lib{name}.a。
+            let main_lib = if is_msvc {
+                [format!("{}.lib", lib_name), format!("lib{}.a", lib_name)]
+            } else {
+                [format!("lib{}.a", lib_name), format!("{}.lib", lib_name)]
+            }
+            .into_iter()
+            .find(|f| std::path::Path::new(&out_dir).join(f).exists())
+            .unwrap_or_else(|| panic!("grammar static library not found for {}", lib_name));
             std::process::Command::new(ar_cmd)
                 .args(&["rs", &main_lib])
                 .args(&obj_files)
