@@ -324,7 +324,29 @@ fn main() {
     generate_ffi_module(&grammars);
 
     // Link C++ runtime for grammars with C++ scanners (ruby, yaml, lean, etc.)
-    println!("cargo:rustc-link-lib=dylib=stdc++");
+    // 本地 fork：windows-gnu 交叉编译产物为免安装裸 exe，必须静态链 libstdc++（连带 winpthread），
+    // 否则分发时缺 libstdc++-6.dll / libgcc_s_seh-1.dll / libwinpthread-1.dll（见 docs/dev/windows-cross-compile-guide.md）
+    let link_target = env::var("TARGET").unwrap_or_default();
+    if link_target.contains("windows-gnu") {
+        // rustc 不像 gcc 驱动那样自带 sys-root 搜索路径，静态库目录须显式注入
+        let libstdcxx_a = String::from_utf8_lossy(
+            &std::process::Command::new("x86_64-w64-mingw32-g++")
+                .arg("-print-file-name=libstdc++.a")
+                .output()
+                .expect("run x86_64-w64-mingw32-g++")
+                .stdout,
+        )
+        .trim()
+        .to_string();
+        if libstdcxx_a.contains('/') {
+            let dir = std::path::Path::new(&libstdcxx_a).parent().unwrap();
+            println!("cargo:rustc-link-search=native={}", dir.display());
+        }
+        println!("cargo:rustc-link-lib=static=stdc++");
+        println!("cargo:rustc-link-lib=static=winpthread");
+    } else {
+        println!("cargo:rustc-link-lib=dylib=stdc++");
+    }
 
     tauri_build::build();
 }
