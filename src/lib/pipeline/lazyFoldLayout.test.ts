@@ -231,6 +231,56 @@ describe('observeLazyFoldLayout（D29，spec 2026-10-10）', () => {
 		obs.stop();
 	});
 
+	it('D36 高度守卫：膨胀批次排队自愈，静默后收敛回正确值', () => {
+		const { root, wrappers } = makeFixture(2);
+		let clock = 10000;
+		const { deps, ioCallbacks, roCallbacks } = makeDeps();
+		const pinsSum = () => [...root.querySelectorAll<HTMLElement>('.foldable-content-wrapper')].reduce((a, w) => a + (parseFloat(w.style.getPropertyValue('--fold-content-height')) || 0), 0);
+		const obs = observeLazyFoldLayout(root, { ...deps, now: () => clock, docHeight: () => 5000 + pinsSum() });
+		vi.useFakeTimers();
+		try {
+			obs.observe(root);
+			obs.remeasureAll(); // 基准：lastGood = 5000 + 0
+			clock = 20000; // 插入静默已过
+			// 模拟 WebKitGTK 瞬态：wrapper[0] 的 content 读数膨胀 500000
+			const c0 = wrappers[0].querySelector<HTMLElement>('.content-inner')!;
+			(c0 as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect = () => ({ height: 500000, width: 100, top: 0, left: 0, right: 100, bottom: 500000, x: 0, y: 0, toJSON: () => ({}) } as DOMRect);
+			ioCallbacks[0]([{ isIntersecting: true, target: wrappers[0] }]); // 晋升批次读到坏值
+			expect(wrappers[0].style.getPropertyValue('--fold-content-height')).toBe('500000px'); // 坏值已写
+			// 瞬态过去（读数恢复正常）→ 自愈全量重测收敛
+			delete (c0 as unknown as { getBoundingClientRect?: unknown }).getBoundingClientRect;
+			clock = 20400;
+			vi.advanceTimersByTime(600);
+			expect(wrappers[0].style.getPropertyValue('--fold-content-height')).not.toBe('500000px');
+		} finally {
+			vi.useRealTimers();
+			obs.stop();
+		}
+	});
+
+	it('D36 高度守卫：插入静默窗内不设防（drain 合法增长不触发自愈）', () => {
+		const { root, wrappers } = makeFixture(2);
+		let clock = 10000;
+		const { deps, ioCallbacks } = makeDeps();
+		const pinsSum = () => [...root.querySelectorAll<HTMLElement>('.foldable-content-wrapper')].reduce((a, w) => a + (parseFloat(w.style.getPropertyValue('--fold-content-height')) || 0), 0);
+		const obs = observeLazyFoldLayout(root, { ...deps, now: () => clock, docHeight: () => 5000 + pinsSum() });
+		vi.useFakeTimers();
+		try {
+			obs.observe(root); // lastInsertAt = 10000
+			obs.remeasureAll();
+			clock = 10500; // 距插入仅 0.5s
+			const c0 = wrappers[0].querySelector<HTMLElement>('.content-inner')!;
+			(c0 as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect = () => ({ height: 500000, width: 100, top: 0, left: 0, right: 100, bottom: 500000, x: 0, y: 0, toJSON: () => ({}) } as DOMRect);
+			ioCallbacks[0]([{ isIntersecting: true, target: wrappers[0] }]);
+			expect(wrappers[0].style.getPropertyValue('--fold-content-height')).toBe('500000px'); // 不回滚、不自愈
+			vi.advanceTimersByTime(1000);
+			expect(wrappers[0].style.getPropertyValue('--fold-content-height')).toBe('500000px');
+		} finally {
+			vi.useRealTimers();
+			obs.stop();
+		}
+	});
+
 	it('测量值按 previewZoomFactor 折算（#807 契约）', () => {
 		const { root, wrappers } = makeFixture(1);
 		vi.mocked(previewZoomFactor).mockReturnValue(2);

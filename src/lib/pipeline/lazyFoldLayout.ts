@@ -43,6 +43,8 @@ export interface LazyFoldLayoutDeps {
 	schedule?: (cb: () => void) => void;
 	// D36 滚动静默门控的时钟；测试注入以控制静默判定。
 	now?: () => number;
+	// D36 高度不变量守卫的高度源；测试注入以模拟膨胀。
+	docHeight?: () => number;
 }
 
 interface WrapperWithContent {
@@ -111,10 +113,39 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 	let deferTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const SCROLL_QUIET_MS = 250;
+	// D36 守卫常量：内容插入静默窗与文档高度容差（腐殖检测只防膨胀不防收缩）。
+	const INSERT_QUIET_MS = 2000;
+	const HEIGHT_TOLERANCE = 1.005;
+	const HEIGHT_SLACK = 64;
 	const onScroll = () => {
 		lastScrollAt = now();
 	};
 	window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+
+	// 注入式高度源（测试用）；生产读滚动容器自身的 scrollHeight。
+	const docHeight = deps.docHeight ?? (() => root.scrollHeight);
+	let lastGoodHeight: number | null = null;
+	let lastInsertAt = -Infinity;
+	let healTimer: ReturnType<typeof setTimeout> | null = null;
+	let healAttempts = 0;
+
+	// 自愈：静默后全量原子重测（D35 语义）。重测后仍超容差则再试，至多 3 次——
+	// 瞬态读数窗口通常在一次静默后过去；仍失败则保留现状等待下一个事件重试。
+	const scheduleHeal = () => {
+		if (healAttempts >= 3) return;
+		healAttempts += 1;
+		if (healTimer !== null) clearTimeout(healTimer);
+		healTimer = setTimeout(() => {
+			healTimer = null;
+			remeasureAll();
+			const height = docHeight();
+			if (lastGoodHeight !== null && height > lastGoodHeight * HEIGHT_TOLERANCE + HEIGHT_SLACK) scheduleHeal();
+			else {
+				lastGoodHeight = height;
+				healAttempts = 0;
+			}
+		}, SCROLL_QUIET_MS + 120);
+	};
 
 	const runUpdate = () => {
 		frame = null;
@@ -131,7 +162,17 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 		}
 		const items = [...measureSet].map((wrapper) => ({ wrapper, content: wrapper.querySelector<HTMLElement>(FOLD_CONTENT_SELECTOR)! }));
 		measureSet.clear();
+		// D36 高度不变量守卫：无内容插入时文档高度必须稳定。批后高度超出基准容差
+		// = 坏读数已固化的特征 → 排队全量重测自愈（不回写快照：折叠展开也走 RO
+		// 批次且合法增长，回写会造成视觉回闪；自愈收敛到同一正确态）。插入后的
+		// 2s 内不设防（drain/键入的合法增长不算腐蚀）。
 		measureWrappers(root, items);
+		const height = docHeight();
+		if (lastGoodHeight !== null && now() - lastInsertAt > INSERT_QUIET_MS && height > lastGoodHeight * HEIGHT_TOLERANCE + HEIGHT_SLACK) {
+			scheduleHeal();
+			return;
+		}
+		if (lastGoodHeight === null || height <= lastGoodHeight * HEIGHT_TOLERANCE + HEIGHT_SLACK) lastGoodHeight = height;
 	};
 	const scheduleUpdate = () => {
 		if (frame !== null) return;
@@ -174,6 +215,8 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 		: null;
 
 	const observe = (scope: Element) => {
+		// D36：内容插入信号——插入后的合法高度增长不参加腐化检测。
+		lastInsertAt = now();
 		// 上游 #210 契约复刻：新块插入后，其祖先 wrapper 钉着的旧高度对不上新内容，
 		// 清成 auto 让布局立即正确，晋升测量会再发布准确值。
 		for (let element = scope.parentElement; element; element = element.parentElement) {
@@ -200,6 +243,8 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 		frame = null;
 		if (deferTimer !== null) clearTimeout(deferTimer);
 		deferTimer = null;
+		if (healTimer !== null) clearTimeout(healTimer);
+		healTimer = null;
 		if (resizeTimer !== null) clearTimeout(resizeTimer);
 		resizeTimer = null;
 		window.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions);
@@ -217,6 +262,8 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 				return content ? [{ wrapper, content }] : [];
 			}),
 		);
+		// D36：全量重测是可信基准，重设高度不变量的参照值。
+		lastGoodHeight = docHeight();
 	};
 
 	// D35：resize 后未晋升 wrapper 无 RO 观察、pin 会 stale——防抖全量重测。
