@@ -109,7 +109,10 @@ test('the preview sanitizes through the shared policy, not a local config', () =
 	);
 	assert.deepEqual(
 		patchArguments,
-		[sanitizedSinkName()],
+		// D34（渐进式首屏渲染）让首帧只补入 head 切片：`progressive.head` 不是第二个
+		// 来源，而是同一次 sanitize 解析树的克隆切片（见 pipeline/progressiveFirstPaint.ts
+		// —— 从 sanitized 节点 clone 而来，从不接触原始文档字符串），安全链不变。
+		['progressive.head', sanitizedSinkName()].sort(),
 		'the preview must patch in the shared sanitizer output, once, and nothing else',
 	);
 
