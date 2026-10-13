@@ -127,6 +127,40 @@ describe('observeLazyFoldLayout（D29，spec 2026-10-10）', () => {
 		obs.stop();
 	});
 
+	it('remeasureAll（D35）：全量重写所有 wrapper 的 pin，含未晋升的远端节', () => {
+		const { root, wrappers } = makeFixture(4);
+		const { deps, ioCallbacks } = makeDeps();
+		const obs = observeLazyFoldLayout(root, deps);
+		obs.observe(root);
+		// 只有第一个晋升（写入 pin），其余保持无 pin（模拟远端未晋升）
+		ioCallbacks[0]([{ isIntersecting: true, target: wrappers[0] }]);
+		expect(wrappers[0].style.getPropertyValue('--fold-content-height')).not.toBe('');
+		expect(wrappers[1].style.getPropertyValue('--fold-content-height')).toBe('');
+		obs.remeasureAll();
+		for (const w of wrappers) {
+			expect(w.style.getPropertyValue('--fold-content-height')).not.toBe('');
+		}
+		obs.stop();
+	});
+
+	it('remeasureAll（D35）：纠错——错误 pin 被同一次干净布局的重测覆盖', () => {
+		const { root, wrappers } = makeFixture(3);
+		const { deps, ioCallbacks } = makeDeps();
+		const obs = observeLazyFoldLayout(root, deps);
+		obs.observe(root);
+		// 模拟棘轮固化：晋升后手工写入错误 pin
+		ioCallbacks[0]([{ isIntersecting: true, target: wrappers[0] }]);
+		wrappers[0].style.setProperty('--fold-content-height', '99999px');
+		obs.remeasureAll();
+		const pin = parseFloat(wrappers[0].style.getPropertyValue('--fold-content-height'));
+		expect(pin).not.toBe(99999);
+		// 同一干净布局下同构 wrapper 的测量值应彼此一致（读/写分离 + 原子 pass）
+		obs.remeasureAll();
+		const pins = wrappers.map((w) => w.style.getPropertyValue('--fold-content-height'));
+		expect(new Set(pins).size).toBe(1);
+		obs.stop();
+	});
+
 	it('测量值按 previewZoomFactor 折算（#807 契约）', () => {
 		const { root, wrappers } = makeFixture(1);
 		vi.mocked(previewZoomFactor).mockReturnValue(2);

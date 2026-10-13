@@ -54,8 +54,7 @@ import {
 import {
 	renderRichContent as renderRichContentInto,
 } from './utils/richContent.js';
-import { type FoldLayoutObservation } from './utils/foldLayout.js';
-import { observeLazyFoldLayout } from './pipeline/lazyFoldLayout.js'; // D29 接线（spec 2026-10-10 §2）：fold 惰性测量
+	import { observeLazyFoldLayout, type LazyFoldLayoutObservation } from './pipeline/lazyFoldLayout.js'; // D29 接线（spec 2026-10-10 §2）：fold 惰性测量；D35：remeasureAll 全量重测
 import { patchPreviewBlocks } from './utils/blockPatch.js';
 import {
 	revealFold,
@@ -177,7 +176,7 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 	let previewBlocks = $derived(
 		tabManager.activeTabId ? (previewHosts[tabManager.activeTabId] ?? null) : null,
 	);
-	let foldLayout: FoldLayoutObservation | null = null;
+	let foldLayout: LazyFoldLayoutObservation | null = null;
 	
 	const highlightColorMap: Record<string, string> = {
 		default: 'color-mix(in srgb, var(--color-accent-fg) 40%, transparent)',
@@ -1675,8 +1674,14 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 					previewRevision = ++previewPatches;
 				});
 			if (cold) {
+				// D35：排空完成后全量原子重测——渐进批的 IO 晋升测量基于部分落地
+				// 布局，pin 会棘轮式偏离真实高度（实测漂移 3 倍），跳转/滚动坐标
+				// 全部失准；恢复阅读位置也必须以真值基线为准。
+				const stabilized = Promise.all([headEnrichment, drained]).then(() => {
+					foldLayout?.remeasureAll();
+				});
 				// D34 修复轮 1（C2）：阅读位置恢复等 head 富化与排空都落地后再调
-				restoreAfterColdEnrichment(Promise.all([headEnrichment, drained]).then(() => {}), tabManager.activeTabId);
+				restoreAfterColdEnrichment(stabilized, tabManager.activeTabId);
 			}
 		} else {
 			const enrichment = enrichBlocks(patch.inserted);

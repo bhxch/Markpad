@@ -9,11 +9,25 @@
 // merge 注意：上游若改 fold CSS 契约（--fold-content-height / zoom / transition
 // 抑制），必须同步本文件——lazyFoldLayout.test.ts 与 upstreamWiring.test.ts 是验收依据。
 // resize 重测由 RO 覆盖（rewrap 必触发 content-inner 尺寸变化），无独立 window resize 监听——对 spec §2.3 字面的有意偏离，评审裁定行为等价。
+//
+// D35（真机缺陷修复）：子集测量的棘轮缺陷——pin 是布局输入（wrapper height =
+// var(--fold-content-height)），祖先 wrapper 的实测高度包含后代 pin 参与布局的
+// 结果；"清活动集→读活动集"时未晋升后代仍带旧 pin，不同批次读到的部分状态
+// 互相污染，pin 会棘轮式偏离真实高度（实测单文档漂移 215K→657K，3 倍幻影
+// 高度），且 RO 对已冻结 pin 不再给出纠正事件（真机 +300px 探针零反应）。
+// remeasureAll() 恢复上游"清全部→读全部→写全部"的原子全量语义，在排空完成
+// 与 resize（防抖）时调用，一次性重建真值基线。
 import { previewZoomFactor } from '../utils/previewAnchor.js';
-import type { FoldLayoutObservation } from '../utils/foldLayout.js';
 
 const FOLD_WRAPPER_SELECTOR = '.foldable-content-wrapper';
 const FOLD_CONTENT_SELECTOR = ':scope > .content-inner';
+
+/** D35： observe/stop 同上游契约；remeasureAll 为全量原子重测（棘轮纠正）。 */
+export interface LazyFoldLayoutObservation {
+	observe(scope: Element): void;
+	stop(): void;
+	remeasureAll(): void;
+}
 
 export interface LazyFoldLayoutDeps {
 	// null = 环境无 IntersectionObserver：回退为立即全量观察（上游行为）。
@@ -51,7 +65,7 @@ function measureWrappers(root: HTMLElement, items: WrapperWithContent[]) {
 	}
 }
 
-export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDeps = {}): FoldLayoutObservation {
+export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDeps = {}): LazyFoldLayoutObservation {
 	const resolveIO = (): ((cb: IntersectionObserverCallback) => IntersectionObserver) | null =>
 		deps.ioFactory !== undefined
 			? deps.ioFactory
@@ -130,7 +144,34 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 		ro?.disconnect();
 		if (frame !== null) cancelAnimationFrame(frame);
 		frame = null;
+		if (resizeTimer !== null) clearTimeout(resizeTimer);
+		resizeTimer = null;
 	};
+
+	// D35：全量原子重测（上游 updateFoldHeights 语义）——清全部 pin → 同一干净布局
+	// 批量读 → 批量写。纠正子集测量棘轮固化的错误 pin（真机实测单次调用后跳转
+	// 落点恢复 ±常数误差）。成本 = 两次全文档 reflow，只在排空完成与 resize 防抖后发生。
+	const remeasureAll = () => {
+		const wrappers = [...root.querySelectorAll<HTMLElement>(FOLD_WRAPPER_SELECTOR)];
+		measureWrappers(
+			root,
+			wrappers.flatMap((wrapper) => {
+				const content = wrapper.querySelector<HTMLElement>(FOLD_CONTENT_SELECTOR);
+				return content ? [{ wrapper, content }] : [];
+			}),
+		);
+	};
+
+	// D35：resize 后未晋升 wrapper 无 RO 观察、pin 会 stale——防抖全量重测。
+	let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+	const onResize = () => {
+		if (resizeTimer !== null) clearTimeout(resizeTimer);
+		resizeTimer = setTimeout(() => {
+			resizeTimer = null;
+			remeasureAll();
+		}, 150);
+	};
+	window.addEventListener('resize', onResize);
 
 	// 上游 foldLayout.ts:130 同位契约：创建即自观察 root。这是冷启动唯一的全量入口——
 	// patch effect 声明早于 observation 创建 effect，首次插入全部块时 foldLayout 还是
@@ -138,5 +179,5 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 	// （display:none）不产生 isIntersecting，安全。
 	observe(root);
 
-	return { observe, stop };
+	return { observe, stop, remeasureAll };
 }
