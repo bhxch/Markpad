@@ -195,6 +195,42 @@ describe('observeLazyFoldLayout（D29，spec 2026-10-10）', () => {
 		obs.stop();
 	});
 
+	it('D36 滚动静默门控：滚动进行中的晋升推迟测量，静默后补测', () => {
+		const { root, wrappers } = makeFixture(2);
+		let clock = 1000;
+		const { deps, ioCallbacks } = makeDeps();
+		const obs = observeLazyFoldLayout(root, { ...deps, now: () => clock });
+		vi.useFakeTimers();
+		try {
+			obs.observe(root);
+			window.dispatchEvent(new Event('scroll'));
+			ioCallbacks[0]([{ isIntersecting: true, target: wrappers[0] }]);
+			// 滚动静默窗内：只入队，不测量（WebKitGTK 平滑滚动期 rect 读数不可靠）
+			expect(wrappers[0].style.getPropertyValue('--fold-content-height')).toBe('');
+			clock = 1400; // 静默已过 400ms
+			vi.advanceTimersByTime(500); // 推迟定时器触发 → 补测
+			expect(wrappers[0].style.getPropertyValue('--fold-content-height')).not.toBe('');
+		} finally {
+			vi.useRealTimers();
+			obs.stop();
+		}
+	});
+
+	it('D36 滚动静默后的晋升立即测量且保持窄域', () => {
+		const { root, wrappers } = makeFixture(2);
+		let clock = 1000;
+		const { deps, ioCallbacks } = makeDeps();
+		const obs = observeLazyFoldLayout(root, { ...deps, now: () => clock });
+		obs.observe(root);
+		window.dispatchEvent(new Event('scroll'));
+		clock = 1400; // 距上次滚动已静默 400ms
+		ioCallbacks[0]([{ isIntersecting: true, target: wrappers[0] }]);
+		expect(wrappers[0].style.getPropertyValue('--fold-content-height')).not.toBe('');
+		// 窄域不因门控改变：另一 wrapper 未晋升则无 pin
+		expect(wrappers[1].style.getPropertyValue('--fold-content-height')).toBe('');
+		obs.stop();
+	});
+
 	it('测量值按 previewZoomFactor 折算（#807 契约）', () => {
 		const { root, wrappers } = makeFixture(1);
 		vi.mocked(previewZoomFactor).mockReturnValue(2);

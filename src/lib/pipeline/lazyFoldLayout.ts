@@ -41,6 +41,8 @@ export interface LazyFoldLayoutDeps {
 	roFactory?: ((cb: ResizeObserverCallback) => ResizeObserver) | null;
 	// 默认 requestAnimationFrame 批处理；测试注入同步执行。
 	schedule?: (cb: () => void) => void;
+	// D36 滚动静默门控的时钟；测试注入以控制静默判定。
+	now?: () => number;
 }
 
 interface WrapperWithContent {
@@ -87,17 +89,46 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 	const ioFactory = resolveIO();
 	const roFactory = resolveRO();
 	const active = new Map<Element, HTMLElement>(); // content-inner -> wrapper（活动集）
-	// D36（spec 2026-10-13）：窄域测量队列。D29 的 promote/RO 回调曾每次重测整个
-	// 活动集（清全部 pin→读全部→写全部 = 两次全文档 reflow），滚动第一遍每步都要为
-	// 新晋升者付出全文档代价（实测 median 61-104ms，merge 前基线 20ms）。改为只测
-	// 本次晋升/尺寸变化的 wrapper：内容变化→该 wrapper 自己的 RO 事件→本地重测闭环
-	// 不变；子集测量的棘轮风险仍由 D35 remeasureAll（排空完成 + resize）兜底。
+	// D36（spec 2026-10-13，评审修订）：窄域测量队列 + 滚动静默门控。D29 的 promote/RO
+	// 回调曾每次重测整个活动集（清全部 pin→读全部→写全部 = 两次全文档 reflow），滚动
+	// 第一遍每步都要为新晋升者付出全文档代价（实测 median 61-104ms，merge 前基线
+	// 20ms）。改为只测本次晋升/尺寸变化的 wrapper；内容变化→该 wrapper 自己的 RO 事件
+	// →本地重测闭环不变；子集测量的棘轮风险仍由 D35 remeasureAll（排空完成 + resize）
+	// 兜底。
+	//
+	// 真机验收再发现（同 spec 修订节）：WebKitGTK 在大文档程序化平滑滚动扫掠期间
+	// 的 rect 读数不可靠——实测同一 content-inner 的 getBoundingClientRect 高度
+	// 自相矛盾（盒子读数小于其后代 pin 之和），一次坏读经窄域写入后沿祖先链复利
+	// （真机复现：文档 183K→3.5M→67 万→…，pre-D36 构建同序列零膨胀，因其每次
+	// 事件全量重测而自愈）。且滚动进行中本就不需要 pin——未测量 wrapper 按上游
+	// CSS 契约以 auto 布局，显示天然正确。故滚动期间测量一律推迟，滚动静默
+	// SCROLL_QUIET_MS 后一次性补测：滚动期测量成本归零，坏读数窗口被整体绕开。
 	const measureSet = new Set<HTMLElement>();
 	let frame: number | null = null;
+	// 可注入时钟：测试控制滚动静默判定，不必依赖真实 performance.now。
+	const now = deps.now ?? (() => performance.now());
+	let lastScrollAt = -Infinity;
+	let deferTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const SCROLL_QUIET_MS = 250;
+	const onScroll = () => {
+		lastScrollAt = now();
+	};
+	window.addEventListener('scroll', onScroll, { capture: true, passive: true });
 
 	const runUpdate = () => {
 		frame = null;
 		if (measureSet.size === 0) return;
+		const quietFor = now() - lastScrollAt;
+		if (quietFor < SCROLL_QUIET_MS) {
+			// 滚动进行中：推迟到静默后补测（见上 D36 修订注释）。
+			if (deferTimer !== null) clearTimeout(deferTimer);
+			deferTimer = setTimeout(() => {
+				deferTimer = null;
+				scheduleUpdate();
+			}, SCROLL_QUIET_MS - quietFor + 30);
+			return;
+		}
 		const items = [...measureSet].map((wrapper) => ({ wrapper, content: wrapper.querySelector<HTMLElement>(FOLD_CONTENT_SELECTOR)! }));
 		measureSet.clear();
 		measureWrappers(root, items);
@@ -167,8 +198,11 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 		ro?.disconnect();
 		if (frame !== null) cancelAnimationFrame(frame);
 		frame = null;
+		if (deferTimer !== null) clearTimeout(deferTimer);
+		deferTimer = null;
 		if (resizeTimer !== null) clearTimeout(resizeTimer);
 		resizeTimer = null;
+		window.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions);
 	};
 
 	// D35：全量原子重测（上游 updateFoldHeights 语义）——清全部 pin → 同一干净布局
