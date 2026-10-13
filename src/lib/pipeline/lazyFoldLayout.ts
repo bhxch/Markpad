@@ -17,6 +17,11 @@
 // 高度），且 RO 对已冻结 pin 不再给出纠正事件（真机 +300px 探针零反应）。
 // remeasureAll() 恢复上游"清全部→读全部→写全部"的原子全量语义，在排空完成
 // 与 resize（防抖）时调用，一次性重建真值基线。
+//
+// D36（spec 2026-10-13）：promote 与 RO 回调从"重测整个活动集"收窄为"只测本次
+// 晋升/尺寸变化的 wrapper"。全量重测的两次全文档 reflow 是打开后滚动第一遍卡顿
+// （median 61-104ms，merge 前基线 20ms）与折叠开合延迟（41-873ms）的来源，实测
+// 见 docs/perf/2026-10-13-merge前后性能回归调查.md。
 import { previewZoomFactor } from '../utils/previewAnchor.js';
 
 const FOLD_WRAPPER_SELECTOR = '.foldable-content-wrapper';
@@ -82,11 +87,20 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 	const ioFactory = resolveIO();
 	const roFactory = resolveRO();
 	const active = new Map<Element, HTMLElement>(); // content-inner -> wrapper（活动集）
+	// D36（spec 2026-10-13）：窄域测量队列。D29 的 promote/RO 回调曾每次重测整个
+	// 活动集（清全部 pin→读全部→写全部 = 两次全文档 reflow），滚动第一遍每步都要为
+	// 新晋升者付出全文档代价（实测 median 61-104ms，merge 前基线 20ms）。改为只测
+	// 本次晋升/尺寸变化的 wrapper：内容变化→该 wrapper 自己的 RO 事件→本地重测闭环
+	// 不变；子集测量的棘轮风险仍由 D35 remeasureAll（排空完成 + resize）兜底。
+	const measureSet = new Set<HTMLElement>();
 	let frame: number | null = null;
 
 	const runUpdate = () => {
 		frame = null;
-		measureWrappers(root, [...active.values()].map((wrapper) => ({ wrapper, content: wrapper.querySelector<HTMLElement>(FOLD_CONTENT_SELECTOR)! })));
+		if (measureSet.size === 0) return;
+		const items = [...measureSet].map((wrapper) => ({ wrapper, content: wrapper.querySelector<HTMLElement>(FOLD_CONTENT_SELECTOR)! }));
+		measureSet.clear();
+		measureWrappers(root, items);
 	};
 	const scheduleUpdate = () => {
 		if (frame !== null) return;
@@ -96,19 +110,28 @@ export function observeLazyFoldLayout(root: HTMLElement, deps: LazyFoldLayoutDep
 			frame = requestAnimationFrame(runUpdate); // 默认 rAF：frame 供去重与 stop() 取消
 		}
 	};
+	const queueMeasure = (wrapper: HTMLElement) => {
+		measureSet.add(wrapper);
+		scheduleUpdate();
+	};
 
 	let ro: ResizeObserver | null = null;
 	if (roFactory) {
-		ro = roFactory(() => scheduleUpdate());
+		ro = roFactory((entries) => {
+			// D36：只重测尺寸实际变化的 wrapper（entry.target = content-inner）。
+			for (const entry of entries) {
+				const wrapper = active.get(entry.target);
+				if (wrapper) queueMeasure(wrapper);
+			}
+		});
 	}
 
 	const promote = (wrapper: HTMLElement) => {
-		if (active.has(wrapper.querySelector<HTMLElement>(FOLD_CONTENT_SELECTOR)!)) return;
 		const content = wrapper.querySelector<HTMLElement>(FOLD_CONTENT_SELECTOR);
-		if (!content) return;
+		if (!content || active.has(content)) return;
 		active.set(content, wrapper);
 		if (ro) ro.observe(content);
-		scheduleUpdate();
+		queueMeasure(wrapper); // D36：只测新晋升者，不重测既有活动成员
 	};
 
 	const observer = ioFactory

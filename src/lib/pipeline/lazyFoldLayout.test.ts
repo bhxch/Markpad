@@ -161,6 +161,40 @@ describe('observeLazyFoldLayout（D29，spec 2026-10-10）', () => {
 		obs.stop();
 	});
 
+	it('D36 窄域晋升：晋升 B 不重测已晋升 A 的 pin', () => {
+		const { root, wrappers } = makeFixture(3);
+		const { deps, ioCallbacks } = makeDeps();
+		const obs = observeLazyFoldLayout(root, deps);
+		obs.observe(root);
+		ioCallbacks[0]([{ isIntersecting: true, target: wrappers[0] }]);
+		expect(wrappers[0].style.getPropertyValue('--fold-content-height')).not.toBe('');
+		// 哨兵：若后续晋升把 A 一并重测，哨兵会被改写
+		wrappers[0].style.setProperty('--fold-content-height', '777px');
+		ioCallbacks[0]([{ isIntersecting: true, target: wrappers[1] }]);
+		expect(wrappers[0].style.getPropertyValue('--fold-content-height')).toBe('777px');
+		expect(wrappers[1].style.getPropertyValue('--fold-content-height')).not.toBe('');
+		obs.stop();
+	});
+
+	it('D36 窄域 RO：尺寸变化只重写对应 wrapper，不重测其他活动成员', () => {
+		const { root, wrappers } = makeFixture(3);
+		const { deps, ioCallbacks, roCallbacks } = makeDeps();
+		const obs = observeLazyFoldLayout(root, deps);
+		obs.observe(root);
+		ioCallbacks[0]([
+			{ isIntersecting: true, target: wrappers[0] },
+			{ isIntersecting: true, target: wrappers[1] },
+		]);
+		const content0 = wrappers[0].querySelector<HTMLElement>('.content-inner')!;
+		const content1 = wrappers[1].querySelector<HTMLElement>('.content-inner')!;
+		wrappers[0].style.setProperty('--fold-content-height', '777px');
+		wrappers[1].style.setProperty('--fold-content-height', '888px');
+		roCallbacks[0]([{ target: content1 }]);
+		expect(wrappers[0].style.getPropertyValue('--fold-content-height')).toBe('777px');
+		expect(wrappers[1].style.getPropertyValue('--fold-content-height')).not.toBe('888px');
+		obs.stop();
+	});
+
 	it('测量值按 previewZoomFactor 折算（#807 契约）', () => {
 		const { root, wrappers } = makeFixture(1);
 		vi.mocked(previewZoomFactor).mockReturnValue(2);
