@@ -1706,7 +1706,9 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 			if (cold) restoreAfterColdEnrichment(enrichment, tabManager.activeTabId);
 		}
 		previewRevision = ++previewPatches;
-		tocRevision = previewRevision; // D37-2：head 同步发布对齐（Toc 重扫首屏切片）
+		// D37-2：head 同步发布对齐。读非响应式计数器而非 previewRevision——effect
+		// 体内的响应式读取会被追踪，写自身依赖即自循环（effect_update_depth_exceeded）。
+		tocRevision = previewPatches;
 	});
 
 	/**

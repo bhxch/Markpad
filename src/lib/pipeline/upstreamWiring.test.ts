@@ -81,7 +81,10 @@ describe('上游文件本地接线存在性（D29/D30/D31/D32，spec 2026-10-10�
 		// 比对基准，中途推进会令排空自弃（真机实证，文档停在 head+2 批）
 		expect(viewerSrc).toMatch(/tocThrottle = createTocThrottler\(\(\) => \{\s*tocRevision\+\+;\s*\}\)/);
 		expect(viewerSrc).toMatch(/previewRevision=\{tocRevision\}/);
-		expect(viewerSrc).toMatch(/tocRevision = previewRevision/);
+		// 对齐读取必须用非响应式计数器：effect 体内读 previewRevision 会被追踪，
+		// 写自身依赖即 effect_update_depth_exceeded 自循环
+		expect(viewerSrc).toMatch(/tocRevision = previewPatches;/);
+		expect(viewerSrc).not.toMatch(/\n\t\ttocRevision = previewRevision;/);
 		// 节流闭包不得触碰门控计数器
 		expect(viewerSrc).not.toMatch(/createTocThrottler\(\(\) => \{\s*previewRevision/);
 	});
