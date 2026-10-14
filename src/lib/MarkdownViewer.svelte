@@ -34,6 +34,7 @@
 	import { runPipeline, setPipelineVersionSource } from './pipeline/index';
 	import { analyzeEnrichmentNeed } from './pipeline/enrichPrecheck.js';
 	import { planProgressiveRender } from './pipeline/progressiveFirstPaint.js'; // D34 接线（spec 2026-10-10-progressive-first-paint-design）：大文档渐进首屏
+	import { createTocThrottler } from './pipeline/tocProgressivePublish.js'; // D37-2 接线（spec 2026-10-13-split-toc-performance-design）：TOC 渐进发布节流
 	import {
 		ensureMermaidInitialized,
 		renderDiagramBlocks,
@@ -1647,6 +1648,15 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 			// 排空与全部批富化完成后要再发布一次修订（下方 tocSignal），Toc 才会重扫完整宿主。
 			// 在批富化完成前发布会让在途富化链的 revision 闸自取消（尾批裸奔）。
 			const batchEnrichments: Promise<void>[] = [];
+			// D37-2 接线（spec 2026-10-13-split-toc-performance-design）：排空批的前缘
+			// 节流 TOC 发布——TOC 随内容落定逐段生长（每次修订触发 Toc 整树扫描
+			// ~5-20ms，500ms 间隔有界），不再末端从 3 条蹦到 99 条。种子为创建时刻
+			// （head 的同步发布刚发生）；终态发布仍是下方 D34 的完成发布，作为尾随保证。
+			// 闭包内自增与 D34 完成发布同一时序约定：异步闭包内的写入不注册 effect 依赖，
+			// 且 previewRevision === revisionOfThisRun 不会自取消 shouldAbort/revision 闸。
+			const tocThrottle = createTocThrottler(() => {
+				previewRevision = ++previewPatches;
+			});
 			// D34 修复轮 1（I1）：排空自微任务启动——首帧前修订号已发布，shouldAbort 的
 			// revision 比对不会把本 run 误判为过期（与 enrichment 分发同款时序约定）；
 			// 被新 patch 抢占或宿主脱离即终止排空，memo 由已落地批次保持自洽。
@@ -1662,6 +1672,7 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 						onBatch: (inserted) => {
 							for (const block of inserted) foldLayout?.observe(block);
 							batchEnrichments.push(enrichBlocks(inserted));
+							tocThrottle.tick(); // D37-2：TOC 渐进发布（前缘节流 500ms）
 						},
 					}),
 				)

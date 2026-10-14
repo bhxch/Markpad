@@ -65,4 +65,17 @@ describe('上游文件本地接线存在性（D29/D30/D31/D32，spec 2026-10-10�
 			expect(pf).toContain(sel);
 		}
 	});
+
+	it('D37-1：Editor 的 createEditor 经惰性启动排队（防 merge 还原同步启动）', () => {
+		const editorSrc = readFileSync(join(__dirname, '../components/Editor.svelte'), 'utf8');
+		expect(editorSrc).toMatch(/bootEditorWhenIdle\(createEditor\)/);
+		// 同步启动不得回归：createEditor 只能作为惰性启动的实参出现
+		expect(editorSrc).not.toMatch(/teardown = createEditor\(\)/);
+	});
+
+	it('D37-2：排空 onBatch 经前缘节流发布 TOC 中间修订（防 merge 丢失渐进目录）', () => {
+		const viewerSrc = readFileSync(join(__dirname, '../MarkdownViewer.svelte'), 'utf8');
+		expect(viewerSrc).toMatch(/createTocThrottler/);
+		expect(viewerSrc).toMatch(/tocThrottle\.tick\(\)/);
+	});
 });

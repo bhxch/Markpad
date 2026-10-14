@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from "svelte";
+	import { bootEditorWhenIdle } from "../pipeline/deferredEditorBoot.js"; // D37-1 接线（spec 2026-10-13-split-toc-performance-design）：Monaco 惰性启动
 	import { tabManager } from "../stores/tabs.svelte.js";
 	import { settings, wheelZoomFactor } from "../stores/settings.svelte.js";
 	import { t, type LanguageCode } from '../utils/i18n.js';
@@ -259,7 +260,11 @@
 		void (async () => {
 			monaco = await import("monaco-editor");
 			if (cancelled) return;
-			teardown = createEditor();
+			// D37-1 接线（spec 2026-10-13-split-toc-performance-design）：createEditor
+			// （4.4MB chunk 求值 + 大模型创建/首渲，实测 ~1.3s 冻结）推迟到首帧后的
+			// 空闲点；用户输入立即抢占。teardown 语义不变：启动前=撤销调度，启动后=
+			// 编辑器清理。返回的 cancel 函数即本组件的 teardown。
+			teardown = bootEditorWhenIdle(createEditor);
 		})();
 
 		return () => {
