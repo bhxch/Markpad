@@ -26,7 +26,7 @@ export interface EditorBootDeps {
  * 撤销整个调度，启动后等价于编辑器 teardown。幂等。
  */
 export function bootEditorWhenIdle(create: () => () => void, deps: EditorBootDeps = {}): () => void {
-	const idleTimeoutMs = deps.idleTimeoutMs ?? 1200;
+	const idleTimeoutMs = deps.idleTimeoutMs ?? 4000;
 	const raf =
 		deps.raf ??
 		((cb: () => void) => {
@@ -36,12 +36,15 @@ export function bootEditorWhenIdle(create: () => () => void, deps: EditorBootDep
 	const idle =
 		deps.idle ??
 		((cb: () => void) => {
+			// 真空闲优先（timeout 只是饥饿上界）：排空进行中主线常忙，rIC 会等到
+			// 排空结束后的第一个空档才启动编辑器——boot 的 ~1s 单体任务不插进
+			// 排空中间。无 rIC 的环境退化为定时兜底。
 			const w = window as Window & { requestIdleCallback?: (cb: () => void, opts: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
 			if (typeof w.requestIdleCallback === 'function') {
 				const id = w.requestIdleCallback(cb, { timeout: idleTimeoutMs });
 				return () => w.cancelIdleCallback?.(id);
 			}
-			const id = setTimeout(cb, idleTimeoutMs);
+			const id = setTimeout(cb, idleTimeoutMs / 2);
 			return () => clearTimeout(id);
 		});
 	const preempt =

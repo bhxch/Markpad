@@ -77,5 +77,12 @@ describe('上游文件本地接线存在性（D29/D30/D31/D32，spec 2026-10-10�
 		const viewerSrc = readFileSync(join(__dirname, '../MarkdownViewer.svelte'), 'utf8');
 		expect(viewerSrc).toMatch(/createTocThrottler/);
 		expect(viewerSrc).toMatch(/tocThrottle\.tick\(\)/);
+		// 节流只推进 TOC 专用信号：previewRevision 是排空 shouldAbort/富化闸的
+		// 比对基准，中途推进会令排空自弃（真机实证，文档停在 head+2 批）
+		expect(viewerSrc).toMatch(/tocThrottle = createTocThrottler\(\(\) => \{\s*tocRevision\+\+;\s*\}\)/);
+		expect(viewerSrc).toMatch(/previewRevision=\{tocRevision\}/);
+		expect(viewerSrc).toMatch(/tocRevision = previewRevision/);
+		// 节流闭包不得触碰门控计数器
+		expect(viewerSrc).not.toMatch(/createTocThrottler\(\(\) => \{\s*previewRevision/);
 	});
 });

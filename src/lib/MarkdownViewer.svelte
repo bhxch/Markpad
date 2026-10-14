@@ -1536,6 +1536,12 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 	 */
 	let previewRevision = $state(0);
 	let previewPatches = 0;
+	// D37-2（spec 2026-10-13-split-toc-performance-design）：TOC 专用修订信号。
+	// 排空期的节流发布只推进它——previewRevision 同时是排空 shouldAbort 与富化
+	// 链 revision 闸的比对基准（revisionOfThisRun），中途推进会令排空自弃
+	// （真机验收实证：文档停在 head+2 批，D34 注释警告的正是这个）。终态与
+	// head 的同步发布处两者对齐。
+	let tocRevision = $state(0);
 
 	// 本地管线版本源注入（spec D5）。previewRevision 是"预览 DOM 收到过几份文档"的计数，
 	// 与本地 renderVersion 同构（每次 patch 自增）：runPipeline 开始时捕获一次，各版本敏感
@@ -1652,10 +1658,10 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 			// 节流 TOC 发布——TOC 随内容落定逐段生长（每次修订触发 Toc 整树扫描
 			// ~5-20ms，500ms 间隔有界），不再末端从 3 条蹦到 99 条。种子为创建时刻
 			// （head 的同步发布刚发生）；终态发布仍是下方 D34 的完成发布，作为尾随保证。
-			// 闭包内自增与 D34 完成发布同一时序约定：异步闭包内的写入不注册 effect 依赖，
-			// 且 previewRevision === revisionOfThisRun 不会自取消 shouldAbort/revision 闸。
+			// 只推进 tocRevision：previewRevision 是排空 shouldAbort 与富化 revision 闸
+			// 的比对基准，中途推进会令排空自弃（真机实证）。
 			const tocThrottle = createTocThrottler(() => {
-				previewRevision = ++previewPatches;
+				tocRevision++;
 			});
 			// D34 修复轮 1（I1）：排空自微任务启动——首帧前修订号已发布，shouldAbort 的
 			// revision 比对不会把本 run 误判为过期（与 enrichment 分发同款时序约定）；
@@ -1683,6 +1689,7 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 				.catch(() => {})
 				.then(() => {
 					previewRevision = ++previewPatches;
+					tocRevision = previewRevision; // D37-2：终态对齐，Toc 重扫完整宿主
 				});
 			if (cold) {
 				// D35：排空完成后全量原子重测——渐进批的 IO 晋升测量基于部分落地
@@ -1699,6 +1706,7 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 			if (cold) restoreAfterColdEnrichment(enrichment, tabManager.activeTabId);
 		}
 		previewRevision = ++previewPatches;
+		tocRevision = previewRevision; // D37-2：head 同步发布对齐（Toc 重扫首屏切片）
 	});
 
 	/**
@@ -4476,10 +4484,10 @@ import { createDocumentSession, type LoadMarkdownOptions } from './sessions/docu
 									onpointerdown={startTocResize}
 									onkeydown={handleTocResizeKeyDown}></div>
 								<Toc
-									activeLine={tocActiveLine} 
-										{markdownBody} 
+									activeLine={tocActiveLine}
+										{markdownBody}
 										contentRoot={previewBlocks}
-										{previewRevision}
+										previewRevision={tocRevision}
 										onBeforeJump={pushScrollHistory} 
 										{foldOverrides} 
 										ontoggleFold={(key: string) => toggleFold(foldHost, key)} 
