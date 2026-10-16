@@ -495,3 +495,7 @@ mod tests {
         assert!(registry.languages.len() > 0);
     }
 }
+
+#[cfg(test)]
+#[path = "grammar_ffi_pin.rs"] // D38：文件在 src/highlight/ 下，非 registry/ 子目录
+mod grammar_ffi_pin; // D38 钉子测试（本地文件）

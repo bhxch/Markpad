@@ -645,3 +645,53 @@ pub fn link_cpp_runtime() {
         println!("cargo:rustc-link-lib=dylib=stdc++");
     }
 }
+
+/// D38 §5.3：语法 DLL 模式开关（仅 fork 发布脚本设置 MARKPAD_GRAMMAR_DLL=1）。
+pub fn dll_mode_enabled() -> bool {
+    env::var("MARKPAD_GRAMMAR_DLL").ok().as_deref() == Some("1")
+}
+
+/// D38 §5.3：链接 grammars-cdylib 产出的导入库。产物缺失时硬失败并给出
+/// 可行动指引（防静默回退静态或产出缺语法的 exe）。
+pub fn link_grammar_dll() {
+    let triple = env::var("TARGET").unwrap_or_default();
+    let profile = env::var("PROFILE").unwrap_or_default();
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let base = Path::new(&manifest_dir).join("grammars-cdylib").join("target");
+
+    // msvc: rustc 生成 <name>.dll.lib（新）/ <name>.lib（旧）两种导入库名；
+    // gnu: lib<name>.dll.a；unix: lib<name>.so
+    let marker: &[&str] = if triple.contains("msvc") {
+        &["markpad_grammars.dll.lib", "markpad_grammars.lib"]
+    } else if triple.contains("windows") {
+        &["libmarkpad_grammars.dll.a", "markpad_grammars.dll.a"]
+    } else {
+        &["libmarkpad_grammars.so"]
+    };
+    let find = |dir: &Path| marker.iter().any(|m| dir.join(m).exists());
+
+    let dir = [base.join(&triple).join(&profile), base.join(&profile)]
+        .into_iter()
+        .find(|d| find(d))
+        .unwrap_or_else(|| {
+            panic!(
+                "D38: grammars-cdylib 产物未找到（查找 {} 下 {:?}）——\
+                 先构建 cdylib：cd grammars-cdylib && cargo xwin build --release --target {triple}",
+                format!("{}/{}", base.display(), triple),
+                marker
+            )
+        });
+
+    // 旧 rustc 只出 <name>.dll.lib 而 lld-link 按 <name>.lib 解析时补一份拷贝
+    if triple.contains("msvc") {
+        let short = dir.join("markpad_grammars.lib");
+        let long = dir.join("markpad_grammars.dll.lib");
+        if long.exists() && !short.exists() {
+            fs::copy(&long, &short).unwrap();
+        }
+    }
+
+    println!("cargo:rustc-link-search=native={}", dir.display());
+    println!("cargo:rustc-link-lib=dylib=markpad_grammars");
+    println!("cargo:rerun-if-changed={}", dir.join(marker[0]).display());
+}
