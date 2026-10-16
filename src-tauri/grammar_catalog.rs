@@ -648,6 +648,9 @@ pub fn link_cpp_runtime() {
 
 /// D38 §5.3：语法 DLL 模式开关（仅 fork 发布脚本设置 MARKPAD_GRAMMAR_DLL=1）。
 pub fn dll_mode_enabled() -> bool {
+    // D38：开关被读取即声明依赖——cargo 不跟踪任意环境变量，不声明则翻转
+    // 开关不重跑 build script，会静默沿用上次链接形态（静态残留或该 DLL 未链）。
+    println!("cargo:rerun-if-env-changed=MARKPAD_GRAMMAR_DLL");
     env::var("MARKPAD_GRAMMAR_DLL").ok().as_deref() == Some("1")
 }
 
