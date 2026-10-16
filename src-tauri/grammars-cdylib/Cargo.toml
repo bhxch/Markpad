@@ -1,0 +1,22 @@
+[package]
+name = "markpad-grammars"
+version = "2.8.4"
+edition = "2021"
+license = "BSD-3-Clause"
+publish = false
+
+# D38 本地 crate（spec: docs/superpowers/specs/2026-10-16-windows-installer-dll-split-design.md §5.1）。
+# 空workspace表=独立workspace根，避免改动上游 src-tauri/Cargo.toml。
+[workspace]
+
+[lib]
+name = "markpad_grammars"
+crate-type = ["cdylib"]
+
+[build-dependencies]
+cc = "1"
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1
+strip = true
